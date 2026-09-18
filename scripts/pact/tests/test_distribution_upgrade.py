@@ -111,6 +111,30 @@ class DistributionUpgradeTests(unittest.TestCase):
         doctor = self.run_target("doctor", "--strict")
         self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
 
+    def test_init_preserves_existing_agents_with_control_plane_bootstrap(self) -> None:
+        self.target.mkdir(parents=True)
+        agents = self.target / "AGENTS.md"
+        agents.write_text("# Existing project agent rules\n", encoding="utf-8")
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"),
+            "# Existing project agent rules\n",
+        )
+
+        bootstrap = self.target / ".pact" / "AGENT_BOOTSTRAP.md"
+        self.assertTrue(bootstrap.is_file())
+        self.assertFalse((self.target / "docs" / "governance").exists())
+
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["files"][".pact/AGENT_BOOTSTRAP.md"]["management"],
+            "seed",
+        )
+
     def test_reinit_from_different_runtime_is_rejected(self) -> None:
         manifest = self.scaffold()
         manifest["runtime_version"] = "0.0.legacy"
