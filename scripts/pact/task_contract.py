@@ -59,10 +59,9 @@ def acceptance_review(
             if claim.get("status") == "pass":
                 passing_by_criterion[criterion_id].append(claim_id)
 
-    owner_evidence_ids = {
-        evidence_id
-        for item in owner.get("verification", [])
-        for evidence_id in item.get("evidence_ids", [])
+    owner_acceptance = {
+        item.get("criterion_id"): item
+        for item in owner.get("acceptance", [])
     }
 
     evidence_verified: list[str] = []
@@ -80,14 +79,25 @@ def acceptance_review(
             continue
 
         evidence_verified.append(criterion_id)
-        if any(claim_id in owner_evidence_ids for claim_id in passing):
-            owner_report_covered.append(criterion_id)
-        else:
+        owner_item = owner_acceptance.get(criterion_id)
+        if owner_item is None:
             owner_report_missing.append(criterion_id)
             errors.append(
                 f"acceptance criterion {criterion_id} is verified by Evidence "
-                "but omitted from Owner Report verification"
+                "but missing from Owner Report acceptance"
             )
+            continue
+
+        owner_ids = set(owner_item.get("evidence_ids", []))
+        if not any(claim_id in owner_ids for claim_id in passing):
+            owner_report_missing.append(criterion_id)
+            errors.append(
+                f"Owner Report acceptance {criterion_id} does not cite "
+                "passing Evidence for that criterion"
+            )
+            continue
+
+        owner_report_covered.append(criterion_id)
 
     return errors, {
         "total": len(criterion_ids),
