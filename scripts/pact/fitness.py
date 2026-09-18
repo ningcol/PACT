@@ -119,11 +119,8 @@ def main() -> int:
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
     schema_path = root / ".pact" / "schema" / "fitness.schema.json"
 
-    if not schema_path.exists():
-        print(f"PACT fitness: missing schema at {schema_path}", file=sys.stderr)
-        return 2
-
     try:
+        schema = load_schema(schema_path)
         config, config_path, config_format, configured = load_config(
             root, args.config, args.strict
         )
@@ -131,7 +128,7 @@ def main() -> int:
         print(f"PACT fitness: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate_instance(config, load_schema(schema_path))
+    errors = validate_instance(config, schema)
     if errors:
         print("PACT fitness: invalid config", file=sys.stderr)
         for error in errors:
