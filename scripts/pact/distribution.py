@@ -26,6 +26,7 @@ FRAMEWORK_DOCS = [
     "docs/drift/accepted/README.md",
     "docs/initialization.md",
     "docs/initialization-checklist.md",
+    "docs/evaluation/pilot-scorecard.md",
     ".agents/decisions/README.md",
     ".agents/decisions/TEMPLATE.md",
     ".agents/decisions/proposed/README.md",
