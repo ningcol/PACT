@@ -23,6 +23,7 @@ def acceptance_review(
     errors: list[str] = []
     criteria = contract.get("acceptance_criteria", [])
     criterion_ids: list[str] = []
+    criterion_by_id: dict[str, dict] = {}
     seen: set[str] = set()
 
     for item in criteria:
@@ -32,6 +33,7 @@ def acceptance_review(
             continue
         seen.add(criterion_id)
         criterion_ids.append(criterion_id)
+        criterion_by_id[criterion_id] = item
 
     if contract.get("task_id") != evidence.get("task_id"):
         errors.append(
@@ -59,10 +61,15 @@ def acceptance_review(
             if claim.get("status") == "pass":
                 passing_by_criterion[criterion_id].append(claim_id)
 
-    owner_acceptance = {
-        item.get("criterion_id"): item
-        for item in owner.get("acceptance", [])
-    }
+    owner_acceptance: dict[str, dict] = {}
+    for item in owner.get("acceptance", []):
+        criterion_id = item.get("criterion_id")
+        if criterion_id in owner_acceptance:
+            errors.append(
+                f"Owner Report contains duplicate acceptance entry {criterion_id!r}"
+            )
+            continue
+        owner_acceptance[criterion_id] = item
 
     evidence_verified: list[str] = []
     owner_report_covered: list[str] = []
@@ -85,6 +92,15 @@ def acceptance_review(
             errors.append(
                 f"acceptance criterion {criterion_id} is verified by Evidence "
                 "but missing from Owner Report acceptance"
+            )
+            continue
+
+        expected_summary = criterion_by_id[criterion_id].get("text")
+        if owner_item.get("summary") != expected_summary:
+            owner_report_missing.append(criterion_id)
+            errors.append(
+                f"Owner Report acceptance {criterion_id} summary does not match "
+                "the Task Contract criterion"
             )
             continue
 
