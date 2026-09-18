@@ -61,6 +61,15 @@ jobs:
             --risk low \
             --output /tmp/pact-context.json
 
+      - name: Smoke-test code-aware Context Resolver
+        run: |
+          python scripts/pact/pact.py context "upgrade distribution" \
+            --success "Relevant runtime implementation can be located" \
+            --risk medium \
+            --code \
+            --output /tmp/pact-code-context.json
+          grep -q '"code_artifacts"' /tmp/pact-code-context.json
+
       - name: Smoke-test Impact Analysis
         run: python scripts/pact/pact.py impact --files AGENTS.md --json
 
