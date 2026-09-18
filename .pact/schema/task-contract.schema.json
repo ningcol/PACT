@@ -3,7 +3,7 @@
   "$id": "https://pact.local/schema/task-contract.schema.json",
   "title": "PACT Task Contract",
   "type": "object",
-  "required": ["version", "task_id", "intent", "acceptance_criteria", "constraints"],
+  "required": ["version", "task_id", "intent", "acceptance_criteria"],
   "additionalProperties": false,
   "properties": {
     "version": { "const": 1 },
@@ -14,17 +14,14 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "text"],
+        "required": ["id", "kind", "text"],
         "additionalProperties": false,
         "properties": {
           "id": { "type": "string", "pattern": "^AC-[A-Z0-9]+(?:-[A-Z0-9]+)*$" },
+          "kind": { "enum": ["outcome", "constraint"] },
           "text": { "type": "string", "minLength": 1 }
         }
       }
-    },
-    "constraints": {
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 }
     }
   }
 }
