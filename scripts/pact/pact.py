@@ -10,8 +10,10 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 
 COMMANDS = {
+    "init": "init.py",
     "check": "check.py",
     "doctor": "doctor.py",
+    "audit": "audit.py",
     "map": "map.py",
     "discover": "discover.py",
     "context": "context.py",
