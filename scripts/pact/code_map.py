@@ -8,6 +8,7 @@ import ast
 import json
 import pathlib
 import re
+from collections import Counter
 
 from cache import cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
@@ -16,8 +17,8 @@ from repository_files import repository_files
 from schema_validate import load_schema, validate_instance
 
 
-FORMAT_VERSION = 2
-PARSE_CACHE_VERSION = 1
+FORMAT_VERSION = 3
+PARSE_CACHE_VERSION = 2
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -65,6 +66,36 @@ JS_SYMBOL = re.compile(
     )""",
     re.VERBOSE,
 )
+
+CODE_IDENTIFIER = re.compile(r"\b[A-Za-z_$][A-Za-z0-9_$]*\b")
+MAX_IDENTIFIERS_PER_FILE = 512
+COMMON_IDENTIFIERS = {
+    "async", "await", "break", "case", "catch", "class", "const", "continue",
+    "debugger", "default", "delete", "do", "else", "export", "extends", "false",
+    "finally", "for", "from", "function", "if", "import", "in", "instanceof",
+    "interface", "let", "new", "null", "of", "return", "static", "super",
+    "switch", "this", "throw", "true", "try", "type", "typeof", "undefined",
+    "var", "void", "while", "with", "yield", "def", "elif", "except", "lambda",
+    "none", "pass", "raise", "self", "cls", "and", "or", "not", "is",
+}
+
+
+def lexical_identifiers(values: list[str]) -> list[str]:
+    counts = Counter(
+        value
+        for value in values
+        if len(value) >= 3 and value.casefold() not in COMMON_IDENTIFIERS
+    )
+    ranked = sorted(
+        counts,
+        key=lambda value: (
+            -int(any(char.isupper() for char in value) or "_" in value or "$" in value),
+            -counts[value],
+            value.casefold(),
+            value,
+        ),
+    )
+    return ranked[:MAX_IDENTIFIERS_PER_FILE]
 
 
 def rel(path: pathlib.Path, root: pathlib.Path) -> str:
@@ -136,15 +167,18 @@ def python_module_aliases(path: pathlib.Path, root: pathlib.Path) -> list[str]:
     return list(dict.fromkeys(alias for alias in aliases if alias))
 
 
-def parse_python(path: pathlib.Path) -> tuple[list[str], list[tuple[str, int]]]:
+def parse_python(
+    path: pathlib.Path,
+) -> tuple[list[str], list[tuple[str, int]], list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text)
     except (UnicodeDecodeError, SyntaxError):
-        return [], []
+        return [], [], []
 
     symbols = []
     imports: list[tuple[str, int]] = []
+    identifiers: list[str] = []
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -155,14 +189,26 @@ def parse_python(path: pathlib.Path) -> tuple[list[str], list[tuple[str, int]]]:
         elif isinstance(node, ast.ImportFrom):
             imports.append((node.module or "", node.level))
 
-    return sorted(set(symbols)), imports
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            identifiers.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            identifiers.append(node.attr)
+        elif isinstance(node, ast.arg):
+            identifiers.append(node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            identifiers.append(node.name)
+
+    return sorted(set(symbols)), imports, lexical_identifiers(identifiers)
 
 
-def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
+def parse_js_like(
+    path: pathlib.Path,
+) -> tuple[list[str], list[str], list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return [], []
+        return [], [], []
 
     imports = JS_IMPORT.findall(text)
     symbols = []
@@ -171,7 +217,8 @@ def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
         if symbol:
             symbols.append(symbol)
 
-    return sorted(set(symbols)), list(dict.fromkeys(imports))
+    identifiers = lexical_identifiers(CODE_IDENTIFIER.findall(text))
+    return sorted(set(symbols)), list(dict.fromkeys(imports)), identifiers
 
 
 def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
@@ -179,13 +226,13 @@ def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
     relative = rel(path, root)
 
     if language == "python":
-        symbols, raw_imports = parse_python(path)
+        symbols, raw_imports, identifiers = parse_python(path)
         imports = [
             {"raw": raw, "level": int(level)}
             for raw, level in raw_imports
         ]
     else:
-        symbols, raw_imports = parse_js_like(path)
+        symbols, raw_imports, identifiers = parse_js_like(path)
         imports = [
             {"raw": raw, "level": 0}
             for raw in raw_imports
@@ -194,6 +241,7 @@ def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
     return {
         "language": language,
         "symbols": symbols,
+        "identifiers": identifiers,
         "raw_imports": imports,
         "is_test": is_test_path(relative),
     }
@@ -335,6 +383,7 @@ def build_code_map(
             "path": relative,
             "language": language,
             "symbols": parsed["symbols"],
+            "identifiers": parsed["identifiers"],
             "imports": imports,
             "is_test": bool(parsed["is_test"]),
         })
