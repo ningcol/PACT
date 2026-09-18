@@ -103,7 +103,7 @@ class DistributionUpgradeTests(unittest.TestCase):
                 for path in legacy_entry.parent.iterdir()
                 if path.is_file()
             ),
-            ["pact.py"],
+            ["converge.py", "pact.py", "report.py"],
         )
 
         version = self.run_target("version", "--json")
