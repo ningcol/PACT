@@ -16,7 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 
 
-def run_discovery(query: str, limit: int) -> dict:
+def run_discovery(query: str, limit: int, code: bool = False) -> dict:
     with tempfile.TemporaryDirectory(prefix="pact-context-") as tmp:
         index = pathlib.Path(tmp) / "project-map.json"
         subprocess.run(
@@ -24,17 +24,28 @@ def run_discovery(query: str, limit: int) -> dict:
             check=True,
             stdout=subprocess.DEVNULL,
         )
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts" / "pact" / "discover.py"),
-                query,
-                "--index",
-                str(index),
-                "--limit",
+        command = [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "discover.py"),
+            query,
+            "--index",
+            str(index),
+            "--limit",
+            str(limit),
+            "--json",
+        ]
+        if code:
+            code_index = pathlib.Path(tmp) / "code-map.json"
+            command.extend([
+                "--code",
+                "--code-index",
+                str(code_index),
+                "--code-limit",
                 str(limit),
-                "--json",
-            ],
+            ])
+
+        result = subprocess.run(
+            command,
             check=False,
             capture_output=True,
             text=True,
@@ -64,6 +75,11 @@ def main() -> int:
     parser.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
     parser.add_argument("--query", help="discovery query; defaults to task")
     parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument(
+        "--code",
+        action="store_true",
+        help="include generated code search/import neighbors in candidate context",
+    )
     parser.add_argument("--output")
     args = parser.parse_args()
 
@@ -71,7 +87,7 @@ def main() -> int:
     query = args.query or args.task
 
     try:
-        discovery = run_discovery(query, max(args.limit, 1))
+        discovery = run_discovery(query, max(args.limit, 1), code=args.code)
     except Exception as exc:
         print(f"PACT context: discovery failed: {exc}", file=sys.stderr)
         return 2
@@ -87,17 +103,21 @@ def main() -> int:
         result["id"] or result["path"]
         for result in results
         if result.get("artifact_type") == "rule"
+        and result.get("status") == "confirmed"
     })
     decisions = sorted({
         result["id"] or result["path"]
         for result in results
         if result.get("artifact_type") == "decision"
+        and result.get("status") == "implemented"
     })
     verification = sorted({
         target
         for result in results
         for target in result.get("verification", [])
     })
+
+    code_results = discovery.get("code_results", [])
 
     unknowns = []
     if not results:
@@ -106,7 +126,11 @@ def main() -> int:
         )
     if not rules:
         unknowns.append(
-            "No Product Rule was discovered deterministically; confirm whether normative product truth exists for this task."
+            "No confirmed Product Rule was discovered deterministically; candidate rules must not be treated as normative truth."
+        )
+    if args.code and not code_results:
+        unknowns.append(
+            "Code-aware discovery found no matching code artifact; expand with project-specific code analysis if needed."
         )
 
     envelope = {
@@ -128,6 +152,18 @@ def main() -> int:
                 "reasons": r.get("reasons", []),
             }
             for r in results
+        ],
+        "code_artifacts": [
+            {
+                "path": r["path"],
+                "language": r["language"],
+                "is_test": r["is_test"],
+                "symbols": r.get("symbols", []),
+                "score": r["score"],
+                "reasons": r.get("reasons", []),
+                "relation": r.get("relation", "direct-match"),
+            }
+            for r in code_results
         ],
         "applicable_rules": rules,
         "decisions": decisions,
