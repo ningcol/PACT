@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "multipost-kuaishou-publish",
+      "repository": "ningcol/MultiPost-Extension",
+      "base_commit": "f9a404584968e2be9a3d8880526509bcb569637f",
+      "target_commit": "0720ed3853a493a8de61567c9aafce7c3b2a189e",
+      "task": "修复快手发布流程，并确保弹窗始终使用线上地址",
+      "success": "快手图文和视频发布行为正确，自动发布开关生效，弹窗使用生产环境地址",
+      "expanded_query": "Kuaishou publishing autoPublish isAutoPublish BASE_URL popup",
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
+    },
+    {
+      "id": "multipost-typescript-contract-fixes",
+      "repository": "ningcol/MultiPost-Extension",
+      "base_commit": "bf4aa8a0338a5f2285f8b20f63af11605bc6004f",
+      "target_commit": "09f9a7f4e40088c65c55ba4b1cc3f8c07ab4340d",
+      "task": "修复 TypeScript 错误并调整 options 页面跳转",
+      "success": "平台发布字段、文章字段、webhook 类型和 options 跳转与当前类型契约一致",
+      "expanded_query": "TypeScript autoPublish isAutoPublish ArticleData htmlContent webhook options redirect",
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
+    },
+    {
+      "id": "ziliu-editor-state-persistence",
+      "repository": "ningcol/ziliu",
+      "base_commit": "ef3f5efb3c6b42614ef36e9bee3ecd70640d0371",
+      "target_commit": "d4ff119cd437ac401de286b0fa86c07c0fbe7880",
+      "task": "编辑器切换 tab 后保留平台选择、样式和发布设置，并清理过期状态",
+      "success": "编辑器状态可以恢复，用户不需要重复配置，过期缓存会被清理",
+      "expanded_query": "editor state persistence platform preview publish settings storage cache",
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
+    },
+    {
+      "id": "ziliu-wechat-style-preservation",
+      "repository": "ningcol/ziliu",
+      "base_commit": "244afee7b4bc066fcc60c81a5d74ca66596a1d08",
+      "target_commit": "07519659236c0919711c727823891d59257713c1",
+      "task": "修复技术风格在微信发布链路中被默认样式覆盖的问题",
+      "success": "tech 风格的标题和代码块在微信发布时保持正确样式，不被后续清理逻辑覆盖",
+      "expanded_query": "wechat markdown style converter convertMarkdownToHtml content-service data-heading applyInlineStyles",
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
+    }
+  ]
+}
