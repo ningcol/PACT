@@ -25,3 +25,11 @@ Those belong in durable decisions.
 ## Drift policy
 
 Architecture docs may describe current facts that can become stale. Where important constraints are mechanically checkable, prefer converting them into architecture fitness functions/CI gates over relying on prose alone.
+
+Project-owned executable invariants are registered in `.pact/fitness.yaml` and run with:
+
+```bash
+python scripts/pact/pact.py fitness
+```
+
+PACT defines the execution contract, not the architecture style.
