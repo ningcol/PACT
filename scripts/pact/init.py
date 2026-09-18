@@ -12,7 +12,16 @@ import pathlib
 import shutil
 import sys
 
+from distribution import (
+    github_actions_entry,
+    manifest_record,
+    runtime_version,
+    sha256_file,
+    source_manifest,
+)
+
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2]
+INSTALL_MANIFEST = pathlib.Path(".pact/install.json")
 
 TARGET_AGENTS = """# Project Agent Guide
 
@@ -67,62 +76,6 @@ Honor its language, technical depth, consequence-first translation, and progress
 """
 
 
-def source_manifest() -> list[tuple[pathlib.Path, pathlib.Path]]:
-    pairs: list[tuple[pathlib.Path, pathlib.Path]] = []
-
-    def add(source_rel: str, target_rel: str | None = None) -> None:
-        source = SOURCE_ROOT / source_rel
-        target = pathlib.Path(target_rel or source_rel)
-        if source.exists():
-            pairs.append((source, target))
-
-    for path in sorted((SOURCE_ROOT / "docs" / "governance").glob("*.md")):
-        pairs.append((path, path.relative_to(SOURCE_ROOT)))
-
-    for rel in [
-        "docs/product/README.md",
-        "docs/product/glossary/README.md",
-        "docs/product/domains/README.md",
-        "docs/product/domains/TEMPLATE.md",
-        "docs/product/rules/README.md",
-        "docs/product/rules/TEMPLATE.md",
-        "docs/architecture/README.md",
-        "docs/changes/README.md",
-        "docs/changes/TEMPLATE.md",
-        "docs/changes/active/README.md",
-        "docs/changes/completed/README.md",
-        "docs/changes/abandoned/README.md",
-        "docs/drift/README.md",
-        "docs/drift/TEMPLATE.md",
-        "docs/drift/known/README.md",
-        "docs/drift/resolved/README.md",
-        "docs/drift/accepted/README.md",
-        "docs/initialization.md",
-        "docs/initialization-checklist.md",
-        ".agents/decisions/README.md",
-        ".agents/decisions/TEMPLATE.md",
-        ".agents/decisions/proposed/README.md",
-        ".agents/decisions/implemented/README.md",
-        ".agents/decisions/rejected/README.md",
-        ".agents/decisions/archived/README.md",
-    ]:
-        add(rel)
-
-    for path in sorted((SOURCE_ROOT / ".agents" / "skills").glob("*.md")):
-        pairs.append((path, path.relative_to(SOURCE_ROOT)))
-
-    for path in sorted((SOURCE_ROOT / ".pact" / "schema").glob("*.json")):
-        pairs.append((path, path.relative_to(SOURCE_ROOT)))
-
-    for path in sorted((SOURCE_ROOT / "scripts" / "pact").iterdir()):
-        if path.is_file() and path.suffix in {".py", ".md", ".txt"}:
-            pairs.append((path, path.relative_to(SOURCE_ROOT)))
-
-    add(".pact/config.example.yaml", ".pact/config.yaml")
-    add(".pact/baseline.example.yaml", ".pact/baseline.yaml")
-    return pairs
-
-
 def bootstrap_snippet() -> str:
     return """# PACT Agent Bootstrap
 
@@ -155,15 +108,25 @@ Delete this bootstrap file after the existing `AGENTS.md` has been integrated.
 """
 
 
+def generated_entry(path: str, management: str = "seed") -> dict:
+    return {
+        "source": None,
+        "source_path": None,
+        "target": pathlib.Path(path),
+        "management": management,
+    }
+
+
 def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
-    for source, target_rel in source_manifest():
-        destination = target / target_rel
+    for entry in source_manifest(SOURCE_ROOT):
+        destination = target / entry["target"]
         operations.append({
             "action": "skip" if destination.exists() else "create",
-            "path": target_rel.as_posix(),
-            "source": source.relative_to(SOURCE_ROOT).as_posix(),
+            "path": entry["target"].as_posix(),
+            "source": entry["source_path"],
+            "management": entry["management"],
             "reason": "already exists" if destination.exists() else "missing scaffold",
         })
 
@@ -174,14 +137,16 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
         operations.append({
             "action": "skip" if destination.exists() else "create-generated",
             "path": rel.as_posix(),
-            "source": "<generated>",
+            "source": None,
+            "management": "seed",
             "reason": "preserve existing AGENTS.md",
         })
     else:
         operations.append({
             "action": "create-generated",
             "path": "AGENTS.md",
-            "source": "<generated>",
+            "source": None,
+            "management": "seed",
             "reason": "no existing AGENTS.md",
         })
 
@@ -192,37 +157,96 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
             operations.append({
                 "action": "warn",
                 "path": ".gitignore",
-                "source": "<none>",
+                "source": None,
+                "management": "seed",
                 "reason": "add .pact/cache/ manually; existing .gitignore is never modified",
             })
     else:
         operations.append({
             "action": "create-generated",
             "path": ".gitignore",
-            "source": "<generated>",
+            "source": None,
+            "management": "seed",
             "reason": "ignore derived PACT cache",
         })
 
     if github_actions:
-        source = SOURCE_ROOT / ".pact" / "templates" / "github-actions" / "pact-project-check.yml"
-        rel = pathlib.Path(".github/workflows/pact-project-check.yml")
-        destination = target / rel
-        operations.append({
-            "action": "skip" if destination.exists() else "create",
-            "path": rel.as_posix(),
-            "source": source.relative_to(SOURCE_ROOT).as_posix(),
-            "reason": (
-                "existing PACT workflow preserved"
-                if destination.exists()
-                else "opt-in PACT project CI integration"
-            ),
-        })
+        entry = github_actions_entry(SOURCE_ROOT)
+        if entry:
+            destination = target / entry["target"]
+            operations.append({
+                "action": "skip" if destination.exists() else "create",
+                "path": entry["target"].as_posix(),
+                "source": entry["source_path"],
+                "management": entry["management"],
+                "reason": (
+                    "existing PACT workflow preserved"
+                    if destination.exists()
+                    else "opt-in PACT project CI integration"
+                ),
+            })
 
     return operations
 
 
-def apply(target: pathlib.Path, operations: list[dict]) -> None:
+def operation_entry(op: dict) -> dict:
+    if op["source"]:
+        source = SOURCE_ROOT / op["source"]
+        return {
+            "source": source,
+            "source_path": op["source"],
+            "target": pathlib.Path(op["path"]),
+            "management": op["management"],
+        }
+    return generated_entry(op["path"], management=op["management"])
+
+
+def load_install_manifest(target: pathlib.Path) -> dict | None:
+    path = target / INSTALL_MANIFEST
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_install_manifest(
+    target: pathlib.Path,
+    operations: list[dict],
+    created_paths: set[str],
+) -> None:
+    existing = load_install_manifest(target)
+    files = dict(existing.get("files", {})) if existing else {}
+
+    for op in operations:
+        if op["path"] not in created_paths:
+            continue
+        destination = target / op["path"]
+        if not destination.is_file():
+            continue
+        entry = operation_entry(op)
+        files[op["path"]] = manifest_record(entry, destination)
+
+    manifest = {
+        "format_version": 1,
+        "runtime_version": (
+            existing.get("runtime_version")
+            if existing
+            else runtime_version(SOURCE_ROOT)
+        ),
+        "files": files,
+    }
+
+    path = target / INSTALL_MANIFEST
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
     target.mkdir(parents=True, exist_ok=True)
+    created: set[str] = set()
 
     for op in operations:
         if not op["action"].startswith("create"):
@@ -233,7 +257,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> None:
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-        if op["source"] != "<generated>":
+        if op["source"]:
             source = SOURCE_ROOT / op["source"]
             shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
@@ -242,6 +266,13 @@ def apply(target: pathlib.Path, operations: list[dict]) -> None:
             destination.write_text(bootstrap_snippet(), encoding="utf-8")
         elif op["path"] == ".gitignore":
             destination.write_text(".pact/cache/\n", encoding="utf-8")
+        else:
+            continue
+
+        created.add(op["path"])
+
+    write_install_manifest(target, operations, created)
+    return created
 
 
 def main() -> int:
@@ -262,16 +293,24 @@ def main() -> int:
         return 2
 
     operations = plan(target, github_actions=args.github_actions)
+    created_paths: set[str] = set()
     if args.apply:
-        apply(target, operations)
+        created_paths = apply(target, operations)
 
     summary = {
         "target": str(target),
         "mode": "apply" if args.apply else "dry-run",
+        "source_runtime_version": runtime_version(SOURCE_ROOT),
         "github_actions": args.github_actions,
         "create": len([o for o in operations if o["action"].startswith("create")]),
         "skip": len([o for o in operations if o["action"] == "skip"]),
         "warn": len([o for o in operations if o["action"] == "warn"]),
+        "created_paths": sorted(created_paths),
+        "install_manifest": (
+            str(target / INSTALL_MANIFEST)
+            if args.apply
+            else None
+        ),
         "operations": operations,
     }
 
@@ -279,9 +318,12 @@ def main() -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
         print(f"PACT init: {summary['mode']} -> {target}")
+        print(f"Source runtime: {summary['source_runtime_version']}")
         for op in operations:
             print(f"- [{op['action'].upper()}] {op['path']}: {op['reason']}")
-        if not args.apply:
+        if args.apply:
+            print(f"Install manifest: {target / INSTALL_MANIFEST}")
+        else:
             print("No files were written. Re-run with --apply to create missing scaffold.")
 
     return 0
