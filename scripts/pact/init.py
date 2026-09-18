@@ -14,6 +14,7 @@ import sys
 
 from distribution import (
     github_actions_entry,
+    legacy_seed_target,
     manifest_record,
     runtime_version,
     sha256_file,
@@ -122,12 +123,25 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
 
     for entry in source_manifest(SOURCE_ROOT):
         destination = target / entry["target"]
+        legacy_rel = legacy_seed_target(entry["target"].as_posix())
+        legacy_destination = target / legacy_rel if legacy_rel else None
+
+        if destination.exists():
+            action = "skip"
+            reason = "already exists"
+        elif legacy_destination is not None and legacy_destination.exists():
+            action = "skip"
+            reason = f"legacy project seed preserved at {legacy_rel}"
+        else:
+            action = "create"
+            reason = "missing scaffold"
+
         operations.append({
-            "action": "skip" if destination.exists() else "create",
+            "action": action,
             "path": entry["target"].as_posix(),
             "source": entry["source_path"],
             "management": entry["management"],
-            "reason": "already exists" if destination.exists() else "missing scaffold",
+            "reason": reason,
         })
 
     agents = target / "AGENTS.md"
@@ -293,6 +307,20 @@ def main() -> int:
         return 2
 
     operations = plan(target, github_actions=args.github_actions)
+
+    existing_manifest = load_install_manifest(target)
+    if args.apply and existing_manifest:
+        installed_version = existing_manifest.get("runtime_version", "unknown")
+        source_version = runtime_version(SOURCE_ROOT)
+        if installed_version != source_version:
+            print(
+                "PACT init: this project is already tracked by a different PACT "
+                f"runtime ({installed_version} != {source_version}). "
+                "Use 'pact upgrade --target ...' instead of init.",
+                file=sys.stderr,
+            )
+            return 2
+
     created_paths: set[str] = set()
     if args.apply:
         created_paths = apply(target, operations)
