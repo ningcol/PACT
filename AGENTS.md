@@ -19,7 +19,7 @@ PACT is the project-level AI control plane for this repository.
 - Current architecture: `docs/architecture/`
 - Durable decision rationale: `.agents/decisions/`
 - Active/completed change intent: `docs/changes/`
-- Known unresolved drift: `docs/drift/known.md`
+- Drift lifecycle: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
 - System design: `docs/design/system-overview.md`
 
