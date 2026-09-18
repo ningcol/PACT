@@ -15,6 +15,7 @@ from distribution import (
     github_actions_entry,
     legacy_seed_target,
     manifest_record,
+    minimal_source_manifest,
     runtime_version,
     sha256_file,
     source_manifest,
@@ -52,7 +53,13 @@ def load_manifest(target: pathlib.Path) -> dict:
 
 
 def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: dict) -> list[dict]:
-    entries = source_manifest(source_root)
+    # Fresh v0.4+ installs explicitly opt into the minimal profile. Legacy/full
+    # manifests retain their historical desired surface so upgrading cannot
+    # silently reinterpret project layout or remove compatibility files.
+    if manifest.get("install_profile") == "minimal":
+        entries = minimal_source_manifest(source_root)
+    else:
+        entries = source_manifest(source_root)
 
     workflow_path = ".github/workflows/pact-project-check.yml"
     tracked = manifest.get("files", {}).get(workflow_path)
@@ -529,6 +536,9 @@ def apply_upgrade(
                 "runtime_version": plan["to_runtime_version"],
                 "files": files,
             }
+            install_profile = manifest.get("install_profile")
+            if install_profile:
+                new_manifest["install_profile"] = install_profile
 
             validate_new_manifest(target, new_manifest, touched)
 
