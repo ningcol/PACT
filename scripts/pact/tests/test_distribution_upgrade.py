@@ -282,6 +282,17 @@ class DistributionUpgradeTests(unittest.TestCase):
         kinds = {notice["kind"] for notice in data["notices"]}
         self.assertIn("obsolete-framework-local-modification", kinds)
 
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertNotIn("scripts/pact/README.md", manifest["files"])
+
+        doctor = self.run_target("doctor", "--strict")
+        self.assertNotIn(
+            "framework file modified/corrupt: scripts/pact/README.md",
+            doctor.stdout + doctor.stderr,
+        )
+
     def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()
 
