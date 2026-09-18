@@ -30,6 +30,19 @@ class FreshnessAndRiskTests(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         return path
 
+    def init_git(self) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "pact-scale@example.invalid"],
+            cwd=self.root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "PACT Scale Test"],
+            cwd=self.root,
+            check=True,
+        )
+
     def run_map(self, output: pathlib.Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -62,10 +75,13 @@ class FreshnessAndRiskTests(unittest.TestCase):
 
     def test_project_map_reuses_fresh_cache_and_rebuilds_after_change(self) -> None:
         self.write("README.md", "# Alpha\n")
+        self.write("docs/guide.md", "# Guide\n")
         output = self.root / ".pact/cache/project-map.json"
 
         first = self.run_map(output)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn("parsed=2", first.stdout)
+        self.assertIn("reused=0", first.stdout)
         first_data = json.loads(output.read_text(encoding="utf-8"))
 
         second = self.run_map(output)
@@ -78,9 +94,11 @@ class FreshnessAndRiskTests(unittest.TestCase):
             second_data["source_fingerprint"],
         )
 
-        self.write("README.md", "# Beta\n")
+        self.write("README.md", "# Beta changed length\n")
         third = self.run_map(output)
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertIn("parsed=1", third.stdout)
+        self.assertIn("reused=1", third.stdout)
         third_data = json.loads(output.read_text(encoding="utf-8"))
         self.assertNotEqual(
             first_data["source_fingerprint"],
@@ -94,6 +112,8 @@ class FreshnessAndRiskTests(unittest.TestCase):
 
         first = self.run_code_map(output)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn("parsed=2", first.stdout)
+        self.assertIn("reused=0", first.stdout)
         first_data = json.loads(output.read_text(encoding="utf-8"))
 
         second = self.run_code_map(output)
@@ -105,14 +125,46 @@ class FreshnessAndRiskTests(unittest.TestCase):
             second_data["source_fingerprint"],
         )
 
-        self.write("src/b.ts", "export const value = 2;\n")
+        self.write("src/b.ts", "export const value = 200;\n")
         third = self.run_code_map(output)
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertIn("parsed=1", third.stdout)
+        self.assertIn("reused=1", third.stdout)
         third_data = json.loads(output.read_text(encoding="utf-8"))
         self.assertNotEqual(
             first_data["source_fingerprint"],
             third_data["source_fingerprint"],
         )
+
+
+    def test_git_aware_enumeration_respects_gitignore_and_keeps_visible_untracked(self) -> None:
+        self.init_git()
+        self.write(".gitignore", "ignored-custom/\n")
+        self.write("src/tracked.ts", "export const tracked = 1;\n")
+        subprocess.run(
+            ["git", "add", ".gitignore", "src/tracked.ts"],
+            cwd=self.root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=self.root,
+            check=True,
+        )
+
+        self.write("src/visible-untracked.ts", "export const visible = 1;\n")
+        self.write("ignored-custom/hidden.ts", "export const hidden = 1;\n")
+
+        output = self.root / ".pact/cache/code-map.json"
+        result = self.run_code_map(output)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("enumeration=git", result.stdout)
+
+        data = json.loads(output.read_text(encoding="utf-8"))
+        paths = {item["path"] for item in data["files"]}
+        self.assertIn("src/tracked.ts", paths)
+        self.assertIn("src/visible-untracked.ts", paths)
+        self.assertNotIn("ignored-custom/hidden.ts", paths)
 
     def run_context(self, risk: str) -> dict:
         result = subprocess.run(
