@@ -15,9 +15,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install PACT runtime dependencies
-        run: python -m pip install -r scripts/pact/requirements.txt
-
       - name: Validate PACT foundation
         run: python scripts/pact/pact.py doctor --strict
 
