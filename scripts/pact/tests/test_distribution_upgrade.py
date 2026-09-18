@@ -53,6 +53,17 @@ class DistributionUpgradeTests(unittest.TestCase):
             env=env,
         )
 
+    def run_target(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(self.target / "pact.py"),
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
     def write_source(self, relative: str, content: str) -> None:
         path = self.new_source / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +177,17 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual(version_path.read_bytes(), original_version)
         self.assertEqual(readme_path.read_bytes(), original_readme)
         self.assertEqual(manifest_path.read_bytes(), original_manifest)
+
+
+    def test_doctor_detects_modified_framework_file(self) -> None:
+        self.scaffold()
+
+        runtime_readme = self.target / "scripts" / "pact" / "README.md"
+        runtime_readme.write_text("# MODIFIED FRAMEWORK\n", encoding="utf-8")
+
+        result = self.run_target("doctor", "--strict")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("framework file modified/corrupt", result.stdout + result.stderr)
 
     def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()
