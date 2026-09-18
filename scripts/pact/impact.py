@@ -10,7 +10,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
@@ -49,36 +48,41 @@ def changed_from_git(base: str, head: str) -> list[str]:
 
 
 def build_map() -> dict:
-    with tempfile.TemporaryDirectory(prefix="pact-impact-") as tmp:
-        output = pathlib.Path(tmp) / "project-map.json"
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "pact" / "map.py"), "--output", str(output)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "map failed")
-        return json.loads(output.read_text(encoding="utf-8"))
+    output = ROOT / ".pact" / "cache" / "project-map.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "map.py"),
+            "--output",
+            str(output),
+            "--ensure",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "map failed")
+    return json.loads(output.read_text(encoding="utf-8"))
 
 
 def build_code_map() -> dict:
-    with tempfile.TemporaryDirectory(prefix="pact-code-impact-") as tmp:
-        output = pathlib.Path(tmp) / "code-map.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts" / "pact" / "code_map.py"),
-                "--output",
-                str(output),
-            ],
-            capture_output=True,
-            text=True,
+    output = ROOT / ".pact" / "cache" / "code-map.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "code_map.py"),
+            "--output",
+            str(output),
+            "--ensure",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip() or result.stdout.strip() or "code-map failed"
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                result.stderr.strip() or result.stdout.strip() or "code-map failed"
-            )
-        return json.loads(output.read_text(encoding="utf-8"))
+    return json.loads(output.read_text(encoding="utf-8"))
 
 
 def read_text(path: str) -> str:
