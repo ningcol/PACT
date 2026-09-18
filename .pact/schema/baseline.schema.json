@@ -10,6 +10,7 @@
     "reviews": {
       "type": "object",
       "required": [
+        "agent_bootstrap",
         "vocabulary",
         "product_truth",
         "architecture",
@@ -20,6 +21,7 @@
       ],
       "additionalProperties": false,
       "properties": {
+        "agent_bootstrap": { "$ref": "#/$defs/reviewState" },
         "vocabulary": { "$ref": "#/$defs/reviewState" },
         "product_truth": { "$ref": "#/$defs/reviewState" },
         "architecture": { "$ref": "#/$defs/reviewState" },
