@@ -259,14 +259,76 @@ class DistributionUpgradeTests(unittest.TestCase):
         data = json.loads(result.stdout)
 
         self.assertTrue((self.target / ".pact" / "pact.pyz").is_file())
-        self.assertFalse((self.target / "scripts" / "pact").exists())
-        self.assertGreaterEqual(data.get("removed_files", 0), 3)
+        legacy_entry = self.target / "scripts" / "pact" / "pact.py"
+        self.assertTrue(legacy_entry.is_file())
+        self.assertFalse((self.target / "scripts" / "pact" / "runtime_exec.py").exists())
+        self.assertFalse((self.target / "scripts" / "pact" / "README.md").exists())
+        self.assertGreaterEqual(data.get("removed_files", 0), 2)
 
         manifest = json.loads(
             (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
         )
         self.assertIn(".pact/pact.pyz", manifest["files"])
-        self.assertNotIn("scripts/pact/pact.py", manifest["files"])
+        self.assertIn("scripts/pact/pact.py", manifest["files"])
+
+        legacy_status = subprocess.run(
+            [sys.executable, str(legacy_entry), "status", "--json"],
+            cwd=self.target,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            legacy_status.returncode,
+            0,
+            legacy_status.stdout + legacy_status.stderr,
+        )
+
+    def test_legacy_runtime_removal_is_rolled_back_on_late_failure(self) -> None:
+        original_manifest = self.make_legacy_runtime_install()
+        legacy_runtime = self.target / "scripts" / "pact" / "runtime_exec.py"
+        original_runtime = legacy_runtime.read_bytes()
+        original_manifest_bytes = (
+            self.target / ".pact" / "install.json"
+        ).read_bytes()
+
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
+
+        planned = self.run_upgrade("--json")
+        self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+        plan = json.loads(planned.stdout)
+        mutating = [
+            item
+            for item in plan["operations"]
+            if item["action"]
+            in {
+                "create-framework",
+                "update-framework",
+                "create-seed",
+                "remove-framework",
+            }
+        ]
+        first_removal = next(
+            index
+            for index, item in enumerate(mutating, start=1)
+            if item["action"] == "remove-framework"
+            and item["path"] == "scripts/pact/runtime_exec.py"
+        )
+
+        env = os.environ.copy()
+        env["PACT_TEST_FAIL_AFTER_REPLACE"] = str(first_removal)
+        result = self.run_upgrade("--apply", "--json", env=env)
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertFalse(data["applied"])
+        self.assertTrue(data["rolled_back"])
+        self.assertTrue(legacy_runtime.is_file())
+        self.assertEqual(legacy_runtime.read_bytes(), original_runtime)
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(),
+            original_manifest_bytes,
+        )
+        self.assertFalse((self.target / ".pact" / "pact.pyz").exists())
 
     def test_modified_obsolete_runtime_file_is_preserved(self) -> None:
         self.make_legacy_runtime_install(modify_one=True)
@@ -291,6 +353,31 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertNotIn(
             "framework file modified/corrupt: scripts/pact/README.md",
             doctor.stdout + doctor.stderr,
+        )
+
+    def test_locally_modified_legacy_dispatcher_blocks_compact_migration(self) -> None:
+        self.make_legacy_runtime_install()
+        dispatcher = self.target / "scripts" / "pact" / "pact.py"
+        dispatcher.write_text(
+            dispatcher.read_text(encoding="utf-8") + "\n# LOCAL DISPATCHER CHANGE\n",
+            encoding="utf-8",
+        )
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
+
+        result = self.run_upgrade("--apply", "--json")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertFalse(data["applied"])
+        self.assertTrue(
+            any(
+                conflict["path"] == "scripts/pact/pact.py"
+                for conflict in data["conflicts"]
+            )
+        )
+        self.assertFalse((self.target / ".pact" / "pact.pyz").exists())
+        self.assertIn(
+            "LOCAL DISPATCHER CHANGE",
+            dispatcher.read_text(encoding="utf-8"),
         )
 
     def test_project_toml_seed_is_never_overwritten(self) -> None:
