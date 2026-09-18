@@ -121,11 +121,12 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
         "management": "framework",
     })
 
-    add(
-        ".pact/templates/compat/pact.py",
-        "scripts/pact/pact.py",
-        management="framework",
-    )
+    for source_rel, target_rel in [
+        (".pact/templates/compat/pact.py", "scripts/pact/pact.py"),
+        (".pact/templates/compat/converge.py", "scripts/pact/converge.py"),
+        (".pact/templates/compat/report.py", "scripts/pact/report.py"),
+    ]:
+        add(source_rel, target_rel, management="framework")
 
     for source_rel, target_rel in SEED_SOURCE_MAPPINGS:
         add(source_rel, target_rel, management="seed")
