@@ -9,8 +9,16 @@ on:
       - "scripts/pact/context.py"
       - "scripts/pact/discover.py"
       - "scripts/pact/code_map.py"
+      - "scripts/pact/map.py"
+      - "scripts/pact/repository_files.py"
+      - "scripts/pact/parse_cache.py"
+      - "scripts/pact/distribution.py"
       - "scripts/pact/task.py"
+      - "scripts/pact/task_contract.py"
       - "scripts/pact/eval.py"
+      - ".pact/schema/context-envelope.schema.json"
+      - ".pact/schema/code-map.schema.json"
+      - ".pact/schema/task-contract.schema.json"
 
 jobs:
   historical-retrieval:
