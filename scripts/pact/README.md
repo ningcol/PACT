@@ -56,6 +56,11 @@ python scripts/pact/pact.py context "fix province switch" \
   --success "Displayed data follows the selected province" \
   --risk medium
 
+python scripts/pact/pact.py context "upgrade runtime" \
+  --success "Upgrade behavior remains safe" \
+  --risk medium \
+  --code
+
 python scripts/pact/pact.py impact --base main --json
 ```
 
@@ -75,7 +80,7 @@ Unsupported project-specific aliases or framework magic remain unresolved rather
 
 - `discover`: locate relevant project artifacts.
 - `explain`: organize those artifacts into Product Truth / Architecture / Decision / Change / Drift evidence for an explanation.
-- `context`: build a task-oriented candidate context envelope for implementation work.
+- `context`: build a task-oriented candidate context envelope for implementation work; `--code` adds generated code candidates when useful.
 
 `explain` prepares evidence. An Agent still performs the semantic, owner-readable explanation and must inspect code/runtime/Git when the evidence packet says that is necessary.
 
