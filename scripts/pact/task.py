@@ -41,6 +41,21 @@ def append_jsonl(path: pathlib.Path, data: dict) -> None:
         handle.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 
+def completion_blockers(errors: list[str]) -> list[str]:
+    text = "\n".join(str(value) for value in errors)
+    blockers: list[str] = []
+    checks = [
+        ("stale-workspace", ("stale pact-run receipt", "verified workspace")),
+        ("stale-task-contract", ("task_contract_sha256", "Task Contract")),
+        ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
+        ("ci-required", ("CI-backed Evidence",)),
+    ]
+    for code, needles in checks:
+        if any(needle in text for needle in needles):
+            blockers.append(code)
+    return blockers
+
+
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True)
 
@@ -248,6 +263,9 @@ def finish(args) -> int:
         "result_available": output is not None,
         "complete": bool(output.get("complete")) if output is not None else False,
         "errors": output.get("errors", []) if output is not None else [],
+        "blockers": completion_blockers(
+            output.get("errors", []) if output is not None else []
+        ),
         "policy_gaps": output.get("policy_gaps", []) if output is not None else [],
         "acceptance": output.get("acceptance") if output is not None else None,
     }
