@@ -35,6 +35,12 @@ def write_json(path: pathlib.Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def append_jsonl(path: pathlib.Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True)
 
@@ -234,6 +240,18 @@ def finish(args) -> int:
             output = json.loads(completed.stdout)
         except json.JSONDecodeError:
             pass
+
+    attempt = {
+        "version": 1,
+        "attempted_at": datetime.now(timezone.utc).isoformat(),
+        "returncode": int(completed.returncode),
+        "result_available": output is not None,
+        "complete": bool(output.get("complete")) if output is not None else False,
+        "errors": output.get("errors", []) if output is not None else [],
+        "policy_gaps": output.get("policy_gaps", []) if output is not None else [],
+        "acceptance": output.get("acceptance") if output is not None else None,
+    }
+    append_jsonl(task_dir / "completion-attempts.jsonl", attempt)
 
     if completed.returncode == 0 and manifest is not None:
         manifest["status"] = "completed"
