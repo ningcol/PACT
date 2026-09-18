@@ -24,7 +24,12 @@ from schema_validate import load_schema, validate_instance
 
 SCRIPT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 INSTALL_MANIFEST = pathlib.Path(".pact/install.json")
-MUTATING_ACTIONS = {"create-framework", "update-framework", "create-seed"}
+MUTATING_ACTIONS = {
+    "create-framework",
+    "update-framework",
+    "create-seed",
+    "remove-framework",
+}
 
 
 class UpgradeApplyError(RuntimeError):
@@ -209,13 +214,50 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
 
     desired_paths = set(desired_by_path)
     for path, record in sorted(tracked.items()):
-        if record.get("management") == "framework" and path not in desired_paths:
+        if record.get("management") != "framework" or path in desired_paths:
+            continue
+
+        destination = target / path
+        if not destination.exists():
+            operations.append({
+                "action": "remove-framework",
+                "path": path,
+                "reason": "obsolete tracked framework path is already absent",
+                "already_absent": True,
+            })
+            continue
+
+        if not destination.is_file():
             notices.append({
-                "kind": "obsolete-framework-file",
+                "kind": "obsolete-framework-nonfile",
                 "path": path,
                 "reason": (
-                    "tracked framework file no longer exists in the new source; "
-                    "never deleted automatically"
+                    "obsolete tracked framework path is no longer a regular file; "
+                    "preserved for manual review"
+                ),
+            })
+            continue
+
+        current_sha = sha256_file(destination)
+        installed_sha = record.get("installed_sha256")
+        if isinstance(installed_sha, str) and current_sha == installed_sha:
+            operations.append({
+                "action": "remove-framework",
+                "path": path,
+                "reason": (
+                    "obsolete framework file is unchanged since prior install "
+                    "and can be removed safely"
+                ),
+                "already_absent": False,
+                "installed_sha256": installed_sha,
+            })
+        else:
+            notices.append({
+                "kind": "obsolete-framework-local-modification",
+                "path": path,
+                "reason": (
+                    "obsolete framework file was modified after install; "
+                    "preserved instead of deleting automatically"
                 ),
             })
 
@@ -330,6 +372,8 @@ def apply_upgrade(
         # Stage and validate every source before target mutation begins.
         staged: dict[str, pathlib.Path] = {}
         for op in mutating_ops:
+            if op["action"] == "remove-framework":
+                continue
             path = op["path"]
             entry = desired[path]
             staged_path = stage_root / pathlib.Path(path)
@@ -364,30 +408,43 @@ def apply_upgrade(
         fail_after = int(fail_after_raw) if fail_after_raw else None
 
         try:
+            removed: list[str] = []
             for op in mutating_ops:
                 path = op["path"]
                 destination = safe_relative_target(target, path)
-                destination.parent.mkdir(parents=True, exist_ok=True)
 
-                temp_destination = destination.parent / (
-                    f".{destination.name}.pact-upgrade-tmp"
-                )
-                if temp_destination.exists():
-                    temp_destination.unlink()
-                shutil.copy2(staged[path], temp_destination)
-                os.replace(temp_destination, destination)
+                if op["action"] == "remove-framework":
+                    if destination.is_file():
+                        destination.unlink()
+                    replaced.append(path)
+                    removed.append(path)
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    temp_destination = destination.parent / (
+                        f".{destination.name}.pact-upgrade-tmp"
+                    )
+                    if temp_destination.exists():
+                        temp_destination.unlink()
+                    shutil.copy2(staged[path], temp_destination)
+                    os.replace(temp_destination, destination)
 
-                replaced.append(path)
-                if not original_exists[path]:
-                    created.append(path)
+                    replaced.append(path)
+                    if not original_exists[path]:
+                        created.append(path)
 
                 if fail_after is not None and len(replaced) >= fail_after:
                     raise RuntimeError(
                         f"simulated upgrade failure after {len(replaced)} replacement(s)"
                     )
 
+            for path in removed:
+                files.pop(path, None)
+
             touched = []
-            for op in [*mutating_ops, *refresh_ops]:
+            for op in [
+                *[item for item in mutating_ops if item["action"] != "remove-framework"],
+                *refresh_ops,
+            ]:
                 path = op["path"]
                 entry = desired[path]
                 destination = safe_relative_target(target, path)
@@ -412,10 +469,16 @@ def apply_upgrade(
 
             # Re-validate after committing manifest.
             validate_new_manifest(target, new_manifest, touched)
+
+            for path in removed:
+                destination = safe_relative_target(target, path)
+                cleanup_empty_parents(destination.parent, target)
+
             return {
                 "rolled_back": False,
                 "replaced_files": len(replaced),
                 "created_files": len(created),
+                "removed_files": len(removed),
             }
 
         except Exception as exc:
