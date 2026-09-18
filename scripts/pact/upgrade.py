@@ -16,6 +16,7 @@ import sys
 
 from distribution import (
     github_actions_entry,
+    legacy_seed_target,
     manifest_record,
     runtime_version,
     sha256_file,
@@ -68,6 +69,17 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
         record = tracked.get(path)
 
         if entry["management"] == "seed":
+            legacy_rel = legacy_seed_target(path)
+            legacy_destination = target / legacy_rel if legacy_rel else None
+
+            if not destination.exists() and legacy_destination is not None and legacy_destination.exists():
+                notices.append({
+                    "kind": "legacy-seed-preserved",
+                    "path": path,
+                    "reason": f"legacy project-owned seed remains at {legacy_rel}; no default TOML replacement created",
+                })
+                continue
+
             if not destination.exists():
                 operations.append({
                     "action": "create-seed",
