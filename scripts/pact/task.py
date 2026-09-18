@@ -270,7 +270,7 @@ def main() -> int:
     code.add_argument("--code", dest="code", action="store_true")
     code.add_argument("--no-code", dest="code", action="store_false")
     prep.set_defaults(code=None)
-    prep.add_argument("--json")
+    prep.add_argument("--json", action="store_true")
 
     finish_parser = sub.add_parser("finish", help="validate an existing task completion bundle")
     finish_parser.add_argument("task_id")
@@ -285,8 +285,6 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "prepare":
-        # argparse stores --json as a string when no action is specified; normalize.
-        args.json = bool(args.json)
         if args.files and args.base:
             parser.error("--files and --base are mutually exclusive")
         return prepare(args)
