@@ -19,6 +19,7 @@ doctor     deterministic PACT foundation health
 readiness  explicit brownfield baseline readiness
 audit      deterministic repository health inventory
 owner      validate and expose project Owner Profile
+risk       show core low/medium/high rigor policy
 fitness    run project-owned executable architecture invariants
 map        rebuild disposable project map
 code-map   rebuild disposable local code relationship map
@@ -47,6 +48,7 @@ python scripts/pact/pact.py doctor
 python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit --json
 python scripts/pact/pact.py owner --json
+python scripts/pact/pact.py risk high --json
 python scripts/pact/pact.py fitness
 
 python scripts/pact/pact.py discover "batch state"
@@ -85,9 +87,19 @@ Code relationships are generated and disposable.
 
 `discover --code` searches code paths/symbols/import text and adds one-hop import neighbors.
 
-`impact --code` adds import-neighbor candidates for changed files.
+`impact` and `context` follow the core risk profile by default:
+- low: no code expansion unless explicitly requested;
+- medium/high: code-aware expansion enabled unless explicitly disabled.
 
-A resolved import is a structural fact; behavioral impact remains a candidate requiring review.
+Generated relationships carry confidence:
+- `direct`: direct lexical code match;
+- `relative-resolved`: relative JS/TS/Vue path resolved to a repository file;
+- `ast-resolved`: Python relative import resolved from AST/package position;
+- `heuristic`: repository-local Python absolute-import match whose runtime import resolution may differ.
+
+Behavioral impact remains a candidate requiring review.
+
+Project/Code maps use source fingerprints. A cached map is reused only while its source set is fresh; otherwise it is rebuilt automatically.
 
 Unsupported project-specific aliases or framework magic remain unresolved rather than guessed.
 
