@@ -254,10 +254,13 @@ def finish(args) -> int:
     if manifest is not None and manifest.get("contract"):
         command.extend(["--contract", str(ROOT / manifest["contract"])])
 
-    if manifest is not None and manifest.get("context"):
+    if (
+        manifest is not None
+        and manifest.get("context")
+        and manifest.get("context_sha256")
+    ):
         command.extend(["--context", str(ROOT / manifest["context"])])
-        if manifest.get("context_sha256"):
-            command.extend(["--context-sha256", manifest["context_sha256"]])
+        command.extend(["--context-sha256", manifest["context_sha256"]])
 
     completed = run(command)
     output = None
