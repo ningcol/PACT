@@ -31,7 +31,7 @@ class InitReadinessTests(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                str(self.target / "scripts" / "pact" / "pact.py"),
+                str(self.target / "pact.py"),
                 command,
                 *args,
             ],
