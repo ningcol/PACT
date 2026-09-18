@@ -113,14 +113,6 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
             "management": "seed",
         })
 
-    for path in sorted((source_root / ".pact" / "schema").glob("*.json")):
-        entries.append({
-            "source": path,
-            "source_path": path.relative_to(source_root).as_posix(),
-            "target": path.relative_to(source_root),
-            "management": "framework",
-        })
-
     runtime_bundle = ensure_runtime_bundle(source_root)
     entries.append({
         "source": runtime_bundle,
