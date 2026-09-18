@@ -12,6 +12,7 @@ import tempfile
 
 from distribution import sha256_file
 from schema_validate import load_schema, validate_instance
+from runtime_exec import runtime_command
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -119,11 +120,7 @@ def main() -> int:
             )
         )
 
-    owner_cmd = [
-        sys.executable,
-        str(ROOT / "scripts" / "pact" / "owner.py"),
-        "--json",
-    ]
+    owner_cmd = runtime_command("owner", "--json")
     if args.strict:
         owner_cmd.append("--strict")
 
@@ -151,12 +148,7 @@ def main() -> int:
 
     checks.append(install_provenance_check(args.strict))
 
-    fitness_cmd = [
-        sys.executable,
-        str(ROOT / "scripts" / "pact" / "fitness.py"),
-        "--json",
-        "--validate-only",
-    ]
+    fitness_cmd = runtime_command("fitness", "--json", "--validate-only")
     if args.strict:
         fitness_cmd.append("--strict")
 
@@ -188,7 +180,7 @@ def main() -> int:
             )
 
     check_run = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "pact" / "check.py")],
+        runtime_command("check"),
         capture_output=True,
         text=True,
     )
@@ -204,12 +196,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="pact-doctor-") as tmp:
             output = pathlib.Path(tmp) / "project-map.json"
             map_run = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "pact" / "map.py"),
-                    "--output",
-                    str(output),
-                ],
+                runtime_command("map", "--output", str(output)),
                 capture_output=True,
                 text=True,
             )
