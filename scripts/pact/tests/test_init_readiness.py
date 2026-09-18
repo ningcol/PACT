@@ -51,6 +51,9 @@ class InitReadinessTests(unittest.TestCase):
         self.assertTrue((self.target / ".pact" / "baseline.toml").exists())
         self.assertTrue((self.target / ".pact" / "fitness.toml").exists())
         self.assertFalse((self.target / ".pact" / "config.yaml").exists())
+        self.assertFalse((self.target / "docs" / "product").exists())
+        self.assertFalse((self.target / "docs" / "architecture").exists())
+        self.assertFalse((self.target / ".agents" / "decisions").exists())
 
         readiness = self.run_target("readiness", "--json")
         self.assertEqual(readiness.returncode, 0, readiness.stdout + readiness.stderr)
@@ -81,8 +84,9 @@ class InitReadinessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(agents.read_text(encoding="utf-8"), "EXISTING RULES\n")
         self.assertTrue(
-            (self.target / "docs" / "governance" / "PACT_AGENT_BOOTSTRAP.md").exists()
+            (self.target / ".pact" / "AGENT_BOOTSTRAP.md").exists()
         )
+        self.assertFalse((self.target / "docs" / "governance").exists())
 
         baseline = self.target / ".pact" / "baseline.toml"
         text = baseline.read_text(encoding="utf-8")
@@ -96,6 +100,10 @@ class InitReadinessTests(unittest.TestCase):
         content = workflow.read_text(encoding="utf-8")
         self.assertIn("doctor --strict", content)
         self.assertNotIn("pip install", content)
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertLessEqual(len(manifest["files"]), 9)
 
     def test_existing_pact_workflow_is_never_overwritten(self) -> None:
         workflow = self.target / ".github" / "workflows" / "pact-project-check.yml"
