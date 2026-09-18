@@ -20,55 +20,172 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
-    "status": { "enum": ["candidate", "sufficient"] },
-    "task": { "type": "string", "minLength": 1 },
-    "goal": { "type": "string", "minLength": 1 },
-    "observable_success": { "type": "string", "minLength": 1 },
-    "risk_level": { "enum": ["low", "medium", "high"] },
-    "discovery_query": { "type": "string", "minLength": 1 },
+    "version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "candidate",
+        "sufficient"
+      ]
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observable_success": {
+      "type": "string",
+      "minLength": 1
+    },
+    "risk_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "discovery_query": {
+      "type": "string",
+      "minLength": 1
+    },
     "domains": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "artifacts": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "artifact_type", "title", "score", "reasons"],
+        "required": [
+          "path",
+          "artifact_type",
+          "title",
+          "score",
+          "reasons"
+        ],
         "additionalProperties": false,
         "properties": {
-          "path": { "type": "string", "minLength": 1 },
-          "id": { "type": ["string", "null"] },
-          "artifact_type": { "type": "string", "minLength": 1 },
-          "title": { "type": "string", "minLength": 1 },
-          "score": { "type": "integer", "minimum": 0 },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artifact_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0
+          },
           "reasons": {
             "type": "array",
-            "items": { "type": "string", "minLength": 1 }
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
     },
     "applicable_rules": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "decisions": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "verification_targets": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "known_unknowns": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "code_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "language",
+          "is_test",
+          "symbols",
+          "score",
+          "reasons",
+          "relation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "is_test": {
+            "type": "boolean"
+          },
+          "symbols": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "relation": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }
