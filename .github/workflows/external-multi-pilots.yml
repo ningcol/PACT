@@ -1,16 +1,34 @@
 name: External Multi-Repo Pilots
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/external-multi-pilots.yml"
   workflow_dispatch:
+    inputs:
+      pact_ref:
+        description: "PACT tag, commit, or branch to test"
+        required: true
+        default: "main"
+        type: string
+      flask_ref:
+        description: "pallets/flask commit/ref"
+        required: true
+        default: "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35"
+        type: string
+      pinia_ref:
+        description: "vuejs/pinia commit/ref"
+        required: true
+        default: "f4e0cb7a8193f564c27f6527b3f954e114a7534c"
+        type: string
+      bubbletea_ref:
+        description: "charmbracelet/bubbletea commit/ref"
+        required: true
+        default: "657aaae216e3f87df09b60959a9fe5de7b2ca419"
+        type: string
 
 permissions:
   contents: read
 
 env:
-  PACT_REF: f843ca2f9c7341d6e41621d256c012ac160213c9
+  PACT_REF: ${{ inputs.pact_ref }}
 
 jobs:
   flask:
@@ -19,7 +37,7 @@ jobs:
     timeout-minutes: 20
     env:
       TARGET_DIR: /tmp/flask
-      TARGET_REF: d73fa1cdcbd8b1465c151db8924ba58b1dd14e35
+      TARGET_REF: ${{ inputs.flask_ref }}
       TASK_ID: EXT-FLASK-001
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +170,7 @@ jobs:
     timeout-minutes: 25
     env:
       TARGET_DIR: /tmp/pinia
-      TARGET_REF: f4e0cb7a8193f564c27f6527b3f954e114a7534c
+      TARGET_REF: ${{ inputs.pinia_ref }}
       TASK_ID: EXT-PINIA-001
     steps:
       - uses: actions/checkout@v4
@@ -294,7 +312,7 @@ jobs:
     timeout-minutes: 20
     env:
       TARGET_DIR: /tmp/bubbletea
-      TARGET_REF: 657aaae216e3f87df09b60959a9fe5de7b2ca419
+      TARGET_REF: ${{ inputs.bubbletea_ref }}
       TASK_ID: EXT-BUBBLETEA-001
     steps:
       - uses: actions/checkout@v4
