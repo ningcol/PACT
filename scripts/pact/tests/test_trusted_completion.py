@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -10,7 +11,6 @@ import unittest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUN = PROJECT_ROOT / "scripts" / "pact" / "run.py"
-EVIDENCE = PROJECT_ROOT / "scripts" / "pact" / "evidence.py"
 REPORT = PROJECT_ROOT / "scripts" / "pact" / "report.py"
 COMPLETE = PROJECT_ROOT / "scripts" / "pact" / "complete.py"
 
@@ -19,8 +19,27 @@ class TrustedCompletionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="pact-complete-test-")
         self.root = pathlib.Path(self.temp.name)
-        self.bundle = self.root / "bundle"
+        self.bundle = self.root / ".pact" / "completions" / "TASK-1"
         self.bundle.mkdir(parents=True)
+
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "pact-test@example.invalid"],
+            cwd=self.root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "PACT Test"],
+            cwd=self.root,
+            check=True,
+        )
+        (self.root / "app.txt").write_text("baseline\n", encoding="utf-8")
+        subprocess.run(["git", "add", "app.txt"], cwd=self.root, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=self.root,
+            check=True,
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -29,31 +48,68 @@ class TrustedCompletionTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    def create_passing_run(self, task_id: str = "TASK-1") -> pathlib.Path:
-        receipt = self.root / "run.json"
+    def create_passing_run(
+        self,
+        task_id: str = "TASK-1",
+        *,
+        env: dict[str, str] | None = None,
+        extra_args: list[str] | None = None,
+    ) -> pathlib.Path:
+        receipt = self.root / ".pact" / "runs" / task_id / "run.json"
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            sys.executable,
+            str(RUN),
+            "--task-id",
+            task_id,
+            "--output",
+            str(receipt),
+            "--cwd",
+            str(self.root),
+            "--quiet",
+        ]
+        if extra_args:
+            command.extend(extra_args)
+        command.extend([
+            "--",
+            sys.executable,
+            "-c",
+            "import sys; print('ok')",
+        ])
+
+        if env is None:
+            env = os.environ.copy()
+            for name in [
+                "GITHUB_ACTIONS",
+                "GITHUB_REPOSITORY",
+                "GITHUB_RUN_ID",
+                "GITHUB_RUN_ATTEMPT",
+                "GITHUB_JOB",
+                "GITHUB_WORKFLOW",
+                "GITHUB_SHA",
+                "GITHUB_REF",
+                "GITHUB_SERVER_URL",
+            ]:
+                env.pop(name, None)
+
         result = subprocess.run(
-            [
-                sys.executable,
-                str(RUN),
-                "--task-id",
-                task_id,
-                "--output",
-                str(receipt),
-                "--quiet",
-                "--",
-                sys.executable,
-                "-c",
-                "print('ok')",
-            ],
+            command,
             capture_output=True,
             text=True,
+            env=env,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(receipt.exists())
         return receipt
 
-    def base_bundle(self, risk: str = "medium") -> tuple[dict, dict, dict]:
-        run = self.create_passing_run()
+    def base_bundle(
+        self,
+        risk: str = "medium",
+        *,
+        run: pathlib.Path | None = None,
+    ) -> tuple[dict, dict, dict]:
+        run = run or self.create_passing_run()
         evidence = {
             "version": 1,
             "task_id": "TASK-1",
@@ -110,7 +166,7 @@ class TrustedCompletionTests(unittest.TestCase):
         self.write_json(self.bundle / "convergence.json", convergence)
         self.write_json(self.bundle / "owner-report.json", owner)
 
-    def run_complete(self) -> subprocess.CompletedProcess[str]:
+    def run_complete(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
@@ -119,18 +175,48 @@ class TrustedCompletionTests(unittest.TestCase):
                 "--root",
                 str(self.root),
                 "--json",
+                *extra,
             ],
             capture_output=True,
             text=True,
         )
 
-    def test_medium_machine_backed_bundle_passes(self) -> None:
+    def test_medium_machine_backed_bundle_passes_on_same_workspace(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
         self.save_bundle(evidence, convergence, owner)
 
         result = self.run_complete()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue(json.loads(result.stdout)["complete"])
+        data = json.loads(result.stdout)
+        self.assertTrue(data["complete"])
+        self.assertEqual(data["workspace_bound_claims"], 1)
+
+    def test_tracked_change_after_verification_blocks_completion(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        self.save_bundle(evidence, convergence, owner)
+        (self.root / "app.txt").write_text("changed after verification\n", encoding="utf-8")
+
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("stale pact-run receipt", result.stdout)
+
+    def test_untracked_change_after_verification_blocks_completion(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        self.save_bundle(evidence, convergence, owner)
+        (self.root / "new_source.py").write_text("print('new')\n", encoding="utf-8")
+
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("stale pact-run receipt", result.stdout)
+
+    def test_generated_pact_bundle_does_not_stale_workspace(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        self.save_bundle(evidence, convergence, owner)
+
+        # evidence/convergence/owner-report live under .pact/completions and are
+        # deliberately outside the verified product workspace fingerprint.
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_evidence_ref_is_rejected(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
@@ -197,6 +283,77 @@ class TrustedCompletionTests(unittest.TestCase):
         result = self.run_complete()
         self.assertEqual(result.returncode, 1)
         self.assertIn("high-risk completion cannot carry", result.stdout)
+
+    def test_secret_arguments_are_redacted_in_receipt(self) -> None:
+        env = os.environ.copy()
+        env["MY_API_KEY"] = "env-secret-12345"
+        receipt = self.root / ".pact" / "runs" / "TASK-1" / "secret.json"
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(RUN),
+                "--task-id",
+                "TASK-1",
+                "--output",
+                str(receipt),
+                "--cwd",
+                str(self.root),
+                "--quiet",
+                "--",
+                sys.executable,
+                "-c",
+                "import sys; print('ok')",
+                "--token",
+                "literal-secret",
+                "header=env-secret-12345",
+                "Authorization: Bearer abc123",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+        persisted = json.dumps(data["argv"])
+        self.assertNotIn("literal-secret", persisted)
+        self.assertNotIn("env-secret-12345", persisted)
+        self.assertNotIn("Bearer abc123", persisted)
+        self.assertGreaterEqual(data["redacted_argument_count"], 3)
+
+    def test_github_actions_provenance_is_captured(self) -> None:
+        env = os.environ.copy()
+        env.update({
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "ningcol/PACT",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_RUN_ATTEMPT": "2",
+            "GITHUB_JOB": "test",
+            "GITHUB_WORKFLOW": "PACT Check",
+            "GITHUB_SHA": "deadbeef",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SERVER_URL": "https://github.com",
+        })
+        run = self.create_passing_run(env=env)
+        data = json.loads(run.read_text(encoding="utf-8"))
+        self.assertEqual(data["ci"]["provider"], "github-actions")
+        self.assertEqual(data["ci"]["run_id"], "123")
+
+        evidence, convergence, owner = self.base_bundle("medium", run=run)
+        self.save_bundle(evidence, convergence, owner)
+        result = self.run_complete("--require-ci")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["ci_backed_claims"], 1)
+
+    def test_require_ci_blocks_local_only_completion(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete("--require-ci")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("requires CI-backed Evidence", result.stdout)
 
 
 if __name__ == "__main__":
