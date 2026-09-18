@@ -162,17 +162,18 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: "11.21.0"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: /tmp/pinia/pnpm-lock.yaml
 
       - name: Clone pinned Pinia
         run: |
           git clone https://github.com/vuejs/pinia.git "$TARGET_DIR"
           git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
           test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: /tmp/pinia/pnpm-lock.yaml
 
       - name: Adopt PACT
         run: |
@@ -302,15 +303,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: /tmp/bubbletea/go.mod
 
       - name: Clone pinned Bubble Tea
         run: |
           git clone https://github.com/charmbracelet/bubbletea.git "$TARGET_DIR"
           git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
           test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: /tmp/bubbletea/go.mod
 
       - name: Adopt PACT
         run: |
