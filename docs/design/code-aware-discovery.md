@@ -92,3 +92,35 @@ When PACT is installed into another repository, generated Project/Code maps cons
 - a PACT source checkout without an install manifest continues indexing itself normally.
 
 This prevents PACT's own runtime, generic governance scaffolding, and Skills from being mistaken for the target product/codebase.
+
+
+## Large-repository enumeration
+
+PACT prefers Git-aware enumeration when the target is a Git worktree:
+
+```text
+git ls-files -co --exclude-standard
+```
+
+This returns tracked files plus visible untracked files while respecting repository ignore rules. PACT therefore does not pay the filesystem traversal cost for ignored dependency/build trees merely to discard them later.
+
+When Git is unavailable, PACT falls back to `os.walk` with directory pruning before descent.
+
+## Per-file incremental parsing
+
+Whole-map freshness still uses a source fingerprint.
+
+When the fingerprint changes, PACT does **not** automatically reparse every source file.
+
+It keeps a disposable per-file parse cache keyed by:
+
+- repository-relative path;
+- file size;
+- nanosecond modification time;
+- parser-cache version.
+
+Unchanged files reuse parsed symbols/raw imports. Changed/new files are reparsed; removed files are dropped. Global import resolution/edges are then rebuilt from these cheap cached parse results.
+
+The same model is used for Project Map Markdown parsing.
+
+This cache is never authority. Removing `.pact/cache/` must always restore a correct full rebuild.

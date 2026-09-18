@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build or refresh the disposable PACT project discovery index."""
+"""Build or incrementally refresh the disposable PACT project discovery index."""
 
 from __future__ import annotations
 
@@ -12,10 +12,13 @@ from datetime import datetime, timezone
 from cache import cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
 from formats import parse_markdown_metadata
+from parse_cache import parse_with_cache
+from repository_files import repository_files
 
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
+PARSE_CACHE_VERSION = 1
 TITLE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -47,13 +50,16 @@ def should_index(
     )
 
 
-def source_paths(root: pathlib.Path) -> list[pathlib.Path]:
+def source_paths(root: pathlib.Path) -> tuple[list[pathlib.Path], str]:
     excluded_paths = discovery_excluded_paths(root)
-    return [
+    visible, enumeration_mode = repository_files(root)
+    paths = [
         path
-        for path in root.rglob("*.md")
-        if path.is_file() and should_index(path, root, excluded_paths)
+        for path in visible
+        if path.suffix.lower() == ".md"
+        and should_index(path, root, excluded_paths)
     ]
+    return paths, enumeration_mode
 
 
 def parse_document(path: pathlib.Path, root: pathlib.Path) -> dict:
@@ -90,14 +96,11 @@ def parse_document(path: pathlib.Path, root: pathlib.Path) -> dict:
 
 def build_index(
     root: pathlib.Path,
-    paths: list[pathlib.Path],
+    documents: list[dict],
     source_fingerprint: str,
+    *,
+    enumeration_mode: str,
 ) -> dict:
-    documents = [
-        parse_document(path, root)
-        for path in sorted(paths)
-    ]
-
     ids = {
         doc["id"]: doc["path"]
         for doc in documents
@@ -110,6 +113,7 @@ def build_index(
         "repository_root": ".",
         "source_fingerprint": source_fingerprint,
         "git_head": git_head(root),
+        "enumeration_mode": enumeration_mode,
         "documents": documents,
         "id_to_path": ids,
     }
@@ -134,7 +138,7 @@ def main() -> int:
     if not output.is_absolute():
         output = root / output
 
-    paths = source_paths(root)
+    paths, enumeration_mode = source_paths(root)
     source_fingerprint = fingerprint_files(root, paths)
 
     if args.ensure and cache_is_fresh(
@@ -145,7 +149,25 @@ def main() -> int:
         print(f"PACT map: fresh -> {output}")
         return 0
 
-    index = build_index(root, paths, source_fingerprint)
+    parse_cache_path = root / ".pact" / "cache" / "project-file-cache.json"
+    parsed, stats = parse_with_cache(
+        root=root,
+        paths=paths,
+        cache_path=parse_cache_path,
+        cache_version=PARSE_CACHE_VERSION,
+        parser=lambda path: parse_document(path, root),
+    )
+    documents = [
+        parsed[relative]
+        for relative in sorted(parsed)
+    ]
+
+    index = build_index(
+        root,
+        documents,
+        source_fingerprint,
+        enumeration_mode=enumeration_mode,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(index, ensure_ascii=False, indent=2) + "\n",
@@ -153,7 +175,9 @@ def main() -> int:
     )
 
     print(
-        f"PACT map: indexed {len(index['documents'])} document(s) -> {output}"
+        f"PACT map: indexed {len(index['documents'])} document(s) "
+        f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
+        f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
     )
     return 0
 

@@ -274,7 +274,7 @@ PACT 0.3 includes the executable foundation for:
 - Project Discovery with optional generated code relationships;
 - Project Explanation evidence packets;
 - risk-adaptive Context Resolution;
-- freshness-aware Project/Code maps;
+- freshness-aware, Git-aware incremental Project/Code maps;
 - conservative Impact Analysis with generated relationship confidence;
 - pluggable project-owned architecture fitness functions;
 - source-backed command run receipts;
