@@ -17,8 +17,8 @@ from repository_files import repository_files
 from schema_validate import load_schema, validate_instance
 
 
-FORMAT_VERSION = 3
-PARSE_CACHE_VERSION = 2
+FORMAT_VERSION = 4
+PARSE_CACHE_VERSION = 3
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -68,6 +68,22 @@ JS_SYMBOL = re.compile(
 )
 
 JS_MEMBER_IDENTIFIER = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)")
+JS_NAMED_IMPORT = re.compile(
+    r"""import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"][^'"]+['"]""",
+    re.VERBOSE | re.DOTALL,
+)
+TS_INTERFACE = re.compile(
+    r"""(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*(?:extends\s+[^\{]+)?\{(.*?)\}""",
+    re.VERBOSE | re.DOTALL,
+)
+TS_TYPE_ALIAS = re.compile(
+    r"""(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=""",
+    re.VERBOSE,
+)
+TS_PROPERTY = re.compile(
+    r"""(?:^|[;,\n])\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\??\s*:""",
+    re.VERBOSE,
+)
 VUE_SCRIPT_BLOCK = re.compile(
     r"<script(?:\s[^>]*)?>(.*?)</script>",
     re.IGNORECASE | re.DOTALL,
@@ -183,6 +199,28 @@ def js_identifier_text(path: pathlib.Path, text: str) -> str:
     return "\n".join(strip_js_noncode(block) for block in blocks)
 
 
+def imported_names_from_js(text: str) -> list[str]:
+    names: list[str] = []
+    for match in JS_NAMED_IMPORT.finditer(text):
+        for raw in match.group(1).split(","):
+            value = raw.strip()
+            if value.startswith("type "):
+                value = value[5:].strip()
+            value = value.split(" as ", 1)[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", value):
+                names.append(value)
+    return sorted(set(names))
+
+
+def contract_symbols_from_js(text: str) -> list[str]:
+    contracts: list[str] = []
+    for match in TS_INTERFACE.finditer(text):
+        contracts.append(match.group(1))
+        contracts.extend(TS_PROPERTY.findall(match.group(2)))
+    contracts.extend(TS_TYPE_ALIAS.findall(text))
+    return sorted(set(contracts))
+
+
 def rel(path: pathlib.Path, root: pathlib.Path) -> str:
     return path.relative_to(root).as_posix()
 
@@ -289,11 +327,11 @@ def parse_python(
 
 def parse_js_like(
     path: pathlib.Path,
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return [], [], []
+        return [], [], [], [], []
 
     imports = JS_IMPORT.findall(text)
     symbols = []
@@ -306,7 +344,15 @@ def parse_js_like(
     identifiers = lexical_identifiers(
         JS_MEMBER_IDENTIFIER.findall(identifier_text)
     )
-    return sorted(set(symbols)), list(dict.fromkeys(imports)), identifiers
+    imported_names = imported_names_from_js(identifier_text)
+    contracts = contract_symbols_from_js(identifier_text)
+    return (
+        sorted(set(symbols)),
+        list(dict.fromkeys(imports)),
+        identifiers,
+        imported_names,
+        contracts,
+    )
 
 
 def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
@@ -315,12 +361,20 @@ def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
 
     if language == "python":
         symbols, raw_imports, identifiers = parse_python(path)
+        imported_names: list[str] = []
+        contracts: list[str] = []
         imports = [
             {"raw": raw, "level": int(level)}
             for raw, level in raw_imports
         ]
     else:
-        symbols, raw_imports, identifiers = parse_js_like(path)
+        (
+            symbols,
+            raw_imports,
+            identifiers,
+            imported_names,
+            contracts,
+        ) = parse_js_like(path)
         imports = [
             {"raw": raw, "level": 0}
             for raw in raw_imports
@@ -330,6 +384,8 @@ def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
         "language": language,
         "symbols": symbols,
         "identifiers": identifiers,
+        "imported_names": imported_names,
+        "contracts": contracts,
         "raw_imports": imports,
         "is_test": is_test_path(relative),
     }
@@ -472,6 +528,8 @@ def build_code_map(
             "language": language,
             "symbols": parsed["symbols"],
             "identifiers": parsed["identifiers"],
+            "imported_names": parsed["imported_names"],
+            "contracts": parsed["contracts"],
             "imports": imports,
             "is_test": bool(parsed["is_test"]),
         })
