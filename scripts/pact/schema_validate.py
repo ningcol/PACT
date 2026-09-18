@@ -8,7 +8,9 @@ JSON Schema implementation.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
+from importlib import resources
 from typing import Any
 
 
@@ -175,5 +177,49 @@ def validate_instance(value: Any, schema: dict) -> list[str]:
     return errors
 
 
+def _embedded_schema_text(name: str) -> str | None:
+    try:
+        resource = resources.files("pact_resources").joinpath("schema", name)
+        if resource.is_file():
+            return resource.read_text(encoding="utf-8")
+    except (ModuleNotFoundError, FileNotFoundError, AttributeError):
+        return None
+    return None
+
+
+def embedded_schema_names() -> list[str]:
+    try:
+        directory = resources.files("pact_resources").joinpath("schema")
+        return sorted(
+            item.name
+            for item in directory.iterdir()
+            if item.is_file() and item.name.endswith(".json")
+        )
+    except (ModuleNotFoundError, FileNotFoundError, AttributeError):
+        return []
+
+
 def load_schema(path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    candidate = pathlib.Path(path)
+    name = candidate.name
+
+    # Inside an adopted compact runtime, framework schemas embedded in the
+    # signed/hashed pyz are authoritative. A locally preserved obsolete schema
+    # file must not silently override the active runtime protocol.
+    embedded = _embedded_schema_text(name)
+    if embedded is not None:
+        return json.loads(embedded)
+
+    # Source-checkout commands may intentionally operate on another repository
+    # root that does not contain PACT framework schemas. Prefer an explicitly
+    # present target file, otherwise fall back to the canonical schema source
+    # beside this runtime checkout.
+    if candidate.is_file():
+        return json.loads(candidate.read_text(encoding="utf-8"))
+
+    source_root = pathlib.Path(__file__).resolve().parents[2]
+    canonical = source_root / ".pact" / "schema" / name
+    if canonical.is_file():
+        return json.loads(canonical.read_text(encoding="utf-8"))
+
+    return json.loads(candidate.read_text(encoding="utf-8"))

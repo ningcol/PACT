@@ -80,6 +80,22 @@ def build_runtime_bundle(
                     .encode("utf-8"),
                 )
 
+            _write_entry(
+                archive,
+                "pact_resources/__init__.py",
+                b'"""Embedded PACT runtime resources."""\n',
+            )
+            schema_dir = source_root / ".pact" / "schema"
+            for path in sorted(schema_dir.glob("*.json")):
+                _write_entry(
+                    archive,
+                    f"pact_resources/schema/{path.name}",
+                    path.read_text(encoding="utf-8")
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n")
+                    .encode("utf-8"),
+                )
+
         temporary.replace(output)
     finally:
         if temporary.exists():

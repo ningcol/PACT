@@ -75,6 +75,21 @@ class StdlibRuntimeTests(unittest.TestCase):
         errors = validate_instance(report, schema)
         self.assertTrue(any("owner_question" in error for error in errors), errors)
 
+    def test_load_schema_falls_back_to_source_protocol_for_external_root(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-schema-fallback-") as tmp:
+            missing = (
+                pathlib.Path(tmp)
+                / ".pact"
+                / "schema"
+                / "code-map.schema.json"
+            )
+            self.assertFalse(missing.exists())
+            schema = load_schema(missing)
+            self.assertEqual(
+                schema["$id"],
+                "https://pact.local/schema/code-map.schema.json",
+            )
+
     def test_schema_lint_accepts_current_pact_schemas(self) -> None:
         result = subprocess.run(
             [sys.executable, str(SCHEMA_LINT)],

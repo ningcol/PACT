@@ -8,6 +8,8 @@ import json
 import pathlib
 import sys
 
+from schema_validate import embedded_schema_names, load_schema
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / ".pact" / "schema"
@@ -152,20 +154,23 @@ def lint_schema_node(
             )
 
 
+def lint_schema(name: str, schema: dict) -> list[str]:
+    errors: list[str] = []
+    lint_schema_node(
+        schema,
+        root=schema,
+        path=name,
+        errors=errors,
+    )
+    return errors
+
+
 def lint_file(path: pathlib.Path) -> list[str]:
     try:
         schema = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return [f"{path.name}: cannot parse JSON schema: {exc}"]
-
-    errors: list[str] = []
-    lint_schema_node(
-        schema,
-        root=schema,
-        path=path.name,
-        errors=errors,
-    )
-    return errors
+    return lint_schema(path.name, schema)
 
 
 def main() -> int:
@@ -175,18 +180,38 @@ def main() -> int:
     parser.add_argument(
         "paths",
         nargs="*",
-        help="schema files; defaults to all .pact/schema/*.json",
+        help=(
+            "schema files; defaults to the complete embedded protocol set in "
+            "compact installs, or all source .pact/schema/*.json files"
+        ),
     )
     args = parser.parse_args()
 
-    paths = [
+    explicit_paths = [
         pathlib.Path(value).expanduser().resolve()
         for value in args.paths
-    ] if args.paths else sorted(SCHEMA_DIR.glob("*.json"))
+    ]
+    embedded_names = embedded_schema_names() if not explicit_paths else []
 
     errors: list[str] = []
-    for path in paths:
-        errors.extend(lint_file(path))
+    schema_count = 0
+    if explicit_paths:
+        for path in explicit_paths:
+            errors.extend(lint_file(path))
+            schema_count += 1
+    elif embedded_names:
+        for name in embedded_names:
+            try:
+                schema = load_schema(SCHEMA_DIR / name)
+            except Exception as exc:
+                errors.append(f"{name}: cannot load embedded schema: {exc}")
+                continue
+            errors.extend(lint_schema(name, schema))
+            schema_count += 1
+    else:
+        for path in sorted(SCHEMA_DIR.glob("*.json")):
+            errors.extend(lint_file(path))
+            schema_count += 1
 
     if errors:
         print(f"PACT schema-lint: {len(errors)} error(s)", file=sys.stderr)
@@ -194,7 +219,13 @@ def main() -> int:
             print(f"- {error}", file=sys.stderr)
         return 1
 
-    print(f"PACT schema-lint: {len(paths)} schema file(s) supported by runtime validator.")
+    if schema_count == 0:
+        print("PACT schema-lint: no schemas available", file=sys.stderr)
+        return 1
+
+    print(
+        f"PACT schema-lint: {schema_count} schema file(s) supported by runtime validator."
+    )
     return 0
 
 

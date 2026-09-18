@@ -6,6 +6,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Compact Runtime
+
+- adopted projects use one `.pact/pact.pyz` runtime plus a tiny legacy entrypoint shim;
+- framework JSON schemas are embedded in `pact.pyz` and no longer copied into adopted projects;
+- compact runtime schema resources are authoritative over preserved obsolete local schema files;
+- `schema-lint` validates the full embedded protocol set in compact installs;
+- safe upgrade removes unchanged obsolete source-runtime/schema files with rollback, while preserving local modifications.
+
 ### Convergence Trust
 
 - prepared Task Contexts now carry SHA256 binding into high-level completion;

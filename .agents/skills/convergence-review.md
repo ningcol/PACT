@@ -54,9 +54,9 @@ An `owner-decision` coverage item must be accompanied by an `owner-decision` fin
 
 ## Output contract
 
-For a durable or machine-consumed review, emit a JSON report conforming to:
+For a durable or machine-consumed review, emit a JSON Convergence Report and validate it through the active PACT runtime.
 
-`.pact/schema/convergence-report.schema.json`
+The canonical editable schema lives in the PACT source repository at `.pact/schema/convergence-report.schema.json`; adopted compact runtimes embed that protocol internally.
 
 Every nontrivial finding must state:
 
@@ -71,7 +71,7 @@ An `owner-decision` finding must additionally include `owner_question` phrased a
 Validate the report with:
 
 ```bash
-python scripts/pact/converge.py <report.json>
+python pact.py converge <report.json>
 ```
 
 ## Escalation

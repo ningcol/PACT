@@ -213,7 +213,7 @@ These are intentionally separate:
 
 PACT records installation provenance in `.pact/install.json`.
 
-Framework runtime/schema/template files can be upgraded only if they have not been locally modified since the previous install. Project-owned seeds such as Owner config, baseline state, governance, Agent Skills, and AGENTS are never silently overwritten.
+Framework runtime/template files can be upgraded only if they have not been locally modified since the previous install. Runtime protocol schemas are embedded in the compact `pact.pyz` instead of copied into adopted projects. Project-owned seeds such as Owner config, baseline state, governance, Agent Skills, and AGENTS are never silently overwritten.
 
 If both a framework-managed target file and the newer PACT source changed, automatic upgrade stops before changing anything.
 
@@ -247,7 +247,7 @@ Only mark vocabulary, Product Truth, architecture, authority, Owner Profile, ver
 - `docs/drift/` — known/resolved/accepted drift artifacts.
 - `.agents/skills/` — replaceable procedures.
 - `.pact/pact.pyz` — compact installed PACT runtime.
-- `.pact/schema/` — machine-readable contracts.
+- runtime protocol schemas — embedded inside `.pact/pact.pyz` for adopted projects; source checkouts keep `.pact/schema/` as the canonical editable source.
 - `.pact/cache/` — disposable derived indexes.
 - `scripts/pact/` — source-checkout runtime used when developing PACT itself.
 

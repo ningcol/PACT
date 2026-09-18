@@ -10,8 +10,7 @@ Every file created by PACT is treated as one of two classes.
 
 Examples:
 
-- `.pact/pact.pyz` compact runtime;
-- `.pact/schema/`;
+- `.pact/pact.pyz` compact runtime, including framework protocol schemas;
 - generic lifecycle/readme/templates;
 - PACT initialization guidance;
 - the opt-in PACT project CI workflow.
@@ -104,3 +103,12 @@ This enables adoption/update without a local PACT checkout while keeping canonic
 Distribution packaging must not duplicate PACT governance/templates into a separately maintained source tree.
 
 A future `uvx` / package wrapper may improve invocation, but canonical framework content remains single-owned and versioned.
+
+
+## Embedded protocol schemas
+
+The canonical editable schema sources remain in the PACT source repository under `.pact/schema/`.
+
+Adopted projects do not receive framework schema files. The compact runtime embeds the schema set as internal resources and treats those resources as authoritative when executing from `pact.pyz`.
+
+During migration, unchanged old framework schema files are removed transactionally. Locally modified old schema files are preserved and detached, but they do not override the embedded runtime protocol.

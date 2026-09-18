@@ -29,10 +29,6 @@ REQUIRED = [
     ".agents/decisions",
     ".agents/skills",
     ".pact/VERSION",
-    ".pact/schema/artifact.schema.json",
-    ".pact/schema/config.schema.json",
-    ".pact/schema/install-manifest.schema.json",
-    ".pact/schema/fitness.schema.json",
 ]
 
 
