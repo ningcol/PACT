@@ -6,6 +6,15 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Convergence Trust
+
+- prepared Task Contexts now carry SHA256 binding into high-level completion;
+- selected knowledge artifacts carry prepared content fingerprints when available;
+- Convergence Reports can explicitly dispose every Task Context knowledge artifact;
+- `task finish` blocks silent Context omission and stale prepared Context reuse;
+- `updated` artifact dispositions are rejected when the prepared artifact content did not actually change;
+- machine task observations record Convergence coverage blockers.
+
 ### Evaluation / proof of value
 
 - high-level `task finish` persists completion-attempt outcomes for later evaluation;
