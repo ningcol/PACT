@@ -72,17 +72,57 @@ Record known inconsistencies that will not be repaired immediately.
 
 This prevents future agents from repeatedly rediscovering or silently "fixing" accepted debt.
 
-## Phase 10 — Ready
+## Phase 10 — Baseline review and readiness
 
-PACT is ready when the project has enough:
+`pact init` creates structure. It does **not** certify project knowledge.
 
-- canonical vocabulary;
-- product truth;
-- current architecture;
-- authority boundaries;
-- owner interface;
-- verification baseline;
-- known drift visibility.
+Initialization creates `.pact/baseline.yaml` with review areas initially marked `pending`:
+
+- vocabulary;
+- Product Truth;
+- architecture;
+- truth ownership;
+- Owner Profile;
+- verification reality;
+- Known Drift review.
+
+After each area has actually been inspected, mark it `reviewed` or explicitly `not_applicable`.
+
+Check state with:
+
+```bash
+python scripts/pact/pact.py readiness
+```
+
+Stages:
+
+```text
+scaffolded
+→ foundation-valid
+→ baseline-in-progress
+→ pact-ready
+```
+
+Only `pact-ready` means the project has an explicitly reviewed starting baseline.
+
+For projects that want this as a gate:
+
+```bash
+python scripts/pact/pact.py readiness --require-ready
+```
+
+## Optional continuous CI
+
+PACT can create a separate GitHub Actions workflow without modifying existing workflows:
+
+```bash
+python scripts/pact/pact.py init \
+  --target ../existing-project \
+  --apply \
+  --github-actions
+```
+
+The workflow validates the PACT foundation/checks/readiness inventory only. Project-owned build, tests, E2E, and visual verification remain project-specific.
 
 ## Migration policy
 

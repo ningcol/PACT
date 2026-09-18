@@ -21,6 +21,7 @@ PACT is the project-level AI control plane for this repository.
 - Active/completed change intent: `docs/changes/`
 - Drift lifecycle: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
+- Adoption baseline/readiness: `.pact/baseline.yaml`
 - System design: `docs/design/system-overview.md`
 
 ## Before changing behavior
@@ -28,6 +29,8 @@ PACT is the project-level AI control plane for this repository.
 Determine the affected product/domain scope and retrieve only the relevant rules, architecture, decisions, code, tests, and history needed for high confidence.
 
 Do not infer product truth from code alone.
+
+If `pact readiness` reports a baseline area as pending, treat that area as incomplete/unknown rather than manufacturing missing truth.
 
 ## Decision policy
 

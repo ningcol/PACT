@@ -37,6 +37,7 @@ This repository uses PACT (Project AI Control Plane).
 - Active/completed change intent: `docs/changes/`
 - Drift: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
+- Adoption readiness: `.pact/baseline.yaml`
 
 ## Decision boundary
 
@@ -47,6 +48,12 @@ Escalate only when a decision changes user-observable behavior, business/data me
 ## Completion boundary
 
 "Done" requires appropriate evidence and convergence, not only code changes or green tests.
+
+## Baseline boundary
+
+`pact init` creates structure; it does not certify project knowledge.
+
+If `pact readiness` reports pending baseline reviews, treat those areas as potentially incomplete rather than inventing missing truth.
 
 ## Owner communication
 
@@ -112,6 +119,7 @@ def source_manifest() -> list[tuple[pathlib.Path, pathlib.Path]]:
             pairs.append((path, path.relative_to(SOURCE_ROOT)))
 
     add(".pact/config.example.yaml", ".pact/config.yaml")
+    add(".pact/baseline.example.yaml", ".pact/baseline.yaml")
     return pairs
 
 
@@ -128,6 +136,7 @@ Merge these concepts into the existing project agent guide:
 - let AI decide ordinary technical implementation;
 - escalate only product/risk decisions;
 - require evidence and convergence before claiming completion;
+- consult `.pact/baseline.yaml` and do not invent truth for pending baseline areas;
 - communicate owner-facing results using the project Owner Profile in `.pact/config.yaml`;
 - use product/business consequences before unnecessary implementation detail.
 
@@ -140,12 +149,13 @@ Suggested knowledge router:
 - Changes: `docs/changes/`
 - Drift: `docs/drift/`
 - Skills: `.agents/skills/`
+- Readiness: `.pact/baseline.yaml`
 
 Delete this bootstrap file after the existing `AGENTS.md` has been integrated.
 """
 
 
-def plan(target: pathlib.Path) -> list[dict]:
+def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
     for source, target_rel in source_manifest():
@@ -193,11 +203,25 @@ def plan(target: pathlib.Path) -> list[dict]:
             "reason": "ignore derived PACT cache",
         })
 
+    if github_actions:
+        source = SOURCE_ROOT / ".pact" / "templates" / "github-actions" / "pact-project-check.yml"
+        rel = pathlib.Path(".github/workflows/pact-project-check.yml")
+        destination = target / rel
+        operations.append({
+            "action": "skip" if destination.exists() else "create",
+            "path": rel.as_posix(),
+            "source": source.relative_to(SOURCE_ROOT).as_posix(),
+            "reason": (
+                "existing PACT workflow preserved"
+                if destination.exists()
+                else "opt-in PACT project CI integration"
+            ),
+        })
+
     return operations
 
 
 def apply(target: pathlib.Path, operations: list[dict]) -> None:
-    manifest = {target_rel.as_posix(): source for source, target_rel in source_manifest()}
     target.mkdir(parents=True, exist_ok=True)
 
     for op in operations:
@@ -210,7 +234,8 @@ def apply(target: pathlib.Path, operations: list[dict]) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if op["source"] != "<generated>":
-            shutil.copy2(manifest[op["path"]], destination)
+            source = SOURCE_ROOT / op["source"]
+            shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
             destination.write_text(TARGET_AGENTS, encoding="utf-8")
         elif op["path"] == "docs/governance/PACT_AGENT_BOOTSTRAP.md":
@@ -223,6 +248,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Safely scaffold PACT into a repository")
     parser.add_argument("--target", required=True)
     parser.add_argument("--apply", action="store_true", help="write missing files; default is dry-run")
+    parser.add_argument(
+        "--github-actions",
+        action="store_true",
+        help="also create a separate PACT project workflow if that path is missing",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -231,13 +261,14 @@ def main() -> int:
         print("PACT init: target must be a directory", file=sys.stderr)
         return 2
 
-    operations = plan(target)
+    operations = plan(target, github_actions=args.github_actions)
     if args.apply:
         apply(target, operations)
 
     summary = {
         "target": str(target),
         "mode": "apply" if args.apply else "dry-run",
+        "github_actions": args.github_actions,
         "create": len([o for o in operations if o["action"].startswith("create")]),
         "skip": len([o for o in operations if o["action"] == "skip"]),
         "warn": len([o for o in operations if o["action"] == "warn"]),

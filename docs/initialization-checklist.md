@@ -108,9 +108,25 @@ For each important unresolved conflict:
 - [ ] state severity;
 - [ ] state revisit condition.
 
-## 10. Run readiness review
+## 10. Record baseline review state
 
-PACT is ready when a new agent can answer, with reasonable confidence:
+Update `.pact/baseline.yaml` only after each area was deliberately inspected:
+
+- [ ] vocabulary: reviewed / not_applicable;
+- [ ] Product Truth: reviewed / not_applicable;
+- [ ] architecture: reviewed / not_applicable;
+- [ ] truth ownership: reviewed / not_applicable;
+- [ ] Owner Profile: reviewed / not_applicable;
+- [ ] verification reality: reviewed / not_applicable;
+- [ ] Known Drift: reviewed / not_applicable.
+
+Then run:
+
+```bash
+python scripts/pact/pact.py readiness
+```
+
+A new agent should be able to answer, with reasonable confidence:
 
 1. What does this business concept mean?
 2. Where are its durable rules?
@@ -120,6 +136,17 @@ PACT is ready when a new agent can answer, with reasonable confidence:
 6. What must be verified before claiming completion?
 7. How should unresolved product ambiguity be presented to the owner?
 
+## 11. Optional continuous PACT CI
+
+To create a separate workflow without touching existing workflows:
+
+```bash
+python scripts/pact/pact.py init --target <repo> --apply --github-actions
+```
+
+- [ ] confirm `.github/workflows/pact-project-check.yml` is appropriate for the repository;
+- [ ] keep project build/test/E2E/visual verification in project-owned CI.
+
 ## Exit criteria
 
-Initialization is complete enough when future work can proceed safely. It is **not** required to eliminate all historical drift or document every feature.
+The adoption baseline is `pact-ready` when required review areas are explicitly reviewed or not applicable. It is **not** required to eliminate all historical drift or document every feature.

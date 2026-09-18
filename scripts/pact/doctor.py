@@ -34,7 +34,7 @@ def item(name: str, state: str, detail: str) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check PACT repository readiness")
+    parser = argparse.ArgumentParser(description="Check PACT foundation health")
     parser.add_argument(
         "--strict",
         action="store_true",

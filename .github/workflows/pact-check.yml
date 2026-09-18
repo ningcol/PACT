@@ -68,8 +68,12 @@ jobs:
       - name: End-to-end brownfield scaffold
         run: |
           rm -rf /tmp/pact-adopted
-          python scripts/pact/pact.py init --target /tmp/pact-adopted --apply
+          python scripts/pact/pact.py init --target /tmp/pact-adopted --apply --github-actions
+          test -f /tmp/pact-adopted/.github/workflows/pact-project-check.yml
           python /tmp/pact-adopted/scripts/pact/pact.py doctor --strict
           python /tmp/pact-adopted/scripts/pact/pact.py owner --strict --json
+          python /tmp/pact-adopted/scripts/pact/pact.py readiness --json
+          sed -i 's/: pending/: reviewed/g' /tmp/pact-adopted/.pact/baseline.yaml
+          python /tmp/pact-adopted/scripts/pact/pact.py readiness --require-ready --json
           python /tmp/pact-adopted/scripts/pact/pact.py audit
           python /tmp/pact-adopted/scripts/pact/pact.py explain "product truth" --json
