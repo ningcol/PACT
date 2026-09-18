@@ -139,6 +139,7 @@ def main() -> int:
         print(f"PACT context: discovery failed: {exc}", file=sys.stderr)
         return 2
 
+    queries = discovery.get("queries", queries)
     results = discovery.get("results", [])
     domains = sorted({
         domain
