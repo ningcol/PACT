@@ -90,7 +90,8 @@ Build a candidate task context:
 ```bash
 python scripts/pact/pact.py context "fix province switching" \
   --success "Displayed data follows the selected province" \
-  --risk medium
+  --risk medium \
+  --code
 ```
 
 Analyze changed-file impact:
