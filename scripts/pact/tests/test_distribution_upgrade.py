@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -32,7 +33,11 @@ class DistributionUpgradeTests(unittest.TestCase):
             text=True,
         )
 
-    def run_upgrade(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_upgrade(
+        self,
+        *args: str,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
@@ -41,6 +46,18 @@ class DistributionUpgradeTests(unittest.TestCase):
                 str(self.target),
                 "--source",
                 str(self.new_source),
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def run_target(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(self.target / "pact.py"),
                 *args,
             ],
             capture_output=True,
@@ -132,6 +149,45 @@ class DistributionUpgradeTests(unittest.TestCase):
             (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
         )
         self.assertEqual(after["runtime_version"], old_version)
+
+
+    def test_mid_apply_failure_rolls_back_files_and_manifest(self) -> None:
+        self.scaffold()
+
+        version_path = self.target / ".pact" / "VERSION"
+        readme_path = self.target / "scripts" / "pact" / "README.md"
+        manifest_path = self.target / ".pact" / "install.json"
+
+        original_version = version_path.read_bytes()
+        original_readme = readme_path.read_bytes()
+        original_manifest = manifest_path.read_bytes()
+
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
+        self.write_source("scripts/pact/README.md", "# Transactional Update\n")
+
+        env = os.environ.copy()
+        env["PACT_TEST_FAIL_AFTER_REPLACE"] = "1"
+        result = self.run_upgrade("--apply", "--json", env=env)
+
+        self.assertEqual(result.returncode, 2)
+        data = json.loads(result.stdout)
+        self.assertFalse(data["applied"])
+        self.assertTrue(data["rolled_back"])
+
+        self.assertEqual(version_path.read_bytes(), original_version)
+        self.assertEqual(readme_path.read_bytes(), original_readme)
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+
+
+    def test_doctor_detects_modified_framework_file(self) -> None:
+        self.scaffold()
+
+        runtime_readme = self.target / "scripts" / "pact" / "README.md"
+        runtime_readme.write_text("# MODIFIED FRAMEWORK\n", encoding="utf-8")
+
+        result = self.run_target("doctor", "--strict")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("framework file modified/corrupt", result.stdout + result.stderr)
 
     def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()

@@ -24,6 +24,9 @@ jobs:
             exit 1
           fi
 
+      - name: Validate single-file bootstrap entry point
+        run: python bootstrap.py --help
+
       - name: PACT doctor
         run: python scripts/pact/pact.py doctor
 

@@ -115,9 +115,14 @@ Unsupported project-specific aliases or framework magic remain unresolved rather
 
 `init --apply` records `.pact/install.json` with file ownership and SHA256 provenance.
 
+For normal users, the repository-root `bootstrap.py` can fetch a pinned PACT ref and invoke init/upgrade without cloning PACT first.
+
 - framework-managed files are auto-updatable only when unchanged since install;
 - project seed files are never overwritten;
 - any true framework conflict blocks the entire automatic apply;
+- replacement files are staged before mutation;
+- existing targets and install manifest are backed up;
+- apply/validation failure rolls back replaced files and manifest;
 - obsolete framework files are reported but never auto-deleted.
 
 Run upgrade from the newer PACT source checkout:
