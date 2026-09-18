@@ -54,6 +54,7 @@ def parse_document(path: pathlib.Path) -> dict:
         "status": pact.get("status"),
         "domains": as_list(pact.get("domains")),
         "aliases": as_list(pact.get("aliases")),
+        "paths": as_list(pact.get("paths")),
         "related": as_list(pact.get("related")),
         "verification": as_list(pact.get("verification")),
         "links": sorted(set(links)),

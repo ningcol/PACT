@@ -14,6 +14,7 @@ doctor     PACT repository readiness
 map        rebuild disposable project map
 discover   deterministic project discovery
 context    build candidate Task Context Envelope
+impact     map changed files to deterministic/candidate project impacts
 converge   validate/summarize semantic Convergence Report
 evidence   validate completion Evidence Receipt
 report     validate and render evidence-backed Owner Report
@@ -30,6 +31,8 @@ python scripts/pact/pact.py context "fix province switch" \
   --success "Displayed data follows the selected province" \
   --risk medium
 
+python scripts/pact/pact.py impact --base main --json
+
 python scripts/pact/pact.py evidence .pact/examples/evidence-receipt.example.json
 ```
 
@@ -43,4 +46,4 @@ The runtime is deliberately hybrid:
 
 A deterministic check may fail CI only when the machine can establish the fact.
 
-Semantic uncertainty should remain a warning, Context unknown, or Convergence finding.
+Semantic uncertainty should remain a warning, Context unknown, candidate impact, or Convergence finding.

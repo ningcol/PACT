@@ -36,6 +36,11 @@
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },
+        "paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "related": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
