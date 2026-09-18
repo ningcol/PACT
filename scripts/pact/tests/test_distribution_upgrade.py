@@ -59,7 +59,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertTrue(manifest_path.exists())
         return json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    def test_init_records_framework_and_seed_ownership(self) -> None:
+    def test_init_records_framework_and_toml_seed_ownership(self) -> None:
         manifest = self.scaffold()
         self.assertEqual(manifest["runtime_version"], SOURCE_VERSION)
         self.assertEqual(
@@ -67,11 +67,23 @@ class DistributionUpgradeTests(unittest.TestCase):
             "framework",
         )
         self.assertEqual(
-            manifest["files"][".pact/config.yaml"]["management"],
+            manifest["files"][".pact/config.toml"]["management"],
             "seed",
         )
 
-    def test_clean_framework_upgrade_updates_atomically(self) -> None:
+    def test_reinit_from_different_runtime_is_rejected(self) -> None:
+        manifest = self.scaffold()
+        manifest["runtime_version"] = "0.0.legacy"
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Use 'pact upgrade", result.stderr)
+
+    def test_clean_framework_upgrade_updates_atomically_on_conflict_check(self) -> None:
         self.scaffold()
 
         self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
@@ -121,30 +133,40 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertEqual(after["runtime_version"], old_version)
 
-    def test_project_seed_is_never_overwritten(self) -> None:
+    def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()
 
-        config = self.target / ".pact" / "config.yaml"
-        config.write_text("# PROJECT OWNED CONFIG\n", encoding="utf-8")
+        config = self.target / ".pact" / "config.toml"
+        original = config.read_text(encoding="utf-8")
+        config.write_text(original + "\n# PROJECT OWNED\n", encoding="utf-8")
 
         self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
-        (self.new_source / "scripts" / "pact").mkdir(parents=True, exist_ok=True)
         self.write_source(
-            ".pact/config.example.yaml",
-            "# NEW FRAMEWORK CONFIG TEMPLATE\n",
+            ".pact/config.example.toml",
+            'version = 1\n[owner]\nrole = "changed-upstream"\n',
         )
 
         result = self.run_upgrade("--apply", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-        self.assertEqual(
-            config.read_text(encoding="utf-8"),
-            "# PROJECT OWNED CONFIG\n",
-        )
+        self.assertIn("# PROJECT OWNED", config.read_text(encoding="utf-8"))
 
         data = json.loads(result.stdout)
         kinds = {notice["kind"] for notice in data["notices"]}
         self.assertIn("seed-update-available", kinds)
+
+    def test_legacy_yaml_seed_is_preserved_instead_of_replaced_by_default_toml(self) -> None:
+        self.target.mkdir(parents=True)
+        legacy = self.target / ".pact" / "config.yaml"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(
+            "version: 1\nowner:\n  role: product_project_owner\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(legacy.exists())
+        self.assertFalse((self.target / ".pact" / "config.toml").exists())
 
 
 if __name__ == "__main__":
