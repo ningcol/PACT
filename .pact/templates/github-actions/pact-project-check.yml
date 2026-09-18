@@ -25,7 +25,7 @@ jobs:
         run: python scripts/pact/pact.py check
 
       - name: Run architecture fitness functions
-        run: python scripts/pact/pact.py fitness
+        run: python scripts/pact/pact.py fitness --strict
 
       - name: Report PACT readiness
         run: python scripts/pact/pact.py readiness
