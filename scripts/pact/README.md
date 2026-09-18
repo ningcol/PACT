@@ -8,7 +8,19 @@ The stable v1 entry point is:
 python scripts/pact/pact.py <command> [args...]
 ```
 
-## Available commands
+## Recommended agent surface
+
+```text
+status             project foundation/readiness/health summary
+inspect            combined explanation + code evidence packet
+task prepare       risk-adaptive context preparation
+task finish        completion-bundle gate
+task status        one-task state
+```
+
+The commands below remain stable advanced primitives.
+
+## Available primitives
 
 ```text
 init       safely scaffold PACT into an existing repository
@@ -36,6 +48,18 @@ eval       validate/summarize optional real-task pilot records
 Examples:
 
 ```bash
+python3 pact.py status
+python3 pact.py inspect "batch state"
+
+python3 pact.py task prepare "fix province switch" \
+  --success "Displayed data follows the selected province" \
+  --risk medium
+
+python3 pact.py task status <TASK-ID>
+python3 pact.py task finish <TASK-ID>
+
+# Advanced primitives:
+
 python scripts/pact/pact.py init --target ../existing-project
 python scripts/pact/pact.py init --target ../existing-project --apply
 python scripts/pact/pact.py init --target ../existing-project --apply --github-actions
