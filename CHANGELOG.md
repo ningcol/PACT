@@ -4,6 +4,63 @@ PACT runtime versions track the distributable framework/runtime files used by `p
 
 They do **not** version a project's Product Truth, Architecture, Decisions, Owner Profile, or other project-owned seed artifacts.
 
+## 0.3.0 — 2026-09-18
+
+PACT 0.3 focuses on reducing adoption friction and hardening the trust boundary between AI claims and real project state.
+
+### Zero-dependency runtime
+
+- removed PyYAML and jsonschema runtime dependencies;
+- removed `scripts/pact/requirements.txt`;
+- PACT core now requires only Python 3.11+ standard library;
+- added internal validation for the JSON Schema subset used by PACT;
+- added repository-root `pact.py` convenience entry point.
+
+### TOML and compatibility
+
+- new project config, baseline, and fitness files use TOML;
+- new PACT Markdown artifacts use TOML front matter;
+- PACT 0.2-generated YAML remains readable through a restricted compatibility parser;
+- legacy Owner config and baseline state are normalized during 0.3 use;
+- Domain aliases are now machine-readable and actually consumed by Discovery;
+- Decision template is now a real machine-readable PACT Decision artifact;
+- readiness now includes explicit `agent_bootstrap` review.
+
+### Trusted completion
+
+- added `pact run` command receipts with real argv, exit code, timestamps, Git state, and stdout/stderr hashes;
+- Evidence now carries explicit provenance;
+- medium/high-risk required pass claims need machine-backed evidence;
+- Owner Reports cannot describe failed/unverified Evidence as verified;
+- Evidence, Convergence, and Owner Report bind to the same task ID;
+- added `pact complete` to validate the full completion bundle;
+- high-risk completion blocks unresolved Evidence limitations and non-aligned Convergence.
+
+### Risk and discovery freshness
+
+- low/medium/high risk now changes default Context depth and code expansion;
+- medium/high Impact Analysis enables code-neighbor analysis by default;
+- Project Map and Code Map now use source fingerprints and rebuild only when stale;
+- Explain/Context/Impact share freshness-aware caches;
+- generated code relationships expose confidence instead of pretending all import resolution is equally certain.
+
+### Deployment
+
+- added stdlib-only single-file `bootstrap.py` for init/upgrade without cloning PACT;
+- bootstrap supports pinned GitHub refs/commits and optional archive SHA256 verification;
+- bootstrap rejects archive traversal and symlink entries;
+- fixed mixed-version `init` behavior: tracked projects on another runtime must use upgrade;
+- legacy YAML project seeds are preserved rather than shadowed by default TOML files;
+- upgrades now stage/verify replacements, back up targets, atomically replace files, and rollback files + install manifest after apply/validation failure;
+- strict Doctor validates framework-owned file hashes against install provenance.
+
+### Still intentionally open
+
+- real brownfield pilot (#28);
+- evaluation using observed real-project task data (#32).
+
+These remain open because framework implementation is not evidence that PACT improves real project work.
+
 ## 0.2.0 — 2026-09-18
 
 ### Added
