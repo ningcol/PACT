@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 
+from runtime_exec import runtime_command
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -18,7 +20,7 @@ def build_map() -> dict:
     with tempfile.TemporaryDirectory(prefix="pact-audit-") as tmp:
         output = pathlib.Path(tmp) / "project-map.json"
         result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "pact" / "map.py"), "--output", str(output)],
+            runtime_command("map", "--output", str(output)),
             capture_output=True,
             text=True,
         )
@@ -33,7 +35,7 @@ def main() -> int:
     args = parser.parse_args()
 
     check = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "pact" / "check.py")],
+        runtime_command("check"),
         capture_output=True,
         text=True,
     )
