@@ -7,11 +7,15 @@
   "verification": [
     {
       "claim": "Switching province updates the displayed data.",
-      "evidence_ids": ["EV-PROVINCE-SWITCH"]
+      "evidence_ids": [
+        "EV-PROVINCE-SWITCH"
+      ]
     },
     {
       "claim": "The expected province state remains correct after refresh.",
-      "evidence_ids": ["EV-PROVINCE-REFRESH"]
+      "evidence_ids": [
+        "EV-PROVINCE-REFRESH"
+      ]
     }
   ],
   "consistency": {
@@ -21,5 +25,6 @@
   "owner_decisions": [],
   "technical_details": [
     "Example only; real reports may reference files/diffs here for progressive disclosure."
-  ]
+  ],
+  "task_id": "example-province-switch"
 }
