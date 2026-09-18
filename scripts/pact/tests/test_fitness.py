@@ -74,7 +74,7 @@ class FitnessTests(unittest.TestCase):
             [[checks]]
             id = "migration-warning"
             description = "Migration still has a known cycle."
-            command = ["{sys.executable}", "{checker}"]
+            command = [{json.dumps(str(sys.executable))}, {json.dumps(str(checker))}]
             severity = "warn"
             """,
         )
