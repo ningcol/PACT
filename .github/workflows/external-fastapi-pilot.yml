@@ -1,0 +1,285 @@
+name: External Brownfield Pilot - FastAPI Full Stack
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/external-fastapi-pilot.yml"
+      - "bootstrap.py"
+      - "pact.py"
+      - "scripts/pact/**"
+      - ".pact/schema/**"
+      - ".pact/*.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-brownfield:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TARGET_REPO: https://github.com/fastapi/full-stack-fastapi-template.git
+      TARGET_REF: cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7
+      PACT_REF: f8690a64f7d6bc448092919cfb71411567041fc5
+      TARGET_DIR: /tmp/full-stack-fastapi-template
+      TASK_ID: EXT-FASTAPI-001
+
+    steps:
+      - name: Checkout PACT pilot harness
+        uses: actions/checkout@v4
+
+      - name: Set up bootstrap Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned external project
+        run: |
+          set -euo pipefail
+          git clone "$TARGET_REPO" "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          ACTUAL="$(git -C "$TARGET_DIR" rev-parse HEAD)"
+          echo "Target HEAD: $ACTUAL"
+          test "$ACTUAL" = "$TARGET_REF"
+
+      - name: Preview PACT brownfield adoption through bootstrap
+        run: |
+          set -euo pipefail
+          python3 bootstrap.py init             --target "$TARGET_DIR"             --ref "$PACT_REF"
+
+      - name: Apply PACT through no-clone bootstrap
+        run: |
+          set -euo pipefail
+          python3 bootstrap.py init             --target "$TARGET_DIR"             --ref "$PACT_REF"             --apply             --github-actions
+
+      - name: Assert PACT did not modify tracked upstream files
+        run: |
+          set -euo pipefail
+          MODIFIED="$(git -C "$TARGET_DIR" diff --name-only)"
+          if [ -n "$MODIFIED" ]; then
+            echo "PACT modified tracked upstream files:"
+            echo "$MODIFIED"
+            exit 1
+          fi
+          echo "Only additive/untracked PACT scaffold files were introduced."
+          git -C "$TARGET_DIR" status --short | head -100
+
+      - name: Validate PACT foundation on external project
+        working-directory: /tmp/full-stack-fastapi-template
+        run: |
+          set -euo pipefail
+          python3 pact.py doctor --strict
+          python3 pact.py readiness --json | tee /tmp/pact-readiness.json
+          python3 pact.py audit --json | tee /tmp/pact-audit.json
+          python3 pact.py risk high --json | tee /tmp/pact-risk-high.json
+
+      - name: Build fresh project and code maps
+        working-directory: /tmp/full-stack-fastapi-template
+        run: |
+          set -euo pipefail
+          python3 pact.py map --ensure
+          python3 pact.py code-map --ensure
+          python3 pact.py map --ensure
+          python3 pact.py code-map --ensure
+
+      - name: Exercise project memory and code discovery
+        working-directory: /tmp/full-stack-fastapi-template
+        run: |
+          set -euo pipefail
+          python3 pact.py discover "password reset"             --code             --json | tee /tmp/pact-discover.json
+
+          python3 pact.py context "change the password reset flow"             --success "Password reset still works for a user end to end"             --risk medium             --output /tmp/pact-context.json
+
+          python3 pact.py impact             --files               backend/app/api/routes/login.py               frontend/src/routes/reset-password.tsx             --risk medium             --json | tee /tmp/pact-impact.json
+
+      - name: Assert external discovery quality
+        run: |
+          python3 - <<'PY'
+          import json
+
+          discovery = json.load(open("/tmp/pact-discover.json"))
+          context = json.load(open("/tmp/pact-context.json"))
+          impact = json.load(open("/tmp/pact-impact.json"))
+
+          assert discovery["code_result_count"] > 0, discovery
+          assert len(context["code_artifacts"]) > 0, context
+          assert context["risk_policy"]["code_context"] is True, context
+          assert impact["code_analysis"] is True, impact
+          assert len(impact["code_candidate_impacts"]) > 0, impact
+
+          print("External discovery quality assertions passed.")
+          print("knowledge matches:", discovery["result_count"])
+          print("code matches:", discovery["code_result_count"])
+          print("context code artifacts:", len(context["code_artifacts"]))
+          print("impact code candidates:", len(impact["code_candidate_impacts"]))
+          PY
+
+      - name: Run the external application through its Docker Compose path
+        working-directory: /tmp/full-stack-fastapi-template
+        run: |
+          set -euo pipefail
+          mkdir -p ".pact/runs/$TASK_ID"
+
+          python3 pact.py run             --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/app-smoke.json"             --             bash -lc '
+              set -euo pipefail
+              docker compose build
+              docker compose down -v --remove-orphans
+              docker compose run --rm backend bash scripts/prestart.sh
+              docker compose up -d --wait backend adminer
+              curl --fail --retry 10 --retry-delay 2 http://localhost:8000/api/v1/utils/health-check/
+              curl --fail --retry 10 --retry-delay 2 http://localhost:8000/
+            '
+
+      - name: Create source-backed completion bundle
+        working-directory: /tmp/full-stack-fastapi-template
+        run: |
+          set -euo pipefail
+          BUNDLE=".pact/completions/$TASK_ID"
+          mkdir -p "$BUNDLE"
+
+          cat > "$BUNDLE/evidence.json" <<'JSON'
+          {
+            "version": 1,
+            "task_id": "EXT-FASTAPI-001",
+            "task": "Adopt PACT and prove the external full-stack application still builds and serves backend/frontend",
+            "risk_level": "medium",
+            "claims": [
+              {
+                "id": "EV-EXT-APP-SMOKE",
+                "claim": "The pinned external application builds, initializes its database, starts the backend, and serves both health and frontend endpoints.",
+                "required": true,
+                "status": "pass",
+                "evidence": [
+                  {
+                    "kind": "runtime",
+                    "provenance": "pact-run",
+                    "ref": ".pact/runs/EXT-FASTAPI-001/app-smoke.json"
+                  }
+                ]
+              },
+              {
+                "id": "EV-EXT-CONTEXT",
+                "claim": "PACT produced a medium-risk task context from the external project's real source tree.",
+                "required": true,
+                "status": "pass",
+                "evidence": [
+                  {
+                    "kind": "other",
+                    "provenance": "file",
+                    "ref": "/tmp/pact-context.json"
+                  }
+                ]
+              }
+            ],
+            "limitations": [
+              "This external pilot validates an uncustomized public template, not the owner's real brownfield repository."
+            ]
+          }
+          JSON
+
+          cat > "$BUNDLE/convergence.json" <<'JSON'
+          {
+            "version": 1,
+            "task_id": "EXT-FASTAPI-001",
+            "change": "Ephemeral PACT adoption into a pinned public full-stack repository",
+            "owner_summary": "PACT was added without modifying tracked upstream files, its generated context/impact checks passed, and the application still ran through its Docker Compose path.",
+            "evidence": [
+              "EV-EXT-APP-SMOKE",
+              "EV-EXT-CONTEXT"
+            ],
+            "findings": []
+          }
+          JSON
+
+          cat > "$BUNDLE/owner-report.json" <<'JSON'
+          {
+            "version": 1,
+            "task_id": "EXT-FASTAPI-001",
+            "status": "completed",
+            "summary": "PACT successfully completed an external brownfield trial on a pinned FastAPI + React project.",
+            "before": "The external repository did not contain PACT project infrastructure.",
+            "after": "PACT was added only as ephemeral additive scaffold; discovery/context/impact checks ran and the original application still built and served backend/frontend.",
+            "verification": [
+              {
+                "claim": "The external application ran successfully after PACT adoption.",
+                "evidence_ids": ["EV-EXT-APP-SMOKE"]
+              },
+              {
+                "claim": "PACT generated code-aware task context from the real external source tree.",
+                "evidence_ids": ["EV-EXT-CONTEXT"]
+              }
+            ],
+            "consistency": {
+              "status": "aligned",
+              "summary": "No tracked upstream file was modified and no blocking convergence finding was recorded."
+            },
+            "owner_decisions": []
+          }
+          JSON
+
+          python3 pact.py evidence "$BUNDLE/evidence.json" --json
+          python3 pact.py report "$BUNDLE/owner-report.json"             --evidence "$BUNDLE/evidence.json"             --convergence "$BUNDLE/convergence.json"
+          python3 pact.py complete "$BUNDLE" --json | tee /tmp/pact-complete.json
+
+      - name: Preview upgrade from the same pinned PACT source
+        run: |
+          set -euo pipefail
+          python3 bootstrap.py upgrade             --target "$TARGET_DIR"             --ref "$PACT_REF"
+
+      - name: Publish pilot summary
+        if: always()
+        run: |
+          {
+            echo "## External FastAPI Brownfield Pilot"
+            echo
+            echo "- Target: `fastapi/full-stack-fastapi-template@$TARGET_REF`"
+            echo "- PACT: `ningcol/PACT@$PACT_REF`"
+            echo "- Runner: GitHub-hosted Ubuntu"
+            echo
+            if [ -f /tmp/pact-discover.json ]; then
+              python3 - <<'PY'
+          import json, os
+          d = json.load(open("/tmp/pact-discover.json"))
+          c = json.load(open("/tmp/pact-context.json"))
+          i = json.load(open("/tmp/pact-impact.json"))
+          out = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(out, "a") as f:
+              f.write(f"- Knowledge matches: {d['result_count']}\n")
+              f.write(f"- Code matches: {d['code_result_count']}\n")
+              f.write(f"- Context code artifacts: {len(c['code_artifacts'])}\n")
+              f.write(f"- Impact code candidates: {len(i['code_candidate_impacts'])}\n")
+          PY
+            fi
+            if [ -f /tmp/pact-complete.json ]; then
+              python3 - <<'PY'
+          import json, os
+          x = json.load(open("/tmp/pact-complete.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(f"- Completion gate: {'PASS' if x['complete'] else 'FAIL'}\n")
+          PY
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PACT pilot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-fastapi-pact-pilot
+          path: |
+            /tmp/pact-readiness.json
+            /tmp/pact-audit.json
+            /tmp/pact-risk-high.json
+            /tmp/pact-discover.json
+            /tmp/pact-context.json
+            /tmp/pact-impact.json
+            /tmp/pact-complete.json
+            /tmp/full-stack-fastapi-template/.pact/runs/
+            /tmp/full-stack-fastapi-template/.pact/completions/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup external Compose stack
+        if: always()
+        working-directory: /tmp/full-stack-fastapi-template
+        run: docker compose down -v --remove-orphans || true
