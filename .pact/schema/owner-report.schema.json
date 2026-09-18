@@ -11,6 +11,7 @@
     "before",
     "after",
     "verification",
+    "acceptance",
     "consistency",
     "owner_decisions"
   ],
@@ -50,6 +51,33 @@
         "additionalProperties": false,
         "properties": {
           "claim": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^EV-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["criterion_id", "summary", "evidence_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "criterion_id": {
+            "type": "string",
+            "pattern": "^AC-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+          },
+          "summary": {
             "type": "string",
             "minLength": 1
           },
