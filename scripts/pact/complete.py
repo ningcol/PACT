@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import sys
@@ -98,10 +99,21 @@ def main() -> int:
     errors.extend(f"evidence.{error}" for error in validate_evidence(evidence))
     errors.extend(validate_report_part(convergence, CONVERGENCE_SCHEMA, "convergence"))
     errors.extend(validate_report_part(owner, OWNER_SCHEMA, "owner"))
+    contract_sha256 = None
     if contract is not None:
         errors.extend(
             f"contract.{error}" for error in validate_contract(contract)
         )
+        if contract_path is not None:
+            contract_sha256 = hashlib.sha256(
+                contract_path.resolve().read_bytes()
+            ).hexdigest()
+        recorded_contract_sha = evidence.get("task_contract_sha256")
+        if recorded_contract_sha != contract_sha256:
+            errors.append(
+                "evidence.task_contract_sha256 does not match current Task Contract "
+                f"({recorded_contract_sha!r} != {contract_sha256!r})"
+            )
 
     policy_gaps: list[str] = []
     provenance_stats = {
@@ -202,6 +214,7 @@ def main() -> int:
         "current_workspace": provenance_stats.get("current_workspace"),
         "acceptance": acceptance_stats,
         "contract": str(contract_path.resolve()) if contract_path else None,
+        "contract_sha256": contract_sha256,
         "bundle": str(bundle),
     }
 
