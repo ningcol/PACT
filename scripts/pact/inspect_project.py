@@ -9,11 +9,10 @@ import pathlib
 import subprocess
 import sys
 
+from runtime_exec import runtime_command
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-RUNTIME = ROOT / "scripts" / "pact"
-
-
 def run_json(command: list[str], *, allow_empty: bool = False) -> dict:
     result = subprocess.run(
         command,
@@ -43,23 +42,23 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        explanation = run_json([
-            sys.executable,
-            str(RUNTIME / "explain.py"),
-            args.query,
-            "--limit",
-            str(args.limit),
-            "--json",
-        ])
+        explanation = run_json(
+            runtime_command(
+                "explain",
+                args.query,
+                "--limit",
+                str(args.limit),
+                "--json",
+            )
+        )
 
-        discover_command = [
-            sys.executable,
-            str(RUNTIME / "discover.py"),
+        discover_command = runtime_command(
+            "discover",
             args.query,
             "--limit",
             str(args.limit),
             "--json",
-        ]
+        )
         if args.code:
             discover_command.extend(["--code", "--code-limit", str(args.limit)])
         discovery = run_json(discover_command, allow_empty=True)
