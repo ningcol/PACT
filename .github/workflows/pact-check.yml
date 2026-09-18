@@ -38,6 +38,9 @@ jobs:
             --risk low \
             --output /tmp/pact-context.json
 
+      - name: Smoke-test Impact Analysis
+        run: python scripts/pact/pact.py impact --files AGENTS.md --json
+
       - name: Validate convergence report contract
         run: python scripts/pact/pact.py converge .pact/examples/convergence-report.example.json
 
