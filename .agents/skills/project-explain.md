@@ -6,9 +6,10 @@ Explain an existing project feature, behavior, or historical design to the owner
 
 ## Start
 
-Run:
+Load the Owner Profile, then build the explanation evidence packet:
 
 ```bash
+python scripts/pact/pact.py owner --json
 python scripts/pact/pact.py explain "<owner query>" --json
 ```
 
@@ -63,6 +64,8 @@ Surface conflicts between Product Truth, code, tests, architecture, or old docum
 
 ## Communication rules
 
+- respond in the configured owner language (or current conversation language when `auto`);
+- honor configured `technical_depth` and progressive disclosure;
 - use canonical business vocabulary;
 - explain consequences before implementation;
 - do not dump file lists as the answer;
