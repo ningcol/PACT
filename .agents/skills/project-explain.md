@@ -37,7 +37,7 @@ Explain the business/product concept in established project vocabulary.
 
 ### What should happen
 
-Ground this in confirmed Product Truth. If none is found, say so.
+Ground this only in artifacts whose status establishes confirmed Product Truth. Candidate rules/concepts are context, not normative truth. If none is found, say so.
 
 ### How it works today
 
@@ -45,9 +45,9 @@ Ground this in current implementation/runtime evidence, not Product Truth alone.
 
 ### Why it is this way
 
-Use durable Decision evidence.
+Use an implemented Decision Record for the current rationale. Proposed/rejected records may explain alternatives, and superseded records may explain history, but they are not evidence for the current design rationale.
 
-If no rationale is preserved, explicitly say that the reason is not currently documented. Never invent a plausible architecture story.
+If no implemented rationale is preserved, explicitly say that the reason is not currently documented. Never invent a plausible architecture story.
 
 ### Where it matters
 
