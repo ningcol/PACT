@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -50,15 +50,9 @@ def install_provenance_check(strict: bool) -> dict:
     schema_path = ROOT / ".pact" / "schema" / "install-manifest.schema.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        validator = Draft202012Validator(schema)
-        errors = sorted(validator.iter_errors(manifest), key=lambda e: list(e.path))
+        errors = validate_instance(manifest, load_schema(schema_path))
         if errors:
-            detail = "; ".join(
-                f"{'.'.join(str(p) for p in err.path) or '<root>'}: {err.message}"
-                for err in errors
-            )
-            return item("install-provenance", "fail", detail)
+            return item("install-provenance", "fail", "; ".join(errors))
 
         version_path = ROOT / ".pact" / "VERSION"
         installed_version = version_path.read_text(encoding="utf-8").strip()
