@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timezone
 
 from cache import cache_is_fresh, fingerprint_files, git_head
+from distribution import discovery_excluded_paths
 from formats import parse_markdown_metadata
 
 
@@ -27,8 +28,14 @@ def as_list(value) -> list:
     return value if isinstance(value, list) else []
 
 
-def should_index(path: pathlib.Path, root: pathlib.Path) -> bool:
+def should_index(
+    path: pathlib.Path,
+    root: pathlib.Path,
+    excluded_paths: set[str],
+) -> bool:
     r = rel(path, root)
+    if r in excluded_paths:
+        return False
     if r.startswith(".pact/cache/"):
         return False
     if "/TEMPLATE.md" in r or r.endswith("/TEMPLATE.md"):
@@ -41,10 +48,11 @@ def should_index(path: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 def source_paths(root: pathlib.Path) -> list[pathlib.Path]:
+    excluded_paths = discovery_excluded_paths(root)
     return [
         path
         for path in root.rglob("*.md")
-        if path.is_file() and should_index(path, root)
+        if path.is_file() and should_index(path, root, excluded_paths)
     ]
 
 
