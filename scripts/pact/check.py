@@ -257,9 +257,11 @@ def validate_links(root: pathlib.Path) -> list[str]:
             resolved = target.resolve()
 
             if resolved != root_resolved and root_resolved not in resolved.parents:
-                errors.append(
-                    f"{rel(path, root)}: internal link escapes repository: '{raw}'"
-                )
+                # A relative Markdown destination that escapes the repository file
+                # tree may intentionally navigate to hosting UI routes, e.g.
+                # ../../actions/workflows/... from a GitHub README. The machine
+                # cannot establish that such a destination is broken, so this is
+                # outside the deterministic FAIL boundary.
                 continue
 
             if not resolved.exists():

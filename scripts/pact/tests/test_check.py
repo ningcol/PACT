@@ -154,6 +154,14 @@ class PactCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("broken internal link", result.stderr)
 
+    def test_host_ui_relative_link_escaping_file_tree_does_not_fail(self) -> None:
+        self.write(
+            "README.md",
+            "[Backend CI](../../actions/workflows/test-backend.yml/badge.svg)\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
