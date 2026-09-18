@@ -126,6 +126,8 @@ def prepare(args) -> int:
         print(context_result.stderr, end="", file=sys.stderr)
         return context_result.returncode
 
+    context_sha256 = hashlib.sha256(context_path.read_bytes()).hexdigest()
+
     impact_path = None
     impact_state = "deferred"
     impact_cmd = None
@@ -168,6 +170,7 @@ def prepare(args) -> int:
         "contract_sha256": contract_sha256,
         "acceptance_criteria_count": len(contract["acceptance_criteria"]),
         "context": context_path.relative_to(ROOT).as_posix(),
+        "context_sha256": context_sha256,
         "impact": (
             impact_path.relative_to(ROOT).as_posix()
             if impact_path is not None
@@ -199,7 +202,7 @@ def prepare(args) -> int:
         print(f"PACT task prepared: {task_id}")
         print(f"- risk: {args.risk}")
         print(f"- contract: {manifest['contract']} ({manifest['acceptance_criteria_count']} acceptance criteria)")
-        print(f"- context: {manifest['context']}")
+        print(f"- context: {manifest['context']} (sha256={manifest['context_sha256'][:12]}...)")
         print(f"- impact: {impact_state}")
         if impact_state == "deferred":
             print(
@@ -247,6 +250,11 @@ def finish(args) -> int:
 
     if manifest is not None and manifest.get("contract"):
         command.extend(["--contract", str(ROOT / manifest["contract"])])
+
+    if manifest is not None and manifest.get("context"):
+        command.extend(["--context", str(ROOT / manifest["context"])])
+        if manifest.get("context_sha256"):
+            command.extend(["--context-sha256", manifest["context_sha256"]])
 
     completed = run(command)
     output = None
