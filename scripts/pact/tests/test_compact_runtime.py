@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,6 +46,32 @@ class CompactRuntimeTests(unittest.TestCase):
             self.assertIn("runtime_exec.py", names)
             self.assertIn("task.py", names)
             self.assertNotIn("tests/test_task_surface.py", names)
+
+    def test_bundle_normalizes_source_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-pyz-newlines-") as tmp:
+            root = pathlib.Path(tmp)
+            source = root / "source"
+            shutil.copytree(
+                PROJECT_ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    ".git",
+                    "__pycache__",
+                    "*.pyc",
+                    "cache",
+                ),
+            )
+
+            baseline = root / "baseline.pyz"
+            crlf = root / "crlf.pyz"
+            runtime_bundle.build_runtime_bundle(source, baseline)
+
+            target = source / "scripts" / "pact" / "version.py"
+            text = target.read_text(encoding="utf-8")
+            target.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+
+            runtime_bundle.build_runtime_bundle(source, crlf)
+            self.assertEqual(baseline.read_bytes(), crlf.read_bytes())
 
     def test_fresh_init_installs_one_runtime_bundle_and_executes_it(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-compact-init-") as tmp:
