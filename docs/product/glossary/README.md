@@ -1,33 +1,40 @@
 # Domain Vocabulary
 
-Canonical vocabulary helps humans and agents find the same concept even when old code and documents use different names.
+PACT vocabulary is anchored in **Domain artifacts**, not a second manually maintained glossary database.
 
-## Template
+For each durable business concept, create a Domain page under `docs/product/domains/` and put every machine-searchable name in TOML metadata:
 
-```yaml
-id: DOMAIN-EXAMPLE
-canonical_name: Example Name
-
-meaning:
-  Precise business meaning.
-
-owner_terms:
-  - Example Name
-
-code_aliases:
-  - exampleName
-  - legacy_example
-
-historical_aliases:
-  - Old Name
-
-not_the_same_as:
-  - Similar but different concept
+```toml
++++
+[pact]
+type = "domain"
+id = "DOMAIN-BATCH"
+status = "confirmed"
+owners = ["product"]
+aliases = [
+  "全国批次",
+  "批次",
+  "省份批次",
+  "examBatch",
+  "admissionBatch",
+  "currentBatch",
+]
++++
 ```
+
+The page heading is the canonical owner-facing name.
+
+Use the body to explain:
+
+- precise business meaning;
+- confusing near-synonyms;
+- historical terminology;
+- important relationships.
 
 ## Rules
 
 - Do not force immediate code-wide renaming during PACT adoption.
 - Map aliases first; converge naming over time.
-- Canonical terms are preferred in owner-facing communication and product truth.
+- Canonical terms are preferred in owner-facing communication and Product Truth.
 - Distinguish same-name/different-meaning concepts explicitly.
+- Do not keep a second alias list that can drift from `pact.aliases`.
