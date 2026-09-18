@@ -45,6 +45,14 @@ class CompactRuntimeTests(unittest.TestCase):
             self.assertIn("pact.py", names)
             self.assertIn("runtime_exec.py", names)
             self.assertIn("task.py", names)
+            self.assertIn(
+                "pact_resources/schema/task-contract.schema.json",
+                names,
+            )
+            self.assertIn(
+                "pact_resources/schema/convergence-report.schema.json",
+                names,
+            )
             self.assertNotIn("tests/test_task_surface.py", names)
 
     def test_bundle_normalizes_source_line_endings(self) -> None:
@@ -159,6 +167,49 @@ class CompactRuntimeTests(unittest.TestCase):
             self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
             data = json.loads(status.stdout)
             self.assertIn(data["overall"], {"pass", "warn"})
+            self.assertFalse((target / ".pact" / "schema").exists())
+
+            schema_lint = subprocess.run(
+                [sys.executable, str(target / "pact.py"), "schema-lint"],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                schema_lint.returncode,
+                0,
+                schema_lint.stdout + schema_lint.stderr,
+            )
+            self.assertIn("schema file(s) supported", schema_lint.stdout)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "pact.py"),
+                    "task",
+                    "prepare",
+                    "embedded schema smoke",
+                    "--success",
+                    "Task Contract and Context validate from embedded schemas",
+                    "--risk",
+                    "low",
+                    "--task-id",
+                    "TASK-EMBEDDED-SCHEMA",
+                    "--json",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                prepared.returncode,
+                0,
+                prepared.stdout + prepared.stderr,
+            )
+            self.assertEqual(
+                json.loads(prepared.stdout)["task_id"],
+                "TASK-EMBEDDED-SCHEMA",
+            )
 
 
 if __name__ == "__main__":
