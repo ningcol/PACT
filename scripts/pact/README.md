@@ -27,6 +27,8 @@ init       safely scaffold PACT into an existing repository
 upgrade    safely update unchanged framework-managed PACT files
 version    show source/installed PACT runtime versions
 check      deterministic artifact checks
+schema-lint validate that schemas use only runtime-supported keywords
+workflow-lint require immutable external GitHub Action pins
 doctor     deterministic PACT foundation health
 readiness  explicit brownfield baseline readiness
 audit      deterministic repository health inventory
