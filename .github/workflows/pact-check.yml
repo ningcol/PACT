@@ -25,6 +25,9 @@ jobs:
       - name: PACT audit
         run: python scripts/pact/pact.py audit
 
+      - name: Validate Owner Profile fallback
+        run: python scripts/pact/pact.py owner --json
+
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
@@ -67,5 +70,6 @@ jobs:
           rm -rf /tmp/pact-adopted
           python scripts/pact/pact.py init --target /tmp/pact-adopted --apply
           python /tmp/pact-adopted/scripts/pact/pact.py doctor --strict
+          python /tmp/pact-adopted/scripts/pact/pact.py owner --strict --json
           python /tmp/pact-adopted/scripts/pact/pact.py audit
           python /tmp/pact-adopted/scripts/pact/pact.py explain "product truth" --json
