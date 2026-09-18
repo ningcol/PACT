@@ -13,6 +13,7 @@ COMMANDS = {
     "init": "init.py",
     "check": "check.py",
     "doctor": "doctor.py",
+    "readiness": "readiness.py",
     "audit": "audit.py",
     "owner": "owner.py",
     "map": "map.py",
