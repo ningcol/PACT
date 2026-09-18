@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "change": "Example province switch behavior",
+  "owner_summary": "Province switching behavior and its related product rule are aligned in this example.",
+  "evidence": [
+    "Example only: replace with real test/browser/runtime evidence in a project."
+  ],
+  "findings": [
+    {
+      "classification": "aligned",
+      "severity": "low",
+      "subject": "Province switch observable behavior",
+      "observed": "The selected province and displayed data move together.",
+      "expected": "Displayed data follows the selected province.",
+      "authority": "Example confirmed Product Truth",
+      "evidence": [
+        "Example scenario evidence"
+      ],
+      "recommended_action": "No reconciliation required."
+    }
+  ]
+}
