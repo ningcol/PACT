@@ -27,6 +27,7 @@ COMMANDS = {
     # Advanced primitives.
     "check": "check.py",
     "schema-lint": "schema_lint.py",
+    "workflow-lint": "workflow_lint.py",
     "doctor": "doctor.py",
     "readiness": "readiness.py",
     "audit": "audit.py",
