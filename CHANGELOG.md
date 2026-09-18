@@ -4,6 +4,16 @@ PACT runtime versions track the distributable framework/runtime files used by `p
 
 They do **not** version a project's Product Truth, Architecture, Decisions, Owner Profile, or other project-owned seed artifacts.
 
+## Unreleased
+
+### Owner Trust Loop
+
+- `task prepare` now persists a machine-readable Task Contract;
+- repeatable acceptance criteria receive stable `AC-*` IDs;
+- Evidence claims can bind directly to acceptance criteria;
+- `task finish` blocks completion when acceptance is unverified or omitted from the Owner Report;
+- task-scoped constraints and acceptance coverage are visible through the high-level task surface.
+
 ## 0.3.0 — 2026-09-18
 
 PACT 0.3 focuses on reducing adoption friction and hardening the trust boundary between AI claims and real project state.
