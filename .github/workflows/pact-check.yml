@@ -34,6 +34,9 @@ jobs:
       - name: Smoke-test Project Discovery
         run: python scripts/pact/pact.py discover "product truth" --index /tmp/pact-project-map.json --json
 
+      - name: Smoke-test Project Explanation packet
+        run: python scripts/pact/pact.py explain "product truth governance" --json
+
       - name: Smoke-test Context Resolver
         run: |
           python scripts/pact/pact.py context "product truth governance" \
@@ -62,3 +65,4 @@ jobs:
           python scripts/pact/pact.py init --target /tmp/pact-adopted --apply
           python /tmp/pact-adopted/scripts/pact/pact.py doctor --strict
           python /tmp/pact-adopted/scripts/pact/pact.py audit
+          python /tmp/pact-adopted/scripts/pact/pact.py explain "product truth" --json

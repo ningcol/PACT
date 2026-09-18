@@ -4,7 +4,7 @@
 
 PACT is a project-level control plane for AI-first software development.
 
-It helps AI agents understand project truth, discover relevant context, make technical decisions autonomously, verify outcomes, detect drift, and communicate results in owner-readable language.
+It helps AI agents understand project truth, discover relevant context, make technical decisions autonomously, verify outcomes, detect drift, explain existing project behavior, and communicate results in owner-readable language.
 
 PACT is **not** a prompt bundle, a Skill, or a multi-agent framework. It is the durable project layer that any single-agent or multi-agent execution strategy can consume.
 
@@ -17,16 +17,17 @@ As projects grow, AI coding workflows tend to fail in predictable ways:
 - technical choices are escalated to owners who should only decide product meaning;
 - code, tests, architecture docs, and product rules drift apart;
 - "done" is reported without durable evidence;
-- future agents repeatedly rediscover why a system works the way it does.
+- future agents repeatedly rediscover why a system works the way it does;
+- owners remember a feature or business rule but no longer remember where or why it was implemented.
 
 PACT treats these as **project infrastructure problems**, not prompt-writing problems.
 
 ## Core loop
 
 ```text
-Owner Intent
+Owner Intent / Question
     ↓
-Project Discovery
+Project Discovery / Explanation
     ↓
 Context Resolution
     ↓
@@ -71,6 +72,14 @@ Discover project knowledge:
 ```bash
 python scripts/pact/pact.py discover "product truth"
 ```
+
+Prepare an explanation packet when you remember the feature but not the implementation/history:
+
+```bash
+python scripts/pact/pact.py explain "why does the workspace follow the current batch?" --json
+```
+
+The packet separates Product Truth, Architecture, Decisions, Changes, and Drift. An AI agent then turns that evidence into an owner-readable explanation and expands into code/runtime/Git only when needed.
 
 Build a candidate task context:
 
@@ -126,12 +135,23 @@ doctor     repository readiness
 audit      repository health inventory
 map        rebuild disposable discovery index
 discover   locate project knowledge
+explain    prepare evidence for an owner-readable project explanation
 context    build candidate Task Context Envelope
 impact     map changed files to project knowledge
 converge   validate semantic Convergence Reports
 evidence   validate Evidence Receipts
 report     render evidence-backed Owner Reports
 ```
+
+## Discovery, Explain, and Context
+
+These are intentionally separate:
+
+- **Discover** answers: "Where is the relevant project knowledge?"
+- **Explain** answers: "What evidence do we need to explain this feature/business behavior correctly?"
+- **Context** answers: "What does this implementation task need to understand before changing behavior?"
+
+`explain` does not invent a final narrative. If no Decision Record exists, it explicitly reports that the durable reason is missing instead of fabricating one.
 
 ## Repository structure
 
@@ -166,6 +186,7 @@ PACT v1 currently includes the executable foundation for:
 - brownfield initialization;
 - Truth ownership and artifact lifecycle;
 - Project Discovery;
+- Project Explanation evidence packets;
 - candidate Context Resolution;
 - conservative Impact Analysis;
 - Convergence Reports;
