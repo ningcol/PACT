@@ -69,6 +69,43 @@ This includes time spent on PACT-specific baseline/context/evidence/convergence 
 
 Do not fake precision if the number is unavailable.
 
+## Machine-observed task data
+
+PACT can derive facts it already owns without asking the pilot operator to copy them into a scorecard:
+
+```bash
+python scripts/pact/pact.py eval --task <TASK-ID> --json
+```
+
+The observation is built from the prepared Task Contract, Context envelope, `pact run` receipts, completion attempts, Evidence, Convergence, and Owner Report when present.
+
+Machine-observed dimensions include:
+
+- acceptance criteria and owner-visible Evidence coverage;
+- Context knowledge/code artifact counts and known unknowns;
+- verification run count/pass/fail/workspace-change counts;
+- completion attempts and failed attempts;
+- stale-workspace, stale-Task-Contract, acceptance-gap, and CI-requirement blocks;
+- Evidence claim states;
+- Convergence finding/owner-decision counts.
+
+PACT deliberately leaves human-only dimensions in `human_required` instead of fabricating zeros:
+
+- product decisions actually made by the owner;
+- technical escalations to the owner;
+- clarification rounds;
+- owner comprehension;
+- subjective Context overload;
+- PACT-specific overhead time.
+
+The machine observation complements the pilot evaluation record; it does not replace owner-observed data.
+
+## Historical retrieval replay
+
+Use `docs/evaluation/brownfield-benchmark.md` for the repeatable historical Context-retrieval benchmark. It compares pre-change Context with source files changed by later real commits and separately measures direct vs Agent-expanded queries.
+
+This benchmark measures retrieval only. It is not a substitute for the owner-interaction dimensions above.
+
 ## Baseline comparison
 
 Records support:
