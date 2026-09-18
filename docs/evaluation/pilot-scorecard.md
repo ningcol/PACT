@@ -102,7 +102,7 @@ The machine observation complements the pilot evaluation record; it does not rep
 
 ## Historical retrieval replay
 
-Use `docs/evaluation/brownfield-benchmark.md` for the repeatable historical Context-retrieval benchmark. It compares pre-change Context with source files changed by later real commits and separately measures direct vs Agent-expanded queries.
+Use `docs/evaluation/brownfield-benchmark.md` for the repeatable historical Context-retrieval benchmark. It compares pre-change Context with source files changed by later real commits and separately measures direct retrieval vs a curated post-hoc expanded-query diagnostic. The latter is not an unbiased Agent-performance metric.
 
 This benchmark measures retrieval only. It is not a substitute for the owner-interaction dimensions above.
 
