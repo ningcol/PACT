@@ -17,6 +17,7 @@ Run the core checks:
 ```bash
 python3 pact.py --help
 python3 scripts/pact/pact.py schema-lint
+python3 scripts/pact/pact.py workflow-lint
 python3 scripts/pact/pact.py check
 python3 -m unittest discover -s scripts/pact/tests -p "test_*.py"
 ```
