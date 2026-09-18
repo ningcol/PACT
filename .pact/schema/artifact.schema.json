@@ -5,6 +5,12 @@
   "type": "object",
   "required": ["pact"],
   "additionalProperties": true,
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
+    }
+  },
   "properties": {
     "pact": {
       "type": "object",
@@ -15,8 +21,7 @@
           "enum": ["domain", "rule", "decision", "change", "drift", "architecture"]
         },
         "id": {
-          "type": "string",
-          "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
+          "$ref": "#/$defs/stableId"
         },
         "status": {
           "type": "string"
@@ -43,7 +48,7 @@
         },
         "related": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/stableId" },
           "uniqueItems": true
         },
         "verification": {
@@ -53,11 +58,14 @@
         },
         "supersedes": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/stableId" },
           "uniqueItems": true
         },
         "superseded_by": {
-          "type": ["string", "null"]
+          "oneOf": [
+            { "$ref": "#/$defs/stableId" },
+            { "type": "null" }
+          ]
         }
       }
     }
