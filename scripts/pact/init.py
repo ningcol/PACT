@@ -47,7 +47,7 @@ This repository uses PACT (Project AI Control Plane).
 - Active/completed change intent: `docs/changes/`
 - Drift: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
-- Adoption readiness: `.pact/baseline.yaml`
+- Adoption readiness: `.pact/baseline.toml`
 
 ## Decision boundary
 
@@ -90,8 +90,8 @@ Merge these concepts into the existing project agent guide:
 - let AI decide ordinary technical implementation;
 - escalate only product/risk decisions;
 - require evidence and convergence before claiming completion;
-- consult `.pact/baseline.yaml` and do not invent truth for pending baseline areas;
-- communicate owner-facing results using the project Owner Profile in `.pact/config.yaml`;
+- consult `.pact/baseline.toml` and do not invent truth for pending baseline areas;
+- communicate owner-facing results using the project Owner Profile in `.pact/config.toml`;
 - use product/business consequences before unnecessary implementation detail.
 
 Suggested knowledge router:
@@ -103,7 +103,7 @@ Suggested knowledge router:
 - Changes: `docs/changes/`
 - Drift: `docs/drift/`
 - Skills: `.agents/skills/`
-- Readiness: `.pact/baseline.yaml`
+- Readiness: `.pact/baseline.toml`
 
 Delete this bootstrap file after the existing `AGENTS.md` has been integrated.
 """
