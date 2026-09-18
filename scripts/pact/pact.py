@@ -14,6 +14,7 @@ COMMANDS = {
     "check": "check.py",
     "doctor": "doctor.py",
     "audit": "audit.py",
+    "owner": "owner.py",
     "map": "map.py",
     "discover": "discover.py",
     "explain": "explain.py",
