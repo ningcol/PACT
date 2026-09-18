@@ -28,6 +28,9 @@ jobs:
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
+      - name: Test deterministic failure modes
+        run: python -m unittest discover -s scripts/pact/tests -p 'test_*.py'
+
       - name: Build derived project map
         run: python scripts/pact/pact.py map --output /tmp/pact-project-map.json
 

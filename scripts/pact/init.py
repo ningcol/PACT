@@ -74,6 +74,7 @@ def source_manifest() -> list[tuple[pathlib.Path, pathlib.Path]]:
         "docs/changes/TEMPLATE.md",
         "docs/changes/active/README.md",
         "docs/changes/completed/README.md",
+        "docs/changes/abandoned/README.md",
         "docs/drift/README.md",
         "docs/drift/TEMPLATE.md",
         "docs/drift/known/README.md",

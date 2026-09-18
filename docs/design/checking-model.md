@@ -8,8 +8,11 @@ These may block CI because the machine can establish them reliably:
 
 - malformed machine-readable artifact metadata;
 - duplicate durable IDs;
-- invalid lifecycle state;
+- missing local Stable-ID references;
+- invalid Domain-reference target type;
+- invalid lifecycle state or lifecycle-directory mismatch;
 - artifact type in an invalid repository location;
+- broken resolvable internal Markdown links;
 - broken generated artifacts when generation is deterministic;
 - forbidden dependency when a fitness function exists;
 - failed tests.
@@ -46,5 +49,9 @@ owner-decision
 ## Policy
 
 **If a machine can establish the fact, FAIL. If it can only infer, WARN/review.**
+
+Referential integrity is deterministic: an explicit local ID/link either resolves or it does not.
+
+Semantic correctness is not: a resolved Rule may still be obsolete or irrelevant, which remains a Convergence concern.
 
 This protects PACT from becoming a documentation-compliance system that developers and agents satisfy with low-value paperwork.
