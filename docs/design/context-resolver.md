@@ -16,7 +16,9 @@ A task should provide:
 - goal;
 - observable success;
 - risk level;
-- discovery query.
+- one or more discovery queries.
+
+The owner does not need to write these queries. The Agent may expand the owner request into a small set of business/canonical/code search hypotheses and pass repeated `--query` values.
 
 ## 2. Output
 
@@ -57,7 +59,15 @@ only after judging that it understands:
 - verification targets;
 - important unknowns.
 
-## 4. Risk adaptation
+## 4. Multi-query budget
+
+Each query is retrieved independently. PACT then deduplicates and fuses the ranked lists before applying the final risk-adaptive artifact budget.
+
+This is intentionally different from simply increasing the number of files supplied to the model: additional queries should improve recall and ranking **inside** a bounded Context.
+
+The Context Envelope records both the primary `discovery_query` for compatibility and the actual `discovery_queries` list used for retrieval.
+
+## 5. Risk adaptation
 
 PACT 0.3 applies a core risk policy instead of treating risk as a label.
 
@@ -75,7 +85,7 @@ Inspect the current policy with:
 python3 pact.py risk high --json
 ```
 
-## 5. Stop condition
+## 6. Stop condition
 
 Stop retrieving when additional context is unlikely to materially change:
 

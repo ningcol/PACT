@@ -119,26 +119,50 @@ def prepare_direct(target: pathlib.Path, case: dict) -> dict:
     return json.loads(result.stdout)
 
 
-def expanded_context(target: pathlib.Path, case: dict, output: pathlib.Path) -> dict:
-    run(
-        [
-            sys.executable,
-            str(target / "pact.py"),
-            "context",
-            case["task"],
-            "--success",
-            case["success"],
-            "--risk",
-            case.get("risk_level", "medium"),
-            "--code",
-            "--query",
-            case["expanded_query"],
-            "--output",
-            str(output),
-        ],
-        cwd=target,
-    )
+def queried_context(
+    target: pathlib.Path,
+    case: dict,
+    output: pathlib.Path,
+    queries: list[str],
+) -> dict:
+    command = [
+        sys.executable,
+        str(target / "pact.py"),
+        "context",
+        case["task"],
+        "--success",
+        case["success"],
+        "--risk",
+        case.get("risk_level", "medium"),
+        "--code",
+    ]
+    for query in queries:
+        command.extend(["--query", query])
+    command.extend(["--output", str(output)])
+    run(command, cwd=target)
     return load_json(output)
+
+
+def expanded_context(target: pathlib.Path, case: dict, output: pathlib.Path) -> dict:
+    return queried_context(
+        target,
+        case,
+        output,
+        [case["expanded_query"]],
+    )
+
+
+def multi_query_context(
+    target: pathlib.Path,
+    case: dict,
+    output: pathlib.Path,
+) -> dict:
+    return queried_context(
+        target,
+        case,
+        output,
+        case["expanded_queries"],
+    )
 
 
 def context_metrics(context: dict, oracle_files: list[str]) -> dict:
@@ -193,11 +217,16 @@ def replay_case(case: dict) -> dict:
         prepared = prepare_direct(target, case)
         direct = load_json(target / prepared["context"])
 
-        expanded_path = target / ".pact" / "tasks" / prepared["task_id"] / "expanded-context.json"
+        task_dir = target / ".pact" / "tasks" / prepared["task_id"]
+        expanded_path = task_dir / "expanded-context.json"
         expanded = expanded_context(target, case, expanded_path)
+
+        multi_path = task_dir / "multi-query-context.json"
+        multi = multi_query_context(target, case, multi_path)
 
         direct_metrics = context_metrics(direct, available_oracle)
         expanded_metrics = context_metrics(expanded, available_oracle)
+        multi_metrics = context_metrics(multi, available_oracle)
 
         return {
             "id": case["id"],
@@ -208,12 +237,26 @@ def replay_case(case: dict) -> dict:
             "task_source": case.get("task_source", "unknown"),
             "expanded_query": case["expanded_query"],
             "expanded_query_source": case.get("expanded_query_source", "unknown"),
+            "expanded_queries": case["expanded_queries"],
+            "expanded_queries_source": case.get(
+                "expanded_queries_source",
+                "unknown",
+            ),
             "oracle_missing_at_base": missing_at_base,
             "direct": direct_metrics,
             "expanded": expanded_metrics,
+            "multi_query": multi_metrics,
             "query_expansion_recall_delta": (
                 (expanded_metrics["recall"] or 0.0)
                 - (direct_metrics["recall"] or 0.0)
+            ),
+            "multi_query_recall_delta": (
+                (multi_metrics["recall"] or 0.0)
+                - (direct_metrics["recall"] or 0.0)
+            ),
+            "multi_vs_single_expanded_recall_delta": (
+                (multi_metrics["recall"] or 0.0)
+                - (expanded_metrics["recall"] or 0.0)
             ),
         }
 
@@ -226,6 +269,9 @@ def aggregate(results: list[dict]) -> dict:
     expanded_hits = sum(
         len(item["expanded"]["matched_oracle_files"]) for item in results
     )
+    multi_hits = sum(
+        len(item["multi_query"]["matched_oracle_files"]) for item in results
+    )
 
     return {
         "case_count": len(results),
@@ -236,8 +282,19 @@ def aggregate(results: list[dict]) -> dict:
         "expanded_weighted_recall": (
             expanded_hits / oracle_total if oracle_total else None
         ),
+        "multi_query_weighted_recall": (
+            multi_hits / oracle_total if oracle_total else None
+        ),
         "cases_improved_by_query_expansion": sum(
             item["query_expansion_recall_delta"] > 0
+            for item in results
+        ),
+        "cases_improved_by_multi_query": sum(
+            item["multi_query_recall_delta"] > 0
+            for item in results
+        ),
+        "cases_multi_beats_single_expanded": sum(
+            item["multi_vs_single_expanded_recall_delta"] > 0
             for item in results
         ),
         "mean_direct_context_code_files": (
@@ -254,13 +311,22 @@ def aggregate(results: list[dict]) -> dict:
             if results
             else None
         ),
+        "mean_multi_query_context_code_files": (
+            statistics.fmean(
+                item["multi_query"]["context_code_files"] for item in results
+            )
+            if results
+            else None
+        ),
         "interpretation": (
             "Historical retrieval benchmark only. Owner task text is a commit-message-derived "
             "proxy unless a case says otherwise. Expanded queries are curated post-hoc diagnostics, "
-            "not unbiased Agent outputs. Oracle files are source files actually changed by the "
-            "later commit. precision_proxy is not semantic precision because extra Context files "
-            "may still be relevant. Low recall is evidence for retrieval improvement, not a "
-            "benchmark harness failure."
+            "not unbiased Agent outputs. The multi-query diagnostic only splits the already-curated "
+            "vocabulary into independent retrieval intents, then uses deterministic rank fusion and "
+            "the normal Context budget. Oracle files are source files actually changed by the later "
+            "commit. precision_proxy is not semantic precision because extra Context files may still "
+            "be relevant. Low recall is evidence for retrieval improvement, not a benchmark harness "
+            "failure."
         ),
     }
 
@@ -290,7 +356,8 @@ def main() -> int:
             results.append(result)
             print(
                 f"{case['id']}: direct recall={result['direct']['recall']:.3f} "
-                f"expanded recall={result['expanded']['recall']:.3f}"
+                f"expanded recall={result['expanded']['recall']:.3f} "
+                f"multi recall={result['multi_query']['recall']:.3f}"
             )
         except Exception as exc:
             failures.append({"id": case.get("id"), "error": str(exc)})

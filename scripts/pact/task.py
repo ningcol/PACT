@@ -113,8 +113,8 @@ def prepare(args) -> int:
     )
     if args.goal:
         context_cmd.extend(["--goal", args.goal])
-    if args.query:
-        context_cmd.extend(["--query", args.query])
+    for query in args.query:
+        context_cmd.extend(["--query", query])
     if args.code is True:
         context_cmd.append("--code")
     elif args.code is False:
@@ -383,7 +383,12 @@ def main() -> int:
     )
     prep.add_argument("--goal")
     prep.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
-    prep.add_argument("--query")
+    prep.add_argument(
+        "--query",
+        action="append",
+        default=[],
+        help="discovery query; repeat to fuse business/code vocabulary",
+    )
     prep.add_argument("--task-id")
     prep.add_argument("--files", nargs="+")
     prep.add_argument("--base")

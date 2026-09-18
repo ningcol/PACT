@@ -86,6 +86,10 @@ class TaskSurfaceTests(unittest.TestCase):
             "Do not weaken credential security",
             "--risk",
             "medium",
+            "--query",
+            "password reset",
+            "--query",
+            "credentials",
             "--task-id",
             task_id,
             "--json",
@@ -101,6 +105,10 @@ class TaskSurfaceTests(unittest.TestCase):
         )
         context = json.loads(
             (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            context["discovery_queries"],
+            ["password reset", "credentials"],
         )
         coverage = [
             {

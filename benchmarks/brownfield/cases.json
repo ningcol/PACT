@@ -11,7 +11,13 @@
       "expanded_query": "Kuaishou publishing autoPublish isAutoPublish BASE_URL popup",
       "risk_level": "medium",
       "task_source": "commit-message-derived",
-      "expanded_query_source": "curated-historical-diagnostic"
+      "expanded_query_source": "curated-historical-diagnostic",
+      "expanded_queries": [
+        "Kuaishou publishing",
+        "autoPublish isAutoPublish",
+        "BASE_URL popup"
+      ],
+      "expanded_queries_source": "curated-historical-diagnostic-split"
     },
     {
       "id": "multipost-typescript-contract-fixes",
@@ -23,7 +29,14 @@
       "expanded_query": "TypeScript autoPublish isAutoPublish ArticleData htmlContent webhook options redirect",
       "risk_level": "medium",
       "task_source": "commit-message-derived",
-      "expanded_query_source": "curated-historical-diagnostic"
+      "expanded_query_source": "curated-historical-diagnostic",
+      "expanded_queries": [
+        "TypeScript autoPublish isAutoPublish",
+        "ArticleData htmlContent",
+        "webhook",
+        "options redirect"
+      ],
+      "expanded_queries_source": "curated-historical-diagnostic-split"
     },
     {
       "id": "ziliu-editor-state-persistence",
@@ -35,7 +48,14 @@
       "expanded_query": "editor state persistence platform preview publish settings storage cache",
       "risk_level": "medium",
       "task_source": "commit-message-derived",
-      "expanded_query_source": "curated-historical-diagnostic"
+      "expanded_query_source": "curated-historical-diagnostic",
+      "expanded_queries": [
+        "editor state persistence",
+        "platform preview",
+        "publish settings",
+        "storage cache"
+      ],
+      "expanded_queries_source": "curated-historical-diagnostic-split"
     },
     {
       "id": "ziliu-wechat-style-preservation",
@@ -47,7 +67,14 @@
       "expanded_query": "wechat markdown style converter convertMarkdownToHtml content-service data-heading applyInlineStyles",
       "risk_level": "medium",
       "task_source": "commit-message-derived",
-      "expanded_query_source": "curated-historical-diagnostic"
+      "expanded_query_source": "curated-historical-diagnostic",
+      "expanded_queries": [
+        "wechat markdown style",
+        "convertMarkdownToHtml converter",
+        "content-service data-heading",
+        "applyInlineStyles"
+      ],
+      "expanded_queries_source": "curated-historical-diagnostic-split"
     }
   ]
 }

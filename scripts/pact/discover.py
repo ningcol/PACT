@@ -12,9 +12,17 @@ import sys
 
 from runtime_exec import runtime_command
 
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_INDEX = ROOT / ".pact" / "cache" / "project-map.json"
 DEFAULT_CODE_INDEX = ROOT / ".pact" / "cache" / "code-map.json"
+RRF_K = 60
+CONFIDENCE_ORDER = {
+    "direct": 4,
+    "relative-resolved": 3,
+    "ast-resolved": 2,
+    "heuristic": 1,
+}
 
 
 def norm(value: str) -> str:
@@ -24,6 +32,20 @@ def norm(value: str) -> str:
 def terms(query: str) -> list[str]:
     parts = re.findall(r"[\w\-]+", norm(query), flags=re.UNICODE)
     return [p for p in parts if p]
+
+
+def normalize_queries(primary: str, extras: list[str] | None = None) -> list[str]:
+    values = [primary, *(extras or [])]
+    queries: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = value.strip()
+        key = norm(cleaned)
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        queries.append(cleaned)
+    return queries
 
 
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
@@ -153,6 +175,28 @@ def ensure_code_index(path: pathlib.Path) -> None:
     )
 
 
+def ranked_knowledge_results(index: dict, query: str, limit: int) -> list[dict]:
+    ranked = []
+    for doc in index.get("documents", []):
+        score, reasons = score_document(doc, query)
+        if score <= 0:
+            continue
+        ranked.append({
+            "score": score,
+            "reasons": reasons,
+            "id": doc.get("id"),
+            "artifact_type": doc.get("artifact_type"),
+            "title": doc.get("title"),
+            "path": doc.get("path"),
+            "status": doc.get("status"),
+            "domains": doc.get("domains", []),
+            "related": doc.get("related", []),
+            "verification": doc.get("verification", []),
+        })
+    ranked.sort(key=lambda x: (-x["score"], x["path"]))
+    return ranked[: max(limit, 1)]
+
+
 def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     direct = []
     for item in code_index.get("files", []):
@@ -182,15 +226,27 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     for edge in code_index.get("edges", []):
         if edge["from"] in direct_paths and edge["to"] not in direct_paths:
             confidence = edge.get("confidence", "heuristic")
-            base = {"relative-resolved": 35, "ast-resolved": 32, "heuristic": 24}.get(confidence, 20)
-            neighbor_scores[edge["to"]] = max(neighbor_scores.get(edge["to"], 0), base)
+            base = {
+                "relative-resolved": 35,
+                "ast-resolved": 32,
+                "heuristic": 24,
+            }.get(confidence, 20)
+            neighbor_scores[edge["to"]] = max(
+                neighbor_scores.get(edge["to"], 0), base
+            )
             neighbor_reasons.setdefault(edge["to"], set()).add(
                 f"imported by direct match {edge['from']} ({confidence})"
             )
         if edge["to"] in direct_paths and edge["from"] not in direct_paths:
             confidence = edge.get("confidence", "heuristic")
-            base = {"relative-resolved": 40, "ast-resolved": 37, "heuristic": 28}.get(confidence, 24)
-            neighbor_scores[edge["from"]] = max(neighbor_scores.get(edge["from"], 0), base)
+            base = {
+                "relative-resolved": 40,
+                "ast-resolved": 37,
+                "heuristic": 28,
+            }.get(confidence, 24)
+            neighbor_scores[edge["from"]] = max(
+                neighbor_scores.get(edge["from"], 0), base
+            )
             neighbor_reasons.setdefault(edge["from"], set()).add(
                 f"imports direct match {edge['to']} ({confidence})"
             )
@@ -228,16 +284,95 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     return direct + neighbors[: max(limit, 1)]
 
 
+def fuse_ranked_results(
+    query_results: list[tuple[str, list[dict]]],
+    limit: int,
+) -> list[dict]:
+    """Fuse independent ranked lists with deterministic Reciprocal Rank Fusion."""
+    fused: dict[str, dict] = {}
+
+    for query, results in query_results:
+        for rank, item in enumerate(results, start=1):
+            path = item.get("path")
+            if not path:
+                continue
+
+            entry = fused.get(path)
+            if entry is None:
+                entry = {
+                    **item,
+                    "_rrf": 0,
+                    "_max_score": int(item.get("score", 0)),
+                    "_queries": [],
+                    "_reasons": [],
+                }
+                fused[path] = entry
+
+            entry["_rrf"] += round(1_000_000 / (RRF_K + rank))
+            entry["_max_score"] = max(
+                entry["_max_score"],
+                int(item.get("score", 0)),
+            )
+            if query not in entry["_queries"]:
+                entry["_queries"].append(query)
+
+            for reason in item.get("reasons", []):
+                decorated = f"{query}: {reason}"
+                if decorated not in entry["_reasons"]:
+                    entry["_reasons"].append(decorated)
+
+            if item.get("relation") == "direct-match":
+                entry["relation"] = "direct-match"
+                entry["confidence"] = "direct"
+            elif "confidence" in item:
+                current_confidence = entry.get("confidence", "heuristic")
+                incoming = item.get("confidence", "heuristic")
+                if (
+                    CONFIDENCE_ORDER.get(incoming, 0)
+                    > CONFIDENCE_ORDER.get(current_confidence, 0)
+                ):
+                    entry["confidence"] = incoming
+
+    ranked = []
+    for entry in fused.values():
+        result = {
+            key: value
+            for key, value in entry.items()
+            if not key.startswith("_")
+        }
+        result["score"] = entry["_rrf"] * 1000 + entry["_max_score"]
+        result["reasons"] = [
+            f"matched query: {query}" for query in entry["_queries"]
+        ] + entry["_reasons"]
+        ranked.append(result)
+
+    ranked.sort(key=lambda item: (-item["score"], item["path"]))
+    return ranked[: max(limit, 1)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Discover PACT project knowledge")
-    parser.add_argument("query")
+    parser.add_argument("query", help="primary discovery query")
+    parser.add_argument(
+        "--query",
+        dest="extra_queries",
+        action="append",
+        default=[],
+        help="additional discovery query; repeat for multi-query fusion",
+    )
     parser.add_argument("--index", default=str(DEFAULT_INDEX))
     parser.add_argument("--limit", type=int, default=8)
-    parser.add_argument("--code", action="store_true", help="also search generated code relationships")
+    parser.add_argument(
+        "--code",
+        action="store_true",
+        help="also search generated code relationships",
+    )
     parser.add_argument("--code-index", default=str(DEFAULT_CODE_INDEX))
     parser.add_argument("--code-limit", type=int, default=8)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+
+    queries = normalize_queries(args.query, args.extra_queries)
 
     index_path = pathlib.Path(args.index)
     if not index_path.is_absolute():
@@ -246,25 +381,17 @@ def main() -> int:
     ensure_index(index_path)
     index = json.loads(index_path.read_text(encoding="utf-8"))
 
-    ranked = []
-    for doc in index.get("documents", []):
-        score, reasons = score_document(doc, args.query)
-        if score > 0:
-            ranked.append({
-                "score": score,
-                "reasons": reasons,
-                "id": doc.get("id"),
-                "artifact_type": doc.get("artifact_type"),
-                "title": doc.get("title"),
-                "path": doc.get("path"),
-                "status": doc.get("status"),
-                "domains": doc.get("domains", []),
-                "related": doc.get("related", []),
-                "verification": doc.get("verification", []),
-            })
-
-    ranked.sort(key=lambda x: (-x["score"], x["path"]))
-    ranked = ranked[: max(args.limit, 1)]
+    knowledge_lists = [
+        (
+            query,
+            ranked_knowledge_results(index, query, args.limit),
+        )
+        for query in queries
+    ]
+    if len(queries) == 1:
+        ranked = knowledge_lists[0][1]
+    else:
+        ranked = fuse_ranked_results(knowledge_lists, args.limit)
 
     code_results = []
     if args.code:
@@ -273,10 +400,23 @@ def main() -> int:
             code_index_path = ROOT / code_index_path
         ensure_code_index(code_index_path)
         code_index = json.loads(code_index_path.read_text(encoding="utf-8"))
-        code_results = ranked_code_results(code_index, args.query, args.code_limit)
+
+        code_lists = [
+            (
+                query,
+                ranked_code_results(code_index, query, args.code_limit),
+            )
+            for query in queries
+        ]
+        if len(queries) == 1:
+            code_results = code_lists[0][1]
+        else:
+            code_results = fuse_ranked_results(code_lists, args.code_limit)
 
     result = {
         "query": args.query,
+        "queries": queries,
+        "query_count": len(queries),
         "result_count": len(ranked),
         "results": ranked,
         "code_result_count": len(code_results),
@@ -288,13 +428,17 @@ def main() -> int:
         return 0
 
     if not ranked and not code_results:
-        print(f"PACT discovery: no matches for {args.query!r}")
+        print(f"PACT discovery: no matches for {queries!r}")
         return 1
 
     print(
         f"PACT discovery: {len(ranked)} knowledge match(es), "
-        f"{len(code_results)} code match(es) for {args.query!r}"
+        f"{len(code_results)} code match(es) from {len(queries)} query(s)"
     )
+    if len(queries) > 1:
+        for query in queries:
+            print(f"- query: {query}")
+
     for item in ranked:
         ident = f" [{item['id']}]" if item.get("id") else ""
         print(
@@ -308,7 +452,10 @@ def main() -> int:
         print("Code:")
         for item in code_results:
             marker = "test" if item["is_test"] else item["language"]
-            print(f"- {item['path']} — {marker} — {item['relation']} (score {item['score']})")
+            print(
+                f"- {item['path']} — {marker} — "
+                f"{item['relation']} (score {item['score']})"
+            )
             if item["reasons"]:
                 print(f"  why: {', '.join(item['reasons'])}")
 

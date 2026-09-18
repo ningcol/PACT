@@ -223,3 +223,21 @@ Human interaction fields are intentionally listed in `human_required` rather tha
 High-level prepared tasks fingerprint the generated Task Context. Before `task finish`, the Convergence Report must bind to that exact Context and provide one coverage disposition for every `context.artifacts` entry.
 
 This makes silent knowledge omission a completion error while keeping semantic judgment with the Agent.
+
+
+## Multi-query retrieval
+
+`discover`, `context`, and high-level `task prepare` support repeatable discovery queries.
+
+```bash
+python pact.py context "fix province switching" \
+  --success "displayed data follows the selected province" \
+  --risk medium \
+  --query "province switching data" \
+  --query "selectedProvince region context" \
+  --code
+```
+
+Each query is retrieved independently. Multi-query results are deduplicated and fused with deterministic Reciprocal Rank Fusion before the final knowledge/code budget is applied.
+
+Single-query behavior remains compatible with the previous surface.

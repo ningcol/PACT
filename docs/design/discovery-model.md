@@ -52,7 +52,40 @@ v1 indexes repository Markdown plus PACT metadata:
 
 Future versions may add code symbols, routes, schemas, Git co-change, AST edges, and semantic/vector retrieval.
 
-## 4. Ranking principles
+## 4. Multi-query retrieval
+
+Owner language, business vocabulary, and code vocabulary often differ.
+
+PACT accepts multiple independent discovery queries and fuses their ranked results with deterministic Reciprocal Rank Fusion (RRF). This avoids concatenating unrelated terms into one large lexical query where every extra term can distort ranking.
+
+Multi-query retrieval has two important boundaries:
+
+- each query is a search hypothesis, not authority;
+- the final fused result is capped by the normal knowledge/code budget.
+
+Single-query behavior remains backward compatible. Multi-query mode adds cross-query evidence and deduplicates results before the final budget is applied.
+
+Typical Agent expansion:
+
+```text
+owner phrase
+    +
+canonical alias
+    +
+code/symbol phrase
+    +
+state/contract phrase
+        ↓
+independent lexical + graph retrieval
+        ↓
+RRF fusion
+        ↓
+final Context budget
+```
+
+PACT does not call an LLM to invent queries. The calling Agent may generate the query set using the conversation and project vocabulary it already has.
+
+## 5. Ranking principles
 
 Prefer, in order:
 
@@ -64,7 +97,7 @@ Prefer, in order:
 
 Discovery ranking affects convenience, not authority.
 
-## 5. Owner query examples
+## 6. Owner query examples
 
 - "之前省份和批次联动是怎么做的？"
 - "工作台为什么不能自己保存批次？"
@@ -73,14 +106,14 @@ Discovery ranking affects convenience, not authority.
 
 The owner should not need file names, class names, or stable IDs.
 
-## 6. Agent query examples
+## 7. Agent query examples
 
 - `DOMAIN-BATCH`
 - `RULE-BATCH-001`
 - "batch state ownership"
 - "auth public contract"
 
-## 7. Output contract
+## 8. Output contract
 
 The deterministic Discovery layer returns ranked evidence, not an invented narrative.
 
