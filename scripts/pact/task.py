@@ -191,8 +191,10 @@ def prepare(args) -> int:
         "next": (
             "Implement and verify every Task Contract acceptance criterion. "
             "Evidence claims that prove acceptance must list the relevant "
-            "criteria IDs. Create evidence.json, convergence.json, and "
-            "owner-report.json in the completion bundle, then run "
+            "criteria IDs. Convergence must bind the prepared context_sha256 "
+            "and explicitly cover every context.artifacts entry. Create "
+            "evidence.json, convergence.json, and owner-report.json in the "
+            "completion bundle, then run "
             f"'pact task finish {task_id}'."
         ),
     }
