@@ -159,6 +159,7 @@ impact     map changed files to project knowledge
 converge   validate semantic Convergence Reports
 evidence   validate Evidence Receipts
 report     render evidence-backed Owner Reports
+eval       validate/summarize optional pilot task records
 ```
 
 ## Discovery, Explain, and Context
@@ -239,4 +240,6 @@ PACT v1 currently includes the executable foundation for:
 - evidence-backed Owner Reports;
 - deterministic checks, Doctor, and Audit.
 
-The next iterations can improve semantic retrieval, code/AST relationships, project-specific fitness functions, and integrations without changing the core control-plane contracts.
+PACT also includes an optional pilot scorecard so future framework changes can be driven by real-task evidence instead of framework size or intuition.
+
+The next iterations should be driven primarily by real brownfield pilot results: simplify or remove mechanisms that do not reduce owner cognitive load or improve engineering reliability.

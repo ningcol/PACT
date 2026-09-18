@@ -88,6 +88,11 @@ jobs:
             --evidence .pact/examples/evidence-receipt.example.json \
             --convergence .pact/examples/convergence-report.example.json
 
+      - name: Validate pilot evaluation contract
+        run: |
+          python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json
+          python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json --summary --json
+
       - name: End-to-end brownfield scaffold
         run: |
           rm -rf /tmp/pact-adopted
