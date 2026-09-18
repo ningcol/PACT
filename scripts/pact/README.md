@@ -18,6 +18,7 @@ readiness  explicit brownfield baseline readiness
 audit      deterministic repository health inventory
 owner      validate and expose project Owner Profile
 map        rebuild disposable project map
+code-map   rebuild disposable local code relationship map
 discover   deterministic project discovery
 explain    build an explanation evidence packet for an owner query
 context    build candidate Task Context Envelope
@@ -44,6 +45,10 @@ python scripts/pact/pact.py audit --json
 python scripts/pact/pact.py owner --json
 
 python scripts/pact/pact.py discover "batch state"
+python scripts/pact/pact.py discover "BatchService" --code
+
+python scripts/pact/pact.py code-map
+python scripts/pact/pact.py impact --files src/example.ts --code --json
 
 python scripts/pact/pact.py explain "why does the workspace follow the current batch?" --json
 
@@ -53,6 +58,18 @@ python scripts/pact/pact.py context "fix province switch" \
 
 python scripts/pact/pact.py impact --base main --json
 ```
+
+## Code-aware discovery
+
+Code relationships are generated and disposable.
+
+`discover --code` searches code paths/symbols/import text and adds one-hop import neighbors.
+
+`impact --code` adds import-neighbor candidates for changed files.
+
+A resolved import is a structural fact; behavioral impact remains a candidate requiring review.
+
+Unsupported project-specific aliases or framework magic remain unresolved rather than guessed.
 
 ## Discovery vs Explain vs Context
 
