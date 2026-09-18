@@ -167,7 +167,7 @@ See `docs/design/distribution-upgrades.md`.
 - `doctor` answers whether PACT infrastructure/configuration is valid.
 - `readiness` answers whether the existing project's baseline was explicitly reviewed.
 
-A freshly scaffolded project should normally be `foundation-valid`, not `pact-ready`.
+A freshly minimally adopted project should normally be `foundation-valid`, not `pact-ready`.
 
 Use `readiness --require-ready` only when the project has chosen readiness as a gate.
 
@@ -181,7 +181,7 @@ See `docs/evaluation/pilot-scorecard.md`.
 
 ## Safety boundary
 
-`init` is dry-run by default and never overwrites existing files. An existing `AGENTS.md` is preserved; PACT creates merge guidance instead.
+`init` is dry-run by default and never overwrites existing files. Fresh adoption uses the minimal install profile: executable/control-plane files are installed immediately, while empty Product/Architecture/Decision/Change/Drift/Skill scaffold is left unmaterialized. An existing `AGENTS.md` is preserved; PACT creates merge guidance under `.pact/` instead.
 
 The runtime is deliberately hybrid:
 
