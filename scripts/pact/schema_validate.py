@@ -210,4 +210,16 @@ def load_schema(path) -> dict:
     if embedded is not None:
         return json.loads(embedded)
 
+    # Source-checkout commands may intentionally operate on another repository
+    # root that does not contain PACT framework schemas. Prefer an explicitly
+    # present target file, otherwise fall back to the canonical schema source
+    # beside this runtime checkout.
+    if candidate.is_file():
+        return json.loads(candidate.read_text(encoding="utf-8"))
+
+    source_root = pathlib.Path(__file__).resolve().parents[2]
+    canonical = source_root / ".pact" / "schema" / name
+    if canonical.is_file():
+        return json.loads(canonical.read_text(encoding="utf-8"))
+
     return json.loads(candidate.read_text(encoding="utf-8"))
