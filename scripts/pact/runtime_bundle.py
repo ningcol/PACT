@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import pathlib
 import zipfile
@@ -32,7 +33,7 @@ def _write_entry(
     content: bytes,
 ) -> None:
     info = zipfile.ZipInfo(name, date_time=FIXED_ZIP_TIME)
-    info.compress_type = zipfile.ZIP_DEFLATED
+    info.compress_type = zipfile.ZIP_STORED
     info.external_attr = 0o100644 << 16
     info.create_system = 3
     archive.writestr(info, content)
@@ -59,8 +60,7 @@ def build_runtime_bundle(
         with zipfile.ZipFile(
             temporary,
             "w",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=9,
+            compression=zipfile.ZIP_STORED,
         ) as archive:
             _write_entry(
                 archive,
@@ -74,7 +74,10 @@ def build_runtime_bundle(
                 _write_entry(
                     archive,
                     path.name,
-                    path.read_bytes(),
+                    path.read_text(encoding="utf-8")
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n")
+                    .encode("utf-8"),
                 )
 
         temporary.replace(output)
@@ -99,3 +102,24 @@ def ensure_runtime_bundle(source_root: pathlib.Path) -> pathlib.Path:
 
 def sha256(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Build deterministic single-file PACT runtime"
+    )
+    parser.add_argument("--source-root", default=str(pathlib.Path(__file__).resolve().parents[2]))
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    source_root = pathlib.Path(args.source_root).expanduser().resolve()
+    output = pathlib.Path(args.output).expanduser()
+    if not output.is_absolute():
+        output = pathlib.Path.cwd() / output
+    output = build_runtime_bundle(source_root, output)
+    print(f"PACT compact runtime: {output} sha256={sha256(output)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
