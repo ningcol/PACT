@@ -46,10 +46,10 @@ jobs:
               f"- Cases: {summary['case_count']}",
               f"- Oracle source files: {summary['oracle_file_count']}",
               f"- Direct weighted recall: {summary['direct_weighted_recall']:.3f}",
-              f"- Expanded-query weighted recall: {summary['expanded_weighted_recall']:.3f}",
+              f"- Curated expanded-query weighted recall: {summary['expanded_weighted_recall']:.3f}",
               f"- Cases improved by query expansion: {summary['cases_improved_by_query_expansion']}",
               "",
-              "| Case | Direct recall | Expanded recall | Direct context | Expanded context |",
+              "| Case | Direct recall | Curated expanded recall | Direct context | Expanded context |",
               "|---|---:|---:|---:|---:|",
           ]
           for item in data["results"]:
