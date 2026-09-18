@@ -14,6 +14,19 @@ Evidence claims may bind to one or more acceptance IDs. Prepared Task Contracts 
 
 Task Contract intent is task-scoped authority. It does not silently override confirmed durable Product Truth; conflicts require reconciliation or an owner-level product decision.
 
+## Task Context and Convergence
+
+A high-level prepared task also fingerprints its Task Context.
+
+Completion requires the Convergence Report to:
+
+- bind to the exact prepared Context SHA;
+- explicitly cover every selected knowledge artifact;
+- state whether each artifact is aligned, updated, stale, owner-decision, or not applicable;
+- avoid claiming `updated` when the prepared artifact fingerprint proves the file did not change.
+
+This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
+
 ## Default definition
 
 A task is complete when, to a degree appropriate for its risk:
