@@ -81,7 +81,7 @@ class CompactRuntimeTests(unittest.TestCase):
             runtime_bundle.build_runtime_bundle(source, crlf)
             self.assertEqual(baseline.read_bytes(), crlf.read_bytes())
 
-    def test_fresh_init_installs_one_runtime_bundle_and_executes_it(self) -> None:
+    def test_fresh_init_installs_minimal_runtime_and_executes_it(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-compact-init-") as tmp:
             target = pathlib.Path(tmp) / "target"
             result = subprocess.run(
@@ -99,40 +99,43 @@ class CompactRuntimeTests(unittest.TestCase):
 
             bundle = target / ".pact" / "pact.pyz"
             self.assertTrue(bundle.is_file())
-            legacy_entry = target / "scripts" / "pact" / "pact.py"
-            self.assertTrue(legacy_entry.is_file())
-            self.assertEqual(
-                sorted(
-                    path.name
-                    for path in legacy_entry.parent.iterdir()
-                    if path.is_file()
-                ),
-                ["converge.py", "pact.py", "report.py"],
-            )
+            self.assertFalse((target / "scripts" / "pact").exists())
 
             manifest = json.loads(
                 (target / ".pact" / "install.json").read_text(encoding="utf-8")
             )
-            runtime_entries = [
-                path
-                for path, record in manifest["files"].items()
-                if record.get("management") == "framework"
-                and (
-                    path == ".pact/pact.pyz"
-                    or path.startswith("scripts/pact/")
-                )
-            ]
+            self.assertEqual(manifest.get("install_profile"), "minimal")
+            self.assertLessEqual(len(manifest["files"]), 8)
             self.assertEqual(
-                sorted(runtime_entries),
-                sorted(
-                    [
-                        ".pact/pact.pyz",
-                        "scripts/pact/converge.py",
-                        "scripts/pact/pact.py",
-                        "scripts/pact/report.py",
-                    ]
-                ),
+                [
+                    path
+                    for path, record in manifest["files"].items()
+                    if record.get("management") == "framework"
+                    and (
+                        path == ".pact/pact.pyz"
+                        or path.startswith("scripts/pact/")
+                    )
+                ],
+                [".pact/pact.pyz"],
             )
+
+            # Empty knowledge/lifecycle scaffold is intentionally absent.
+            for relative in [
+                "docs/governance",
+                "docs/product",
+                "docs/architecture",
+                "docs/changes",
+                "docs/drift",
+                ".agents/decisions",
+                ".agents/skills",
+            ]:
+                self.assertFalse((target / relative).exists(), relative)
+
+            physical_files = [
+                path for path in target.rglob("*")
+                if path.is_file()
+            ]
+            self.assertLessEqual(len(physical_files), 9)
 
             help_result = subprocess.run(
                 [sys.executable, str(target / "pact.py"), "--help"],
@@ -147,39 +150,20 @@ class CompactRuntimeTests(unittest.TestCase):
             )
             self.assertIn("PACT Project AI Control Plane", help_result.stdout)
 
-            legacy_help = subprocess.run(
-                [sys.executable, str(legacy_entry), "--help"],
+            doctor = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "pact.py"),
+                    "doctor",
+                    "--strict",
+                    "--json",
+                ],
                 cwd=target,
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual(
-                legacy_help.returncode,
-                0,
-                legacy_help.stdout + legacy_help.stderr,
-            )
-            self.assertIn("PACT Project AI Control Plane", legacy_help.stdout)
-
-            for legacy_name, expected in [
-                ("converge.py", "Validate a PACT convergence report"),
-                ("report.py", "Render a PACT owner report"),
-            ]:
-                legacy_command = subprocess.run(
-                    [
-                        sys.executable,
-                        str(legacy_entry.parent / legacy_name),
-                        "--help",
-                    ],
-                    cwd=target,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(
-                    legacy_command.returncode,
-                    0,
-                    legacy_command.stdout + legacy_command.stderr,
-                )
-                self.assertIn(expected, legacy_command.stdout)
+            self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+            self.assertEqual(json.loads(doctor.stdout)["overall"], "pass")
 
             status = subprocess.run(
                 [
@@ -195,6 +179,7 @@ class CompactRuntimeTests(unittest.TestCase):
             self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
             data = json.loads(status.stdout)
             self.assertIn(data["overall"], {"pass", "warn"})
+            self.assertEqual(data["readiness"]["stage"], "foundation-valid")
             self.assertFalse((target / ".pact" / "schema").exists())
 
             schema_lint = subprocess.run(
