@@ -9,7 +9,9 @@
       "task": "修复快手发布流程，并确保弹窗始终使用线上地址",
       "success": "快手图文和视频发布行为正确，自动发布开关生效，弹窗使用生产环境地址",
       "expanded_query": "Kuaishou publishing autoPublish isAutoPublish BASE_URL popup",
-      "risk_level": "medium"
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
     },
     {
       "id": "multipost-typescript-contract-fixes",
@@ -19,7 +21,9 @@
       "task": "修复 TypeScript 错误并调整 options 页面跳转",
       "success": "平台发布字段、文章字段、webhook 类型和 options 跳转与当前类型契约一致",
       "expanded_query": "TypeScript autoPublish isAutoPublish ArticleData htmlContent webhook options redirect",
-      "risk_level": "medium"
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
     },
     {
       "id": "ziliu-editor-state-persistence",
@@ -29,7 +33,9 @@
       "task": "编辑器切换 tab 后保留平台选择、样式和发布设置，并清理过期状态",
       "success": "编辑器状态可以恢复，用户不需要重复配置，过期缓存会被清理",
       "expanded_query": "editor state persistence platform preview publish settings storage cache",
-      "risk_level": "medium"
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
     },
     {
       "id": "ziliu-wechat-style-preservation",
@@ -39,7 +45,9 @@
       "task": "修复技术风格在微信发布链路中被默认样式覆盖的问题",
       "success": "tech 风格的标题和代码块在微信发布时保持正确样式，不被后续清理逻辑覆盖",
       "expanded_query": "wechat markdown style converter convertMarkdownToHtml content-service data-heading applyInlineStyles",
-      "risk_level": "medium"
+      "risk_level": "medium",
+      "task_source": "commit-message-derived",
+      "expanded_query_source": "curated-historical-diagnostic"
     }
   ]
 }
