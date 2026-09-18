@@ -167,7 +167,7 @@ def lint_schema(name: str, schema: dict) -> list[str]:
 
 def lint_file(path: pathlib.Path) -> list[str]:
     try:
-        schema = load_schema(path)
+        schema = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return [f"{path.name}: cannot parse JSON schema: {exc}"]
     return lint_schema(path.name, schema)
