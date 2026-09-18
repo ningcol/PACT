@@ -18,6 +18,12 @@ import tempfile
 
 
 PACT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+PACT_RUNTIME = PACT_ROOT / "scripts" / "pact"
+sys.path.insert(0, str(PACT_RUNTIME))
+
+from code_map import EXTENSIONS  # noqa: E402
+
+
 DEFAULT_CASES = PACT_ROOT / "benchmarks" / "brownfield" / "cases.json"
 
 
@@ -62,6 +68,32 @@ def clone_at(repository: str, base_commit: str, target: pathlib.Path) -> None:
 
     run(["git", "fetch", "--quiet", "origin", base_commit], cwd=target, timeout=180)
     run(["git", "checkout", "--quiet", base_commit], cwd=target)
+
+
+def historical_oracle(target: pathlib.Path, case: dict) -> tuple[list[str], list[str]]:
+    diff = run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            case["base_commit"],
+            case["target_commit"],
+        ],
+        cwd=target,
+    )
+    supported = []
+    unavailable = []
+    for raw in diff.stdout.splitlines():
+        path = raw.strip().replace("\\", "/")
+        if not path:
+            continue
+        if pathlib.Path(path).suffix.lower() not in EXTENSIONS:
+            continue
+        if (target / path).is_file():
+            supported.append(path)
+        else:
+            unavailable.append(path)
+    return sorted(set(supported)), sorted(set(unavailable))
 
 
 def prepare_direct(target: pathlib.Path, case: dict) -> dict:
@@ -151,16 +183,12 @@ def replay_case(case: dict) -> dict:
             cwd=PACT_ROOT,
         )
 
-        available_oracle = [
-            path
-            for path in case["oracle_files"]
-            if (target / path).is_file()
-        ]
-        missing_at_base = [
-            path
-            for path in case["oracle_files"]
-            if not (target / path).is_file()
-        ]
+        available_oracle, missing_at_base = historical_oracle(target, case)
+        if not available_oracle:
+            raise RuntimeError(
+                "historical target has no supported pre-existing source files "
+                "to use as retrieval oracle"
+            )
 
         prepared = prepare_direct(target, case)
         direct = load_json(target / prepared["context"])
