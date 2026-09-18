@@ -22,8 +22,8 @@ PACT may update these automatically **only when the target file is unchanged sin
 
 Examples:
 
-- `.pact/config.yaml`;
-- `.pact/baseline.yaml`;
+- `.pact/config.toml`;
+- `.pact/baseline.toml`;
 - project governance documents;
 - Agent Skills;
 - generated/merged `AGENTS.md`.
