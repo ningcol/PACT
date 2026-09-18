@@ -70,7 +70,9 @@ python3 pact.py inspect "password reset"
 # Prepare risk-adaptive context for implementation.
 python3 pact.py task prepare "fix province switching" \
   --success "Displayed data follows the selected province" \
-  --risk medium
+  --risk medium \
+  --query "province switching displayed data" \
+  --query "selectedProvince region context"
 
 # After the Agent has created Evidence + Convergence + Owner Report:
 python3 pact.py task finish <TASK-ID>
