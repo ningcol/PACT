@@ -38,25 +38,25 @@ class FitnessTests(unittest.TestCase):
             text=True,
         )
 
-    def test_empty_project_config_passes(self) -> None:
-        self.write(".pact/fitness.yaml", "version: 1\nchecks: []\n")
+    def test_empty_toml_project_config_passes(self) -> None:
+        self.write(".pact/fitness.toml", "version = 1\nchecks = []\n")
         result = self.run_fitness("--strict", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"configured": true', result.stdout)
+        self.assertIn('"config_format": "toml"', result.stdout)
 
     def test_error_check_blocks(self) -> None:
         checker = self.write("checks/fail.py", "raise SystemExit(1)\n")
         self.write(
-            ".pact/fitness.yaml",
+            ".pact/fitness.toml",
             f"""
-            version: 1
-            checks:
-              - id: must-pass
-                description: This invariant must pass.
-                command:
-                  - {sys.executable}
-                  - {checker}
-                severity: error
+            version = 1
+
+            [[checks]]
+            id = "must-pass"
+            description = "This invariant must pass."
+            command = ["{sys.executable}", "{checker}"]
+            severity = "error"
             """,
         )
         result = self.run_fitness("--strict", "--json")
@@ -66,31 +66,48 @@ class FitnessTests(unittest.TestCase):
     def test_warn_check_does_not_block(self) -> None:
         checker = self.write("checks/warn.py", "raise SystemExit(1)\n")
         self.write(
-            ".pact/fitness.yaml",
+            ".pact/fitness.toml",
             f"""
-            version: 1
-            checks:
-              - id: migration-warning
-                description: Migration still has a known cycle.
-                command:
-                  - {sys.executable}
-                  - {checker}
-                severity: warn
+            version = 1
+
+            [[checks]]
+            id = "migration-warning"
+            description = "Migration still has a known cycle."
+            command = ["{sys.executable}", "{checker}"]
+            severity = "warn"
             """,
         )
         result = self.run_fitness("--strict", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"overall": "warn"', result.stdout)
-        self.assertIn('"warnings": 1', result.stdout)
+
+    def test_legacy_yaml_list_of_checks_remains_readable(self) -> None:
+        checker = self.write("checks/ok.py", "raise SystemExit(0)\n")
+        self.write(
+            ".pact/fitness.yaml",
+            f"""
+            version: 1
+            checks:
+              - id: legacy-check
+                description: Legacy config stays readable.
+                command:
+                  - {sys.executable}
+                  - {checker}
+                severity: error
+            """,
+        )
+        result = self.run_fitness("--strict", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('"config_format": "legacy-yaml"', result.stdout)
 
     def test_strict_requires_project_config(self) -> None:
-        self.write(".pact/fitness.example.yaml", "version: 1\nchecks: []\n")
+        self.write(".pact/fitness.example.toml", "version = 1\nchecks = []\n")
         result = self.run_fitness("--strict")
         self.assertEqual(result.returncode, 2)
         self.assertIn("missing config", result.stderr)
 
     def test_nonstrict_can_use_example_fallback(self) -> None:
-        self.write(".pact/fitness.example.yaml", "version: 1\nchecks: []\n")
+        self.write(".pact/fitness.example.toml", "version = 1\nchecks = []\n")
         result = self.run_fitness("--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"configured": false', result.stdout)
