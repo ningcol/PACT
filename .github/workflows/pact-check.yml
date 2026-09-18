@@ -25,6 +25,9 @@ jobs:
       - name: PACT audit
         run: python scripts/pact/pact.py audit
 
+      - name: Validate framework fitness template
+        run: python scripts/pact/pact.py fitness --config .pact/fitness.example.yaml --validate-only --json
+
       - name: Validate Owner Profile fallback
         run: python scripts/pact/pact.py owner --json
 
@@ -71,6 +74,7 @@ jobs:
           python scripts/pact/pact.py init --target /tmp/pact-adopted --apply --github-actions
           test -f /tmp/pact-adopted/.github/workflows/pact-project-check.yml
           python /tmp/pact-adopted/scripts/pact/pact.py doctor --strict
+          python /tmp/pact-adopted/scripts/pact/pact.py fitness --strict --json
           python scripts/pact/pact.py version --target /tmp/pact-adopted --json
           python scripts/pact/pact.py upgrade --target /tmp/pact-adopted --json
           python /tmp/pact-adopted/scripts/pact/pact.py owner --strict --json
