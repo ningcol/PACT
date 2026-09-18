@@ -17,7 +17,8 @@
     "decisions",
     "verification_targets",
     "known_unknowns",
-    "risk_policy"
+    "risk_policy",
+    "context_budget"
   ],
   "additionalProperties": false,
   "properties": {
@@ -70,7 +71,8 @@
           "artifact_type",
           "title",
           "score",
-          "reasons"
+          "reasons",
+          "estimated_tokens"
         ],
         "additionalProperties": false,
         "properties": {
@@ -102,6 +104,10 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "estimated_tokens": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       }
@@ -149,7 +155,8 @@
           "score",
           "reasons",
           "relation",
-          "confidence"
+          "confidence",
+          "estimated_tokens"
         ],
         "additionalProperties": false,
         "properties": {
@@ -193,6 +200,10 @@
               "ast-resolved",
               "heuristic"
             ]
+          },
+          "estimated_tokens": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       }
@@ -203,7 +214,8 @@
         "knowledge_limit",
         "code_context",
         "code_limit",
-        "completion"
+        "completion",
+        "materialization_token_budget"
       ],
       "additionalProperties": false,
       "properties": {
@@ -224,6 +236,61 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "materialization_token_budget": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "context_budget": {
+      "type": "object",
+      "required": [
+        "limit_tokens",
+        "selected_estimated_tokens",
+        "candidate_estimated_tokens",
+        "knowledge_selected",
+        "code_selected",
+        "dropped_candidates",
+        "truncated",
+        "authority_overage_tokens",
+        "selection_strategy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "limit_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selected_estimated_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidate_estimated_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knowledge_selected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "code_selected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_candidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "authority_overage_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection_strategy": {
+          "const": "authority-aware-soft-budget-v1"
         }
       }
     }
