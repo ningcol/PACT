@@ -389,6 +389,68 @@ class DistributionUpgradeTests(unittest.TestCase):
             dispatcher.read_text(encoding="utf-8"),
         )
 
+    def test_modified_obsolete_schema_is_preserved_but_embedded_protocol_wins(self) -> None:
+        manifest = self.scaffold()
+
+        relative = ".pact/schema/task-contract.schema.json"
+        source = PROJECT_ROOT / relative
+        destination = self.target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+        import hashlib
+        installed_sha = hashlib.sha256(destination.read_bytes()).hexdigest()
+        manifest["files"][relative] = {
+            "management": "framework",
+            "source_path": relative,
+            "source_sha256": installed_sha,
+            "installed_sha256": installed_sha,
+        }
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        # Simulate a local customization/corruption of an old framework schema.
+        destination.write_text("{ definitely-not-valid-json", encoding="utf-8")
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
+
+        result = self.run_upgrade("--apply", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        kinds = {notice["kind"] for notice in data["notices"]}
+        self.assertIn("obsolete-framework-local-modification", kinds)
+
+        self.assertTrue(destination.is_file())
+        updated_manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertNotIn(relative, updated_manifest["files"])
+
+        # Compact runtime must use its embedded official schema set rather than
+        # the preserved obsolete local file.
+        linted = self.run_target("schema-lint")
+        self.assertEqual(linted.returncode, 0, linted.stdout + linted.stderr)
+        self.assertIn("schema file(s) supported", linted.stdout)
+
+        prepared = self.run_target(
+            "task",
+            "prepare",
+            "embedded schema remains authoritative",
+            "--success",
+            "Task Contract validates",
+            "--risk",
+            "low",
+            "--task-id",
+            "TASK-EMBEDDED-AUTHORITY",
+            "--json",
+        )
+        self.assertEqual(
+            prepared.returncode,
+            0,
+            prepared.stdout + prepared.stderr,
+        )
+
     def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()
 
