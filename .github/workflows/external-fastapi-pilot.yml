@@ -1,15 +1,18 @@
 name: External Brownfield Pilot - FastAPI Full Stack
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/external-fastapi-pilot.yml"
-      - "bootstrap.py"
-      - "pact.py"
-      - "scripts/pact/**"
-      - ".pact/schema/**"
-      - ".pact/*.toml"
   workflow_dispatch:
+    inputs:
+      pact_ref:
+        description: "PACT tag, commit, or branch to test"
+        required: true
+        default: "main"
+        type: string
+      target_ref:
+        description: "Pinned fastapi/full-stack-fastapi-template commit/ref"
+        required: true
+        default: "cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7"
+        type: string
 
 permissions:
   contents: read
@@ -20,8 +23,8 @@ jobs:
     timeout-minutes: 35
     env:
       TARGET_REPO: https://github.com/fastapi/full-stack-fastapi-template.git
-      TARGET_REF: cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7
-      PACT_REF: 38afbdcc55d8ef9bc03a7cf4f76b94d0e9e4f313
+      TARGET_REF: ${{ inputs.target_ref }}
+      PACT_REF: ${{ inputs.pact_ref }}
       TARGET_DIR: /tmp/full-stack-fastapi-template
       TASK_ID: EXT-FASTAPI-001
 
