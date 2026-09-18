@@ -1,0 +1,43 @@
+name: PACT Core Matrix
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        python:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Runtime entry points
+        run: |
+          python pact.py --help
+          python bootstrap.py --help
+          python scripts/pact/pact.py schema-lint
+          python scripts/pact/pact.py check
+
+      - name: Core unit tests
+        run: python -m unittest discover -s scripts/pact/tests -p "test_*.py"
