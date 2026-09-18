@@ -6,12 +6,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
 
 from schema_validate import load_schema, validate_instance
+from security import redact_argv
+from workspace import workspace_snapshot
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -26,30 +29,31 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def git_state(cwd: pathlib.Path) -> tuple[str | None, bool | None]:
-    try:
-        head = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if head.returncode != 0:
-            return None, None
+def ci_provenance() -> dict | None:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return None
 
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if dirty.returncode != 0:
-            return head.stdout.strip(), None
-        return head.stdout.strip(), bool(dirty.stdout.strip())
-    except (OSError, subprocess.TimeoutExpired):
-        return None, None
+    required = {
+        "repository": "GITHUB_REPOSITORY",
+        "run_id": "GITHUB_RUN_ID",
+        "run_attempt": "GITHUB_RUN_ATTEMPT",
+        "job": "GITHUB_JOB",
+        "workflow": "GITHUB_WORKFLOW",
+        "sha": "GITHUB_SHA",
+        "ref": "GITHUB_REF",
+        "server_url": "GITHUB_SERVER_URL",
+    }
+    values = {}
+    for key, env_name in required.items():
+        value = os.environ.get(env_name)
+        if not value:
+            return None
+        values[key] = value
+
+    return {
+        "provider": "github-actions",
+        **values,
+    }
 
 
 def main() -> int:
@@ -63,6 +67,12 @@ def main() -> int:
         "--quiet",
         action="store_true",
         help="do not replay captured command stdout/stderr to the terminal",
+    )
+    parser.add_argument(
+        "--redact-value",
+        action="append",
+        default=[],
+        help="additional literal to redact from persisted argv; repeatable",
     )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -78,6 +88,12 @@ def main() -> int:
     output = pathlib.Path(args.output)
     if not output.is_absolute():
         output = ROOT / output
+
+    try:
+        workspace_before = workspace_snapshot(cwd)
+    except Exception as exc:
+        print(f"PACT run: cannot fingerprint workspace before command: {exc}", file=sys.stderr)
+        return 2
 
     started = now_iso()
     try:
@@ -100,11 +116,23 @@ def main() -> int:
             sys.stderr.buffer.write(completed.stderr)
             sys.stderr.buffer.flush()
 
-    git_head, git_dirty = git_state(cwd)
+    try:
+        workspace_after = workspace_snapshot(cwd)
+    except Exception as exc:
+        print(f"PACT run: cannot fingerprint workspace after command: {exc}", file=sys.stderr)
+        return 2
+
+    persisted_argv, redacted_count = redact_argv(
+        command,
+        extra_values=args.redact_value,
+    )
+
     receipt = {
-        "version": 1,
+        "version": 2,
         "task_id": args.task_id,
-        "argv": command,
+        "argv": persisted_argv,
+        "argv_redacted": True,
+        "redacted_argument_count": redacted_count,
         "cwd": str(cwd),
         "started_at": started,
         "finished_at": finished,
@@ -112,8 +140,14 @@ def main() -> int:
         "status": "pass" if completed.returncode == 0 else "fail",
         "stdout_sha256": sha256_bytes(completed.stdout),
         "stderr_sha256": sha256_bytes(completed.stderr),
-        "git_head": git_head,
-        "git_dirty": git_dirty,
+        "git_head": workspace_after.get("git_head"),
+        "git_dirty": workspace_after.get("dirty"),
+        "workspace_before": workspace_before,
+        "workspace_after": workspace_after,
+        "workspace_changed": (
+            workspace_before.get("sha256") != workspace_after.get("sha256")
+        ),
+        "ci": ci_provenance(),
     }
 
     errors = validate_instance(receipt, load_schema(SCHEMA))
