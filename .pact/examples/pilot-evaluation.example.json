@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "task_id": "example-province-switch",
+  "mode": "pact",
+  "risk_level": "medium",
+  "outcome": "completed",
+  "owner_interactions": {
+    "product_decisions": 1,
+    "technical_escalations": 0,
+    "clarification_rounds": 0,
+    "comprehension": "clear"
+  },
+  "completion_integrity": {
+    "unsupported_done_claims_blocked": 1,
+    "evidence_gaps_found": 1,
+    "convergence_findings": 0
+  },
+  "project_memory": {
+    "explain_used": true,
+    "explain_outcome": "resolved"
+  },
+  "context_quality": {
+    "knowledge_artifacts": 5,
+    "code_artifacts": 4,
+    "known_unknowns": 1,
+    "overload_observed": false
+  },
+  "pact_overhead_minutes": 3.5,
+  "notes": "Example only. Pilot records should capture observed task behavior, not estimated success."
+}
