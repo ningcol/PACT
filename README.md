@@ -217,7 +217,7 @@ Framework runtime/schema/template files can be upgraded only if they have not be
 
 If both a framework-managed target file and the newer PACT source changed, automatic upgrade stops before changing anything.
 
-Upgrade apply is transactional: replacement files are staged first, current files and the install manifest are backed up, replacements use atomic file swaps, and any apply/validation failure triggers rollback. Obsolete framework files are reported but never auto-deleted.
+Upgrade apply is transactional: replacement files are staged first, current files and the install manifest are backed up, replacements/removals are rollback-aware, and any apply/validation failure triggers rollback. Obsolete framework-managed files are removed automatically only when unchanged since the prior install; locally modified obsolete files are preserved.
 
 ## Scaffolded is not PACT-ready
 
@@ -246,9 +246,10 @@ Only mark vocabulary, Product Truth, architecture, authority, Owner Profile, ver
 - `docs/changes/` — current and historical change intent.
 - `docs/drift/` — known/resolved/accepted drift artifacts.
 - `.agents/skills/` — replaceable procedures.
+- `.pact/pact.pyz` — compact installed PACT runtime.
 - `.pact/schema/` — machine-readable contracts.
 - `.pact/cache/` — disposable derived indexes.
-- `scripts/pact/` — runtime tools.
+- `scripts/pact/` — source-checkout runtime used when developing PACT itself.
 
 ## Deterministic vs semantic
 
