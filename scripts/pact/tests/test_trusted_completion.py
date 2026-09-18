@@ -78,6 +78,21 @@ class TrustedCompletionTests(unittest.TestCase):
             "import sys; print('ok')",
         ])
 
+        if env is None:
+            env = os.environ.copy()
+            for name in [
+                "GITHUB_ACTIONS",
+                "GITHUB_REPOSITORY",
+                "GITHUB_RUN_ID",
+                "GITHUB_RUN_ATTEMPT",
+                "GITHUB_JOB",
+                "GITHUB_WORKFLOW",
+                "GITHUB_SHA",
+                "GITHUB_REF",
+                "GITHUB_SERVER_URL",
+            ]:
+                env.pop(name, None)
+
         result = subprocess.run(
             command,
             capture_output=True,
