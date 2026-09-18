@@ -9,7 +9,8 @@ PACT avoids a single global "source of truth" ranking. Different questions have 
 | What public/API contract is promised? | Contract/schema authority |
 | How is the current system structured? | `docs/architecture/` |
 | Why was a durable choice made? | `.agents/decisions/` |
-| What is this change trying to accomplish? | Active change/spec/plan |
+| What is this change trying to accomplish? | Active Task Contract / change/spec/plan |
+| What must this task demonstrably satisfy? | Task Contract acceptance criteria, bounded by confirmed Product Truth |
 | What was actually verified? | Evidence from tests/browser/runtime/CI |
 | How should a recurring task be performed today? | Skill/playbook |
 
