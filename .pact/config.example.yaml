@@ -1,0 +1,39 @@
+version: 1
+
+owner:
+  role: product_project_owner
+  communication:
+    prefer:
+      - user_behavior
+      - business_behavior
+      - page_flow
+      - data_meaning
+      - verification
+    hide_by_default:
+      - internal_class_design
+      - framework_mechanics
+      - implementation_patterns
+    explain_consequence_before_technical_term: true
+
+paths:
+  product_truth: docs/product
+  architecture: docs/architecture
+  decisions: .agents/decisions
+  changes: docs/changes
+  known_drift: docs/drift/known.md
+  skills: .agents/skills
+
+risk:
+  levels:
+    - low
+    - medium
+    - high
+
+discovery:
+  use_canonical_vocabulary: true
+  derived_cache: .pact/cache
+
+convergence:
+  code_wins_product_truth: false
+  deterministic_fact_mismatch: fail
+  heuristic_drift: warn
