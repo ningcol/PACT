@@ -21,7 +21,7 @@ jobs:
     env:
       TARGET_REPO: https://github.com/fastapi/full-stack-fastapi-template.git
       TARGET_REF: cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7
-      PACT_REF: f8690a64f7d6bc448092919cfb71411567041fc5
+      PACT_REF: 38afbdcc55d8ef9bc03a7cf4f76b94d0e9e4f313
       TARGET_DIR: /tmp/full-stack-fastapi-template
       TASK_ID: EXT-FASTAPI-001
 
