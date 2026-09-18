@@ -17,7 +17,7 @@ from runtime_exec import runtime_command
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-REQUIRED = [
+SOURCE_REQUIRED = [
     "AGENTS.md",
     "docs/governance/constitution.md",
     "docs/governance/truth-ownership.md",
@@ -28,6 +28,15 @@ REQUIRED = [
     "docs/architecture",
     ".agents/decisions",
     ".agents/skills",
+    ".pact/VERSION",
+]
+
+# Adopted projects may use the minimal profile. Optional knowledge locations are
+# absent until the project has durable knowledge to place there.
+ADOPTED_REQUIRED = [
+    "AGENTS.md",
+    "pact.py",
+    ".pact/pact.pyz",
     ".pact/VERSION",
 ]
 
@@ -106,7 +115,10 @@ def main() -> int:
 
     checks: list[dict] = []
 
-    for relative in REQUIRED:
+    adopted = (ROOT / ".pact" / "install.json").is_file()
+    required_paths = ADOPTED_REQUIRED if adopted else SOURCE_REQUIRED
+
+    for relative in required_paths:
         path = ROOT / relative
         checks.append(
             item(

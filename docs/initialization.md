@@ -74,9 +74,9 @@ This prevents future agents from repeatedly rediscovering or silently "fixing" a
 
 ## Phase 10 — Baseline review and readiness
 
-`pact init` creates structure. It does **not** certify project knowledge.
+`pact init` creates the minimal control-plane nucleus. It does **not** certify project knowledge and does not materialize empty Product/Architecture/Decision/Change/Drift/Skill scaffold.
 
-Initialization creates `.pact/baseline.toml` with review areas initially marked `pending`:
+Initialization creates `.pact/baseline.toml` with review areas initially marked `pending`. Durable knowledge locations are created later only when real reviewed knowledge exists:
 
 - vocabulary;
 - Product Truth;
@@ -126,4 +126,4 @@ The workflow validates the PACT foundation/checks/readiness inventory only. Proj
 
 ## Migration policy
 
-Use **forward-only governance**. Improve historical coverage when work touches an area; do not block adoption on documenting the entire past.
+Use **forward-only governance**. Improve historical coverage when work touches an area; do not block adoption on documenting the entire past. An absent optional knowledge directory is not a Doctor failure; readiness remains explicit in `.pact/baseline.toml`.

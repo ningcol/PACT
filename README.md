@@ -146,6 +146,8 @@ Safety rules:
 - dry-run is the default;
 - existing files are never overwritten;
 - an existing `AGENTS.md` is preserved;
+- fresh adoption uses a minimal install profile instead of copying empty knowledge/lifecycle scaffold;
+- Product/Architecture/Decision/Change/Drift/Skill locations are created only when real durable project knowledge needs them;
 - PACT does not infer confirmed Product Truth from code;
 - historical documentation does not need to be fully backfilled before adoption.
 
@@ -221,9 +223,9 @@ If both a framework-managed target file and the newer PACT source changed, autom
 
 Upgrade apply is transactional: replacement files are staged first, current files and the install manifest are backed up, replacements/removals are rollback-aware, and any apply/validation failure triggers rollback. Obsolete framework-managed files are removed automatically only when unchanged since the prior install; locally modified obsolete files are preserved.
 
-## Scaffolded is not PACT-ready
+## Minimal installation is not PACT-ready
 
-`pact init` intentionally creates `.pact/baseline.toml` with review areas marked `pending`.
+`pact init` intentionally creates only the control-plane nucleus plus `.pact/baseline.toml` with review areas marked `pending`. Empty knowledge folders/templates are not materialized just to make PACT look complete.
 
 PACT derives adoption state as:
 
@@ -240,18 +242,28 @@ Only mark vocabulary, Product Truth, architecture, authority, Owner Profile, ver
 
 ## Repository structure
 
-- `AGENTS.md` — compact bootstrap and knowledge router.
-- `docs/governance/` — stable authority and collaboration rules.
+Fresh adopted projects start with the control-plane nucleus only:
+
+- `AGENTS.md` — compact bootstrap and knowledge router (or existing project guide, with merge guidance under `.pact/`).
+- `pact.py` — stable repository-root entry point.
+- `.pact/pact.pyz` — compact installed PACT runtime.
+- `.pact/config.toml` — Owner Profile.
+- `.pact/baseline.toml` — explicit adoption review state.
+- `.pact/fitness.toml` — project-owned executable architecture checks.
+- `.pact/install.json` — install ownership/provenance.
+- runtime protocol schemas — embedded inside `.pact/pact.pyz`.
+
+These durable knowledge locations are **lazy**: they may be absent until the project has real knowledge to preserve.
+
+- `docs/governance/` — project-specific authority/collaboration extensions.
 - `docs/product/` — normative Product Truth and canonical vocabulary.
 - `docs/architecture/` — current architecture.
 - `.agents/decisions/` — durable engineering rationale.
 - `docs/changes/` — current and historical change intent.
 - `docs/drift/` — known/resolved/accepted drift artifacts.
 - `.agents/skills/` — replaceable procedures.
-- `.pact/pact.pyz` — compact installed PACT runtime.
-- runtime protocol schemas — embedded inside `.pact/pact.pyz` for adopted projects; source checkouts keep `.pact/schema/` as the canonical editable source.
-- `.pact/cache/` — disposable derived indexes.
-- `scripts/pact/` — source-checkout runtime used when developing PACT itself.
+
+`.pact/cache/` remains disposable derived state. `scripts/pact/` is the source-checkout runtime used when developing PACT itself and is not copied into new minimal installs.
 
 ## Deterministic vs semantic
 

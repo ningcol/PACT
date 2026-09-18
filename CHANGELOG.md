@@ -6,6 +6,17 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Minimal Adoption / Lazy Materialization
+
+- fresh brownfield installs now use an explicit `minimal` install profile;
+- initial adoption installs only the executable/control-plane nucleus instead of empty Product/Architecture/Decision/Change/Drift/Skill scaffold;
+- optional durable knowledge locations may remain absent until real project knowledge needs to be preserved;
+- adopted-project Doctor validates the minimal executable nucleus without treating absent lazy knowledge directories as broken;
+- the default Agent task trust loop remains in compact `AGENTS.md` / merge guidance, so removing empty Skill scaffold does not weaken Task Contract, Evidence, Convergence, Owner Report, or completion requirements;
+- minimal installs remain minimal across upgrades, while legacy/full manifests keep their historical desired surface for compatibility;
+- existing `AGENTS.md` remains untouched and receives merge guidance under `.pact/`;
+- real DouBaoFreeImageGen historical fresh-adoption validation reduced the install from the original 97 managed files to 8 managed files (9 physical files including `.pact/install.json`) while strict Doctor, Status, schema-lint, and code-aware Task Context still passed.
+
 ### Retrieval / Context
 
 - `discover`, `context`, and `task prepare` accept repeatable discovery queries;

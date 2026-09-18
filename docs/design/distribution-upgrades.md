@@ -11,9 +11,9 @@ Every file created by PACT is treated as one of two classes.
 Examples:
 
 - `.pact/pact.pyz` compact runtime, including framework protocol schemas;
-- generic lifecycle/readme/templates;
-- PACT initialization guidance;
-- the opt-in PACT project CI workflow.
+- repository-root `pact.py` / runtime version marker;
+- optional project CI integration;
+- legacy/full-profile framework templates and compatibility files.
 
 PACT may update these automatically **only when the target file is unchanged since the prior PACT install**.
 
@@ -23,9 +23,9 @@ Examples:
 
 - `.pact/config.toml`;
 - `.pact/baseline.toml`;
-- project governance documents;
-- Agent Skills;
-- generated/merged `AGENTS.md`.
+- `.pact/fitness.toml`;
+- generated/merged `AGENTS.md`;
+- project knowledge artifacts once they are materialized.
 
 These become project-owned immediately after creation.
 
@@ -47,6 +47,33 @@ For each file it actually created, the manifest stores:
 - installed SHA256.
 
 The manifest is bookkeeping, not project truth.
+
+## Install profiles
+
+Fresh brownfield adoption uses `install_profile = "minimal"`.
+
+The minimal profile installs the executable/control-plane nucleus only:
+
+- root `pact.py`;
+- `.pact/pact.pyz`;
+- `.pact/VERSION`;
+- Owner config, baseline, and fitness seeds;
+- `AGENTS.md` when the project does not already have one, or merge guidance under `.pact/` when it does;
+- `.gitignore` only when PACT must create one.
+
+Product Truth, Architecture, Decision, Change, Drift, and Skill directories are not materialized merely to represent an empty taxonomy. They appear only when real project knowledge needs a durable repository owner.
+
+This is a physical-layout optimization only. The runtime protocol, Task Contract, Context, Evidence, Convergence, Owner Report, and completion gates are unchanged.
+
+### Upgrade compatibility
+
+The install profile is sticky:
+
+- a `minimal` manifest continues using the minimal desired distribution surface on upgrade;
+- an explicit `full` manifest uses the historical/full surface;
+- manifests created before install profiles existed are treated as legacy/full for upgrade planning.
+
+PACT does **not** automatically convert an existing full/legacy installation to minimal. That would reinterpret existing project layout and could remove compatibility material the project has already referenced. A future explicit migration may do so only with its own reviewable safety contract.
 
 ## Upgrade safety
 

@@ -52,6 +52,17 @@ LEGACY_SEED_TARGETS = {
     ".pact/fitness.toml": ".pact/fitness.yaml",
 }
 
+# Fresh brownfield adoption keeps only the executable/control-plane nucleus on
+# disk. Empty knowledge/lifecycle scaffold is materialized later by real work.
+MINIMAL_MANAGED_TARGETS = {
+    "pact.py",
+    ".pact/VERSION",
+    ".pact/pact.pyz",
+    ".pact/config.toml",
+    ".pact/baseline.toml",
+    ".pact/fitness.toml",
+}
+
 
 def legacy_seed_target(target_rel: str) -> str | None:
     return LEGACY_SEED_TARGETS.get(target_rel)
@@ -132,6 +143,20 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
         add(source_rel, target_rel, management="seed")
 
     return entries
+
+
+def minimal_source_manifest(source_root: pathlib.Path) -> list[dict]:
+    """Return the minimal fresh-install control-plane surface.
+
+    The full source manifest remains available for legacy/full-profile upgrades.
+    Fresh projects should not receive empty Product/Architecture/Decision/etc.
+    scaffold merely because PACT was installed.
+    """
+    return [
+        entry
+        for entry in source_manifest(source_root)
+        if entry["target"].as_posix() in MINIMAL_MANAGED_TARGETS
+    ]
 
 
 def github_actions_entry(source_root: pathlib.Path) -> dict | None:

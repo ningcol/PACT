@@ -51,6 +51,9 @@ class InitReadinessTests(unittest.TestCase):
         self.assertTrue((self.target / ".pact" / "baseline.toml").exists())
         self.assertTrue((self.target / ".pact" / "fitness.toml").exists())
         self.assertFalse((self.target / ".pact" / "config.yaml").exists())
+        self.assertFalse((self.target / "docs" / "product").exists())
+        self.assertFalse((self.target / "docs" / "architecture").exists())
+        self.assertFalse((self.target / ".agents" / "decisions").exists())
 
         readiness = self.run_target("readiness", "--json")
         self.assertEqual(readiness.returncode, 0, readiness.stdout + readiness.stderr)
@@ -81,12 +84,49 @@ class InitReadinessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(agents.read_text(encoding="utf-8"), "EXISTING RULES\n")
         self.assertTrue(
-            (self.target / "docs" / "governance" / "PACT_AGENT_BOOTSTRAP.md").exists()
+            (self.target / ".pact" / "AGENT_BOOTSTRAP.md").exists()
         )
+        self.assertFalse((self.target / "docs" / "governance").exists())
 
         baseline = self.target / ".pact" / "baseline.toml"
         text = baseline.read_text(encoding="utf-8")
         self.assertIn('agent_bootstrap = "pending"', text)
+
+    def test_legacy_full_reinit_keeps_historical_layout(self) -> None:
+        self.target.mkdir(parents=True)
+        agents = self.target / "AGENTS.md"
+        agents.write_text("EXISTING RULES\n", encoding="utf-8")
+
+        first = self.run_init("--apply")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+        manifest_path = self.target / ".pact" / "install.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.pop("install_profile", None)
+        manifest["files"].pop(".pact/AGENT_BOOTSTRAP.md", None)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (self.target / ".pact" / "AGENT_BOOTSTRAP.md").unlink()
+
+        legacy_bootstrap = (
+            self.target / "docs" / "governance" / "PACT_AGENT_BOOTSTRAP.md"
+        )
+        legacy_bootstrap.parent.mkdir(parents=True, exist_ok=True)
+        legacy_bootstrap.write_text("LEGACY BOOTSTRAP\n", encoding="utf-8")
+
+        second = self.run_init("--apply")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(
+            legacy_bootstrap.read_text(encoding="utf-8"),
+            "LEGACY BOOTSTRAP\n",
+        )
+        self.assertFalse((self.target / ".pact" / "AGENT_BOOTSTRAP.md").exists())
+        self.assertTrue((self.target / "docs" / "product" / "README.md").is_file())
+
+        after = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertNotIn("install_profile", after)
 
     def test_github_actions_is_opt_in(self) -> None:
         result = self.run_init("--apply", "--github-actions")
@@ -96,6 +136,10 @@ class InitReadinessTests(unittest.TestCase):
         content = workflow.read_text(encoding="utf-8")
         self.assertIn("doctor --strict", content)
         self.assertNotIn("pip install", content)
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertLessEqual(len(manifest["files"]), 9)
 
     def test_existing_pact_workflow_is_never_overwritten(self) -> None:
         workflow = self.target / ".github" / "workflows" / "pact-project-check.yml"

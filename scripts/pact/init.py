@@ -16,6 +16,7 @@ from distribution import (
     github_actions_entry,
     legacy_seed_target,
     manifest_record,
+    minimal_source_manifest,
     runtime_version,
     sha256_file,
     source_manifest,
@@ -41,7 +42,10 @@ This repository uses PACT (Project AI Control Plane).
 
 ## Knowledge router
 
-- Governance: `docs/governance/`
+PACT starts physically minimal. These durable locations are created only when
+the project has real knowledge worth preserving:
+
+- Governance extensions: `docs/governance/`
 - Product Truth and vocabulary: `docs/product/`
 - Current architecture: `docs/architecture/`
 - Durable engineering rationale: `.agents/decisions/`
@@ -49,6 +53,23 @@ This repository uses PACT (Project AI Control Plane).
 - Drift: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
 - Adoption readiness: `.pact/baseline.toml`
+
+An absent optional knowledge directory means "not materialized yet", not
+"healthy knowledge is missing". Do not create empty folders/templates merely
+to satisfy PACT.
+
+## Default task workflow
+
+Use the high-level surface first:
+
+1. `python pact.py status` / `inspect` when project state or history is unclear.
+2. `python pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>`.
+3. Implement ordinary technical details autonomously within the prepared Task Contract and Context.
+4. Run relevant verification through `python pact.py run ...` so Evidence can bind to machine receipts.
+5. Before completion, create Evidence, Convergence, and Owner Report in the task's expected completion bundle. Convergence must bind the prepared Context and explicitly disposition every selected knowledge artifact; an empty finding list is not a substitute for coverage.
+6. `python pact.py task finish <TASK-ID>` is the completion gate. Do not claim done if it fails.
+
+Use `python pact.py task status <TASK-ID> --json` to recover the prepared contract/context paths and expected bundle location.
 
 ## Decision boundary
 
@@ -95,9 +116,19 @@ Merge these concepts into the existing project agent guide:
 - communicate owner-facing results using the project Owner Profile in `.pact/config.toml`;
 - use product/business consequences before unnecessary implementation detail.
 
-Suggested knowledge router:
+Default PACT task loop to merge into the project guide:
 
-- Governance: `docs/governance/`
+- prepare work with `python pact.py task prepare ...` and follow its Task Contract/Context;
+- verify observable outcomes through `python pact.py run ...` where practical;
+- create Evidence + Convergence + Owner Report before completion;
+- Convergence must bind the prepared Context and disposition every selected knowledge artifact;
+- finish with `python pact.py task finish <TASK-ID>`; a failed gate means the task is not done;
+- use `python pact.py task status <TASK-ID> --json` to recover task paths after a long conversation.
+
+Suggested knowledge router (materialize a location only when real durable
+project knowledge exists):
+
+- Governance extensions: `docs/governance/`
 - Product Truth: `docs/product/`
 - Architecture: `docs/architecture/`
 - Decisions: `.agents/decisions/`
@@ -122,7 +153,19 @@ def generated_entry(path: str, management: str = "seed") -> dict:
 def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
-    for entry in source_manifest(SOURCE_ROOT):
+    existing_manifest = load_install_manifest(target)
+    install_profile = (
+        existing_manifest.get("install_profile")
+        if existing_manifest
+        else "minimal"
+    )
+    entries = (
+        minimal_source_manifest(SOURCE_ROOT)
+        if install_profile == "minimal"
+        else source_manifest(SOURCE_ROOT)
+    )
+
+    for entry in entries:
         destination = target / entry["target"]
         legacy_rel = legacy_seed_target(entry["target"].as_posix())
         legacy_destination = target / legacy_rel if legacy_rel else None
@@ -147,7 +190,14 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
 
     agents = target / "AGENTS.md"
     if agents.exists():
-        rel = pathlib.Path("docs/governance/PACT_AGENT_BOOTSTRAP.md")
+        # Fresh/minimal installs keep merge guidance in the control plane.
+        # Legacy/full installs retain the historical path so same-version
+        # re-init does not reinterpret their repository layout.
+        rel = pathlib.Path(
+            ".pact/AGENT_BOOTSTRAP.md"
+            if install_profile == "minimal"
+            else "docs/governance/PACT_AGENT_BOOTSTRAP.md"
+        )
         destination = target / rel
         operations.append({
             "action": "skip" if destination.exists() else "create-generated",
@@ -257,6 +307,9 @@ def write_install_manifest(
         ),
         "files": files,
     }
+    install_profile = existing.get("install_profile") if existing else "minimal"
+    if install_profile:
+        manifest["install_profile"] = install_profile
 
     path = target / INSTALL_MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,7 +338,10 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
             destination.write_text(TARGET_AGENTS, encoding="utf-8")
-        elif op["path"] == "docs/governance/PACT_AGENT_BOOTSTRAP.md":
+        elif op["path"] in {
+            ".pact/AGENT_BOOTSTRAP.md",
+            "docs/governance/PACT_AGENT_BOOTSTRAP.md",
+        }:
             destination.write_text(bootstrap_snippet(), encoding="utf-8")
         elif op["path"] == ".gitignore":
             destination.write_text(".pact/cache/\n", encoding="utf-8")
