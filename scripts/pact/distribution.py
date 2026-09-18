@@ -118,18 +118,20 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
             "management": "framework",
         })
 
-    for path in sorted((source_root / "scripts" / "pact").iterdir()):
-        if (
-            path.is_file()
-            and path.suffix in {".py", ".md", ".txt"}
-            and path.name != "__pycache__"
-        ):
-            entries.append({
-                "source": path,
-                "source_path": path.relative_to(source_root).as_posix(),
-                "target": path.relative_to(source_root),
-                "management": "framework",
-            })
+    runtime_dir = source_root / "scripts" / "pact"
+    if runtime_dir.exists():
+        for path in sorted(runtime_dir.iterdir()):
+            if (
+                path.is_file()
+                and path.suffix in {".py", ".md", ".txt"}
+                and path.name != "__pycache__"
+            ):
+                entries.append({
+                    "source": path,
+                    "source_path": path.relative_to(source_root).as_posix(),
+                    "target": path.relative_to(source_root),
+                    "management": "framework",
+                })
 
     for source_rel, target_rel in SEED_SOURCE_MAPPINGS:
         add(source_rel, target_rel, management="seed")
