@@ -27,21 +27,19 @@ There is no built-in requirement for DDD, Clean Architecture, repositories, even
 
 Project checks live in:
 
-`.pact/fitness.yaml`
+`.pact/fitness.toml`
 
 Example:
 
-```yaml
-version: 1
+```toml
+version = 1
 
-checks:
-  - id: no-domain-to-ui
-    description: Domain code must not import UI modules.
-    command:
-      - python
-      - scripts/architecture/check_domain_dependencies.py
-    severity: error
-    timeout_seconds: 120
+[[checks]]
+id = "no-domain-to-ui"
+description = "Domain code must not import UI modules."
+command = ["python", "scripts/architecture/check_domain_dependencies.py"]
+severity = "error"
+timeout_seconds = 120
 ```
 
 Commands are argument arrays and execute without a shell.
@@ -62,7 +60,7 @@ Use warnings during migrations or for constraints that are intentionally informa
 
 ## Ownership
 
-`.pact/fitness.yaml` is a project seed and becomes project-owned after initialization.
+`.pact/fitness.toml` is a project seed and becomes project-owned after initialization.
 
 PACT upgrades never silently replace it.
 
