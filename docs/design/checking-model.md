@@ -20,7 +20,6 @@ These may block CI because the machine can establish them reliably:
 Current implementation:
 
 ```bash
-python -m pip install -r scripts/pact/requirements.txt
 python scripts/pact/check.py
 ```
 
