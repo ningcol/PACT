@@ -180,7 +180,10 @@ def main() -> int:
     parser.add_argument(
         "paths",
         nargs="*",
-        help="schema files; defaults to all .pact/schema/*.json",
+        help=(
+            "schema files; defaults to the complete embedded protocol set in "
+            "compact installs, or all source .pact/schema/*.json files"
+        ),
     )
     args = parser.parse_args()
 
