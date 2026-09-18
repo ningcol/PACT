@@ -399,12 +399,16 @@ def main() -> int:
     )
 
     schema_path = root / ".pact" / "schema" / "code-map.schema.json"
-    if schema_path.exists():
-        errors = validate_instance(data, load_schema(schema_path))
-        if errors:
-            for error in errors:
-                print(f"PACT code-map schema error: {error}")
-            return 2
+    try:
+        schema = load_schema(schema_path)
+    except Exception as exc:
+        print(f"PACT code-map: cannot load schema: {exc}")
+        return 2
+    errors = validate_instance(data, schema)
+    if errors:
+        for error in errors:
+            print(f"PACT code-map schema error: {error}")
+        return 2
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
