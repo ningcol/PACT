@@ -1,39 +1,46 @@
-# PACT Automation
+# PACT Runtime
 
-This directory will contain deterministic PACT checks and future CLI entry points.
+The stable v1 entry point is:
 
-Planned interfaces:
-
-```text
-pact init
-pact doctor
-pact explain "<query>"
-pact discover "<query>"
-pact impact
-pact check
-pact converge
-pact map
-pact audit
+```bash
+python scripts/pact/pact.py <command> [args...]
 ```
 
-## v1 automation principle
+## Available commands
 
-A deterministic check may fail CI only when the machine can reliably establish the fact.
+```text
+check      deterministic artifact checks
+doctor     PACT repository readiness
+map        rebuild disposable project map
+discover   deterministic project discovery
+context    build candidate Task Context Envelope
+converge   validate/summarize semantic Convergence Report
+evidence   validate completion Evidence Receipt
+report     validate and render evidence-backed Owner Report
+```
 
-Examples suitable for FAIL:
+Examples:
 
-- broken internal links;
-- invalid decision lifecycle/path;
-- modified frozen/archive policy;
-- generated artifact mismatch;
-- forbidden dependency;
-- failed test.
+```bash
+python scripts/pact/pact.py doctor
 
-Examples suitable for WARN + semantic review:
+python scripts/pact/pact.py discover "batch state"
 
-- architecture might be stale;
-- durable decision might be missing;
-- product rule might be affected;
-- two decisions might overlap semantically.
+python scripts/pact/pact.py context "fix province switch" \
+  --success "Displayed data follows the selected province" \
+  --risk medium
 
-Do not turn probabilistic guesses into hard gates merely to make PACT appear strict.
+python scripts/pact/pact.py evidence .pact/examples/evidence-receipt.example.json
+```
+
+## Boundary
+
+The runtime is deliberately hybrid:
+
+- deterministic tooling validates facts it can reliably establish;
+- semantic AI review handles meaning, impact, and sufficiency;
+- the CLI never promotes heuristic guesses into authority.
+
+A deterministic check may fail CI only when the machine can establish the fact.
+
+Semantic uncertainty should remain a warning, Context unknown, or Convergence finding.

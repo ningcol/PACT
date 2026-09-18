@@ -19,23 +19,33 @@ jobs:
       - name: Install PACT checker dependencies
         run: python -m pip install -r scripts/pact/requirements.txt
 
+      - name: PACT doctor
+        run: python scripts/pact/pact.py doctor
+
       - name: Run deterministic PACT checks
-        run: python scripts/pact/check.py
+        run: python scripts/pact/pact.py check
 
       - name: Build derived project map
-        run: python scripts/pact/map.py --output /tmp/pact-project-map.json
+        run: python scripts/pact/pact.py map --output /tmp/pact-project-map.json
 
       - name: Smoke-test Project Discovery
-        run: python scripts/pact/discover.py "product truth" --index /tmp/pact-project-map.json --json
+        run: python scripts/pact/pact.py discover "product truth" --index /tmp/pact-project-map.json --json
+
+      - name: Smoke-test Context Resolver
+        run: |
+          python scripts/pact/pact.py context "product truth governance" \
+            --success "Relevant project truth can be located" \
+            --risk low \
+            --output /tmp/pact-context.json
 
       - name: Validate convergence report contract
-        run: python scripts/pact/converge.py .pact/examples/convergence-report.example.json
+        run: python scripts/pact/pact.py converge .pact/examples/convergence-report.example.json
 
       - name: Validate evidence receipt contract
-        run: python scripts/pact/evidence.py .pact/examples/evidence-receipt.example.json
+        run: python scripts/pact/pact.py evidence .pact/examples/evidence-receipt.example.json
 
       - name: Validate evidence-backed owner report
         run: |
-          python scripts/pact/report.py .pact/examples/owner-report.example.json \
+          python scripts/pact/pact.py report .pact/examples/owner-report.example.json \
             --evidence .pact/examples/evidence-receipt.example.json \
             --convergence .pact/examples/convergence-report.example.json

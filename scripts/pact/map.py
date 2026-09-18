@@ -22,6 +22,10 @@ def rel(path: pathlib.Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
 def parse_document(path: pathlib.Path) -> dict:
     raw = path.read_text(encoding="utf-8")
     pact: dict = {}
@@ -37,18 +41,6 @@ def parse_document(path: pathlib.Path) -> dict:
     heading = TITLE.search(body)
     title = heading.group(1).strip() if heading else path.stem
 
-    aliases = pact.get("aliases", [])
-    if not isinstance(aliases, list):
-        aliases = []
-
-    related = pact.get("related", [])
-    if not isinstance(related, list):
-        related = []
-
-    domains = pact.get("domains", [])
-    if not isinstance(domains, list):
-        domains = []
-
     links = [
         link for link in MD_LINK.findall(body)
         if not link.startswith(("http://", "https://", "#", "mailto:"))
@@ -60,9 +52,10 @@ def parse_document(path: pathlib.Path) -> dict:
         "artifact_type": pact.get("type", "document"),
         "id": pact.get("id"),
         "status": pact.get("status"),
-        "domains": domains,
-        "aliases": aliases,
-        "related": related,
+        "domains": as_list(pact.get("domains")),
+        "aliases": as_list(pact.get("aliases")),
+        "related": as_list(pact.get("related")),
+        "verification": as_list(pact.get("verification")),
         "links": sorted(set(links)),
         "text": body.strip(),
     }

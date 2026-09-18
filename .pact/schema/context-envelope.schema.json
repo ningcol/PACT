@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pact.local/schema/context-envelope.schema.json",
+  "title": "PACT Task Context Envelope",
+  "type": "object",
+  "required": [
+    "version",
+    "status",
+    "task",
+    "goal",
+    "observable_success",
+    "risk_level",
+    "discovery_query",
+    "domains",
+    "artifacts",
+    "applicable_rules",
+    "decisions",
+    "verification_targets",
+    "known_unknowns"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "status": { "enum": ["candidate", "sufficient"] },
+    "task": { "type": "string", "minLength": 1 },
+    "goal": { "type": "string", "minLength": 1 },
+    "observable_success": { "type": "string", "minLength": 1 },
+    "risk_level": { "enum": ["low", "medium", "high"] },
+    "discovery_query": { "type": "string", "minLength": 1 },
+    "domains": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "artifact_type", "title", "score", "reasons"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "id": { "type": ["string", "null"] },
+          "artifact_type": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "score": { "type": "integer", "minimum": 0 },
+          "reasons": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "applicable_rules": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "verification_targets": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "known_unknowns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}
