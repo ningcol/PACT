@@ -1,9 +1,9 @@
----
-pact:
-  type: change
-  status: active
-  domains: []
----
++++
+[pact]
+type = "change"
+status = "active"
+domains = []
++++
 
 # <Change title>
 
