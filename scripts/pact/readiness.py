@@ -100,10 +100,9 @@ def main() -> int:
                 reviews = baseline.setdefault("reviews", {})
                 reviews.setdefault("agent_bootstrap", "pending")
 
-            if not schema_path.exists():
-                baseline_errors.append(f"missing baseline schema at {schema_path}")
-            else:
-                baseline_errors.extend(validate_instance(baseline, load_schema(schema_path)))
+            baseline_errors.extend(
+                validate_instance(baseline, load_schema(schema_path))
+            )
     except Exception as exc:
         baseline_errors.append(str(exc))
 
