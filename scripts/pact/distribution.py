@@ -39,6 +39,7 @@ FRAMEWORK_DOCS = [
 SEED_SOURCE_MAPPINGS = [
     (".pact/config.example.yaml", ".pact/config.yaml"),
     (".pact/baseline.example.yaml", ".pact/baseline.yaml"),
+    (".pact/fitness.example.yaml", ".pact/fitness.yaml"),
 ]
 
 

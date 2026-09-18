@@ -66,6 +66,7 @@ Inspect this repository:
 python scripts/pact/pact.py doctor
 python scripts/pact/pact.py audit
 python scripts/pact/pact.py owner --json
+python scripts/pact/pact.py fitness
 ```
 
 Discover project knowledge:
@@ -150,6 +151,7 @@ doctor     PACT foundation health
 readiness  explicit baseline readiness
 audit      repository health inventory
 owner      validate/expose project Owner Profile
+fitness    run project-owned architecture invariants
 map        rebuild disposable discovery index
 code-map   rebuild generated local import/symbol relationships
 discover   locate project knowledge
@@ -235,6 +237,7 @@ PACT v1 currently includes the executable foundation for:
 - Project Explanation evidence packets;
 - candidate Context Resolution;
 - conservative Impact Analysis;
+- pluggable project-owned architecture fitness functions;
 - Convergence Reports;
 - Evidence Receipts;
 - evidence-backed Owner Reports;

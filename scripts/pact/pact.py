@@ -18,6 +18,7 @@ COMMANDS = {
     "readiness": "readiness.py",
     "audit": "audit.py",
     "owner": "owner.py",
+    "fitness": "fitness.py",
     "map": "map.py",
     "code-map": "code_map.py",
     "discover": "discover.py",
