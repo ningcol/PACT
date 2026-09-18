@@ -64,8 +64,41 @@ If any framework conflict exists, `--apply` refuses the entire automatic update.
 
 Seed files are never overwritten. Template/framework changes affecting a seed are reported for manual reconciliation.
 
+## Transactional apply
+
+Automatic framework upgrade uses:
+
+```text
+plan
+→ stage all replacement files
+→ verify staged hashes
+→ backup every target that will change
+→ atomic file replacement
+→ build/validate new install manifest
+→ commit manifest
+→ validate final hashes/version
+```
+
+If any mutation or validation fails, PACT restores all replaced files and the previous install manifest. Files created only by the failed upgrade are removed.
+
+This is separate from conflict detection: conflicts prevent mutation before staging/apply; rollback protects against filesystem/process failure during apply.
+
+## Single-file bootstrap
+
+The repository root `bootstrap.py` is intentionally tiny and contains no governance/template truth.
+
+It:
+
+1. downloads an explicitly selected PACT GitHub ref/commit to a temporary directory;
+2. optionally validates the source archive SHA256;
+3. safely rejects archive traversal/symlinks;
+4. invokes that downloaded source's real `init` or `upgrade` runtime;
+5. deletes the temporary source afterward.
+
+This enables adoption/update without a local PACT checkout while keeping canonical framework content single-owned.
+
 ## No hidden package copy
 
 Distribution packaging must not duplicate PACT governance/templates into a separately maintained source tree.
 
-A future `uvx` / package wrapper may expose the CLI, but canonical framework content remains single-owned and versioned.
+A future `uvx` / package wrapper may improve invocation, but canonical framework content remains single-owned and versioned.
