@@ -1,11 +1,10 @@
----
-pact:
-  type: drift
-  id: DRIFT-001
-  status: known
-  owners:
-    - engineering
----
++++
+[pact]
+type = "drift"
+id = "DRIFT-001"
+status = "known"
+owners = ["engineering"]
++++
 
 # DRIFT-001 — <Title>
 
