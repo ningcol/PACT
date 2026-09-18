@@ -7,6 +7,7 @@ import pathlib
 
 
 FRAMEWORK_DOCS = [
+    "pact.py",
     "docs/product/README.md",
     "docs/product/glossary/README.md",
     "docs/product/domains/README.md",
