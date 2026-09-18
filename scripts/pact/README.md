@@ -125,7 +125,9 @@ Generated relationships carry confidence:
 
 Behavioral impact remains a candidate requiring review.
 
-Project/Code maps use source fingerprints. A cached map is reused only while its source set is fresh; otherwise it is rebuilt automatically.
+Project/Code maps use source fingerprints. A cached map is reused only while its source set is fresh; otherwise it is refreshed automatically.
+
+On Git repositories, file enumeration uses Git's tracked/visible-untracked view and respects `.gitignore` before parsing. When only part of the source set changed, per-file parse caches reuse unchanged Markdown/symbol/import results and only reparse changed/new files.
 
 Unsupported project-specific aliases or framework magic remain unresolved rather than guessed.
 
