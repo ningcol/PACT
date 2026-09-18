@@ -23,15 +23,28 @@ Generated facts:
 
 ## Confidence boundary
 
-A resolved import edge means:
+Generated relationships explicitly carry confidence rather than pretending all resolution is equally certain:
 
-> file A structurally imports file B.
+- `relative-resolved` — relative JS/TS/Vue import resolved to a repository file;
+- `ast-resolved` — Python relative import resolved using AST + package position;
+- `heuristic` — repository-local Python absolute import match; actual runtime `sys.path` may differ;
+- unresolved imports remain unresolved.
+
+Even a high-confidence structural edge means only:
+
+> file A has a generated structural relationship to file B.
 
 It does **not** mean:
 
-> changing B definitely breaks A.
+> changing B definitely changes product behavior.
 
 Impact Analysis therefore exposes import neighbors as **code candidates**, not deterministic product impacts.
+
+## Freshness
+
+Project Map and Code Map store a source fingerprint. Discovery/Context/Impact/Explain reuse a cached map only while that fingerprint still matches the repository source set.
+
+This avoids both stale indexes and unconditional full reparsing on every query.
 
 ## Unresolved imports
 

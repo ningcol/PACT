@@ -36,6 +36,9 @@ jobs:
       - name: Validate Owner Profile fallback
         run: python scripts/pact/pact.py owner --json
 
+      - name: Validate core high-risk policy
+        run: python scripts/pact/pact.py risk high --json
+
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
@@ -43,10 +46,14 @@ jobs:
         run: python -m unittest discover -s scripts/pact/tests -p 'test_*.py'
 
       - name: Build derived project map
-        run: python scripts/pact/pact.py map --output /tmp/pact-project-map.json
+        run: |
+          python scripts/pact/pact.py map --output /tmp/pact-project-map.json --ensure
+          python scripts/pact/pact.py map --output /tmp/pact-project-map.json --ensure
 
       - name: Build generated code map
-        run: python scripts/pact/pact.py code-map --output /tmp/pact-code-map.json
+        run: |
+          python scripts/pact/pact.py code-map --output /tmp/pact-code-map.json --ensure
+          python scripts/pact/pact.py code-map --output /tmp/pact-code-map.json --ensure
 
       - name: Smoke-test Project Discovery
         run: python scripts/pact/pact.py discover "product truth" --index /tmp/pact-project-map.json --json

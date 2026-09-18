@@ -9,7 +9,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 
 from schema_validate import load_schema, validate_instance
 
@@ -24,6 +23,7 @@ def build_index(path: pathlib.Path) -> None:
             str(ROOT / "scripts" / "pact" / "map.py"),
             "--output",
             str(path),
+            "--ensure",
         ],
         capture_output=True,
         text=True,
@@ -121,11 +121,10 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        with tempfile.TemporaryDirectory(prefix="pact-explain-") as tmp:
-            index_path = pathlib.Path(tmp) / "project-map.json"
-            build_index(index_path)
-            index = json.loads(index_path.read_text(encoding="utf-8"))
-            discovery = run_discovery(args.query, index_path, max(args.limit, 1))
+        index_path = ROOT / ".pact" / "cache" / "project-map.json"
+        build_index(index_path)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        discovery = run_discovery(args.query, index_path, max(args.limit, 1))
     except Exception as exc:
         print(f"PACT explain: setup failed: {exc}", file=sys.stderr)
         return 2

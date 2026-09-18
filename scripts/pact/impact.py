@@ -10,8 +10,8 @@ import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 
+from risk import profile
 from schema_validate import load_schema, validate_instance
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -48,36 +48,41 @@ def changed_from_git(base: str, head: str) -> list[str]:
 
 
 def build_map() -> dict:
-    with tempfile.TemporaryDirectory(prefix="pact-impact-") as tmp:
-        output = pathlib.Path(tmp) / "project-map.json"
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "pact" / "map.py"), "--output", str(output)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "map failed")
-        return json.loads(output.read_text(encoding="utf-8"))
+    output = ROOT / ".pact" / "cache" / "project-map.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "map.py"),
+            "--output",
+            str(output),
+            "--ensure",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "map failed")
+    return json.loads(output.read_text(encoding="utf-8"))
 
 
 def build_code_map() -> dict:
-    with tempfile.TemporaryDirectory(prefix="pact-code-impact-") as tmp:
-        output = pathlib.Path(tmp) / "code-map.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts" / "pact" / "code_map.py"),
-                "--output",
-                str(output),
-            ],
-            capture_output=True,
-            text=True,
+    output = ROOT / ".pact" / "cache" / "code-map.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "code_map.py"),
+            "--output",
+            str(output),
+            "--ensure",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip() or result.stdout.strip() or "code-map failed"
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                result.stderr.strip() or result.stdout.strip() or "code-map failed"
-            )
-        return json.loads(output.read_text(encoding="utf-8"))
+    return json.loads(output.read_text(encoding="utf-8"))
 
 
 def read_text(path: str) -> str:
@@ -102,7 +107,9 @@ def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
     for edge in code_map.get("edges", []):
         if edge["from"] in changed_set and edge["to"] not in changed_set:
             related = file_info.get(edge["to"], {})
-            score = 70 + (15 if related.get("is_test") else 0)
+            confidence = edge.get("confidence", "heuristic")
+            base = {"relative-resolved": 72, "ast-resolved": 68, "heuristic": 52}.get(confidence, 48)
+            score = base + (15 if related.get("is_test") else 0)
             key = (edge["from"], edge["to"], "imports")
             candidates[key] = {
                 "changed_file": edge["from"],
@@ -110,11 +117,14 @@ def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
                 "relation": "imports",
                 "score": score,
                 "is_test": bool(related.get("is_test")),
+                "confidence": confidence,
             }
 
         if edge["to"] in changed_set and edge["from"] not in changed_set:
             related = file_info.get(edge["from"], {})
-            score = 85 + (15 if related.get("is_test") else 0)
+            confidence = edge.get("confidence", "heuristic")
+            base = {"relative-resolved": 88, "ast-resolved": 84, "heuristic": 64}.get(confidence, 58)
+            score = base + (15 if related.get("is_test") else 0)
             key = (edge["to"], edge["from"], "imported-by")
             candidates[key] = {
                 "changed_file": edge["to"],
@@ -122,6 +132,7 @@ def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
                 "relation": "imported-by",
                 "score": score,
                 "is_test": bool(related.get("is_test")),
+                "confidence": confidence,
             }
 
     return sorted(
@@ -136,11 +147,21 @@ def main() -> int:
     source.add_argument("--files", nargs="+", help="explicit changed repository paths")
     source.add_argument("--base", help="git base ref for BASE...HEAD diff")
     parser.add_argument("--head", default="HEAD")
-    parser.add_argument(
+    parser.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
+    code_group = parser.add_mutually_exclusive_group()
+    code_group.add_argument(
         "--code",
+        dest="code",
         action="store_true",
-        help="also include generated import-neighbor code candidates",
+        help="force generated import-neighbor code candidates",
     )
+    code_group.add_argument(
+        "--no-code",
+        dest="code",
+        action="store_false",
+        help="disable code analysis even if the risk profile enables it",
+    )
+    parser.set_defaults(code=None)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -153,7 +174,13 @@ def main() -> int:
         )
         changed = sorted(set(changed))
         index = build_map()
-        code_map = build_code_map() if args.code else None
+        risk = profile(args.risk)
+        code_enabled = (
+            risk["code_context_default"]
+            if args.code is None
+            else bool(args.code)
+        )
+        code_map = build_code_map() if code_enabled else None
     except Exception as exc:
         print(f"PACT impact: setup failed: {exc}", file=sys.stderr)
         return 2
@@ -250,6 +277,8 @@ def main() -> int:
 
     report = {
         "version": 1,
+        "risk_level": args.risk,
+        "code_analysis": code_enabled,
         "changed_files": changed,
         "impacted_domains": sorted(impacted_domains),
         "deterministic_impacts": deterministic,
@@ -291,7 +320,8 @@ def main() -> int:
             marker = " test" if item["is_test"] else ""
             print(
                 f"- {item['changed_file']} -> {item['related_file']} "
-                f"({item['relation']},{marker.strip() or 'code'}, score {item['score']})"
+                f"({item['relation']},{item['confidence']},"
+                f"{marker.strip() or 'code'}, score {item['score']})"
             )
     if report["unmapped_files"]:
         print("Unmapped changed files:")
