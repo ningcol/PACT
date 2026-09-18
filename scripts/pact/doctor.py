@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 
+from distribution import sha256_file
 from schema_validate import load_schema, validate_instance
 
 
@@ -62,6 +63,29 @@ def install_provenance_check(strict: bool) -> dict:
                 "install-provenance",
                 "fail",
                 f"VERSION={installed_version!r} but install manifest runtime_version={manifest_version!r}",
+            )
+
+        integrity_errors = []
+        for relative, record in manifest.get("files", {}).items():
+            if record.get("management") != "framework":
+                continue
+            path = ROOT / relative
+            if not path.is_file():
+                integrity_errors.append(f"missing framework file: {relative}")
+                continue
+            actual_sha = sha256_file(path)
+            expected_sha = record.get("installed_sha256")
+            if actual_sha != expected_sha:
+                integrity_errors.append(
+                    f"framework file modified/corrupt: {relative} "
+                    f"({actual_sha} != {expected_sha})"
+                )
+
+        if integrity_errors:
+            return item(
+                "install-provenance",
+                "fail" if strict else "warn",
+                "; ".join(integrity_errors[:10]),
             )
 
         return item(
