@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 import shutil
 import subprocess
@@ -55,7 +56,7 @@ class FitnessTests(unittest.TestCase):
             [[checks]]
             id = "must-pass"
             description = "This invariant must pass."
-            command = ["{sys.executable}", "{checker}"]
+            command = [{json.dumps(str(sys.executable))}, {json.dumps(str(checker))}]
             severity = "error"
             """,
         )
