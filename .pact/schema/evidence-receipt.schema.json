@@ -3,10 +3,11 @@
   "$id": "https://pact.local/schema/evidence-receipt.schema.json",
   "title": "PACT Evidence Receipt",
   "type": "object",
-  "required": ["version", "task", "risk_level", "claims", "limitations"],
+  "required": ["version", "task_id", "task", "risk_level", "claims", "limitations"],
   "additionalProperties": false,
   "properties": {
     "version": { "const": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
     "task": { "type": "string", "minLength": 1 },
     "risk_level": { "enum": ["low", "medium", "high"] },
     "claims": {
@@ -39,11 +40,14 @@
     },
     "evidence": {
       "type": "object",
-      "required": ["kind", "ref"],
+      "required": ["kind", "provenance", "ref"],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "enum": ["test", "browser", "visual", "runtime", "contract", "architecture", "manual", "other"]
+        },
+        "provenance": {
+          "enum": ["pact-run", "file", "manual"]
         },
         "ref": { "type": "string", "minLength": 1 },
         "note": { "type": "string" }

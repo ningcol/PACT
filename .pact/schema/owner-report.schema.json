@@ -5,6 +5,7 @@
   "type": "object",
   "required": [
     "version",
+    "task_id",
     "status",
     "summary",
     "before",
@@ -15,25 +16,50 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
-    "status": {
-      "enum": ["completed", "partial", "blocked", "needs-owner"]
+    "version": {
+      "const": 1
     },
-    "summary": { "type": "string", "minLength": 1 },
-    "before": { "type": "string", "minLength": 1 },
-    "after": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": [
+        "completed",
+        "partial",
+        "blocked",
+        "needs-owner"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "before": {
+      "type": "string",
+      "minLength": 1
+    },
+    "after": {
+      "type": "string",
+      "minLength": 1
+    },
     "verification": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["claim", "evidence_ids"],
+        "required": [
+          "claim",
+          "evidence_ids"
+        ],
         "additionalProperties": false,
         "properties": {
-          "claim": { "type": "string", "minLength": 1 },
+          "claim": {
+            "type": "string",
+            "minLength": 1
+          },
           "evidence_ids": {
             "type": "array",
             "minItems": 1,
-            "items": { "type": "string", "pattern": "^EV-[A-Z0-9]+(?:-[A-Z0-9]+)*$" },
+            "items": {
+              "type": "string",
+              "pattern": "^EV-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+            },
             "uniqueItems": true
           }
         }
@@ -41,33 +67,59 @@
     },
     "consistency": {
       "type": "object",
-      "required": ["status", "summary"],
+      "required": [
+        "status",
+        "summary"
+      ],
       "additionalProperties": false,
       "properties": {
         "status": {
-          "enum": ["aligned", "nonblocking-drift", "needs-reconciliation", "needs-owner"]
+          "enum": [
+            "aligned",
+            "nonblocking-drift",
+            "needs-reconciliation",
+            "needs-owner"
+          ]
         },
-        "summary": { "type": "string", "minLength": 1 }
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "owner_decisions": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["question", "options"],
+        "required": [
+          "question",
+          "options"
+        ],
         "additionalProperties": false,
         "properties": {
-          "question": { "type": "string", "minLength": 1 },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
           "options": {
             "type": "array",
             "minItems": 2,
             "items": {
               "type": "object",
-              "required": ["label", "consequence"],
+              "required": [
+                "label",
+                "consequence"
+              ],
               "additionalProperties": false,
               "properties": {
-                "label": { "type": "string", "minLength": 1 },
-                "consequence": { "type": "string", "minLength": 1 }
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "consequence": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             }
           }
@@ -76,7 +128,14 @@
     },
     "technical_details": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }

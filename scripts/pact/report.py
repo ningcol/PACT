@@ -8,11 +8,12 @@ import json
 import pathlib
 import sys
 
+from evidence import provenance_review, readiness as evidence_readiness, validate as validate_evidence
 from schema_validate import load_schema, validate_instance
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 OWNER_SCHEMA = ROOT / ".pact" / "schema" / "owner-report.schema.json"
-EVIDENCE_SCHEMA = ROOT / ".pact" / "schema" / "evidence-receipt.schema.json"
 CONVERGENCE_SCHEMA = ROOT / ".pact" / "schema" / "convergence-report.schema.json"
 
 BLOCKING_CONVERGENCE = {"needs-reconciliation", "needs-owner"}
@@ -27,15 +28,6 @@ def validate(data: dict, schema_path: pathlib.Path, label: str) -> list[str]:
     return [f"{label}.{error}" for error in errors]
 
 
-def evidence_readiness(receipt: dict) -> str:
-    required = [c for c in receipt.get("claims", []) if c.get("required")]
-    if any(c.get("status") == "fail" for c in required):
-        return "failed"
-    if any(c.get("status") == "unverified" for c in required):
-        return "incomplete"
-    return "ready"
-
-
 def convergence_outcome(report: dict) -> str:
     classes = [f.get("classification") for f in report.get("findings", [])]
     if "owner-decision" in classes:
@@ -47,18 +39,49 @@ def convergence_outcome(report: dict) -> str:
     return "aligned"
 
 
-def cross_validate(owner: dict, evidence: dict, convergence: dict) -> list[str]:
+def cross_validate(
+    owner: dict,
+    evidence: dict,
+    convergence: dict,
+    *,
+    root: pathlib.Path = ROOT,
+) -> list[str]:
     errors: list[str] = []
-    known_ids = {claim["id"] for claim in evidence.get("claims", [])}
+
+    task_ids = {
+        "owner": owner.get("task_id"),
+        "evidence": evidence.get("task_id"),
+        "convergence": convergence.get("task_id"),
+    }
+    if len(set(task_ids.values())) != 1:
+        errors.append(
+            "task_id mismatch across owner/evidence/convergence: "
+            + ", ".join(f"{key}={value!r}" for key, value in task_ids.items())
+        )
+
+    claims_by_id = {
+        claim["id"]: claim
+        for claim in evidence.get("claims", [])
+    }
 
     for item in owner.get("verification", []):
         for evidence_id in item.get("evidence_ids", []):
-            if evidence_id not in known_ids:
+            claim = claims_by_id.get(evidence_id)
+            if claim is None:
                 errors.append(
                     f"owner verification references unknown evidence id '{evidence_id}'"
                 )
+                continue
+            if claim.get("status") != "pass":
+                errors.append(
+                    f"owner verification references non-passing evidence id "
+                    f"'{evidence_id}' (status={claim.get('status')!r})"
+                )
 
-    ready = evidence_readiness(evidence)
+    provenance_errors, policy_gaps, _ = provenance_review(evidence, root)
+    errors.extend(f"evidence provenance: {error}" for error in provenance_errors)
+
+    ready = evidence_readiness(evidence, policy_gaps)
     conv = convergence_outcome(convergence)
 
     if owner.get("status") == "completed":
@@ -134,15 +157,21 @@ def main() -> int:
     parser.add_argument("owner_report")
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--convergence", required=True)
+    parser.add_argument(
+        "--root",
+        help="repository root used to resolve Evidence provenance refs",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+
+    root = pathlib.Path(args.root).expanduser().resolve() if args.root else ROOT
 
     paths = [
         pathlib.Path(args.owner_report),
         pathlib.Path(args.evidence),
         pathlib.Path(args.convergence),
     ]
-    paths = [p if p.is_absolute() else ROOT / p for p in paths]
+    paths = [p if p.is_absolute() else root / p for p in paths]
 
     try:
         owner, evidence, convergence = [load(p) for p in paths]
@@ -152,11 +181,13 @@ def main() -> int:
 
     errors = []
     errors.extend(validate(owner, OWNER_SCHEMA, "owner"))
-    errors.extend(validate(evidence, EVIDENCE_SCHEMA, "evidence"))
+    errors.extend(
+        f"evidence.{error}" for error in validate_evidence(evidence)
+    )
     errors.extend(validate(convergence, CONVERGENCE_SCHEMA, "convergence"))
 
     if not errors:
-        errors.extend(cross_validate(owner, evidence, convergence))
+        errors.extend(cross_validate(owner, evidence, convergence, root=root))
 
     if errors:
         print("PACT report: invalid or unsupported owner claims", file=sys.stderr)

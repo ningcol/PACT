@@ -18,5 +18,6 @@
       ],
       "recommended_action": "No reconciliation required."
     }
-  ]
+  ],
+  "task_id": "example-province-switch"
 }
