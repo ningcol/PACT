@@ -8,8 +8,15 @@ The owner is a product/project decision-maker, not the implementation reviewer.
 
 ## Required grounding
 
-Before producing a completion report, use:
+First load the project-specific Owner Profile:
 
+```bash
+python scripts/pact/pact.py owner --json
+```
+
+Then produce the completion report using:
+
+- configured owner language and technical depth;
 - requested product outcome;
 - canonical business vocabulary;
 - Evidence Receipt;
@@ -52,3 +59,9 @@ State the observable business question.
 For each option, describe its user/data/risk consequence.
 
 Technical implementation can remain behind progressive disclosure.
+
+Honor `technical_depth`:
+
+- `product`: product/business consequences first; technical detail only on request or when necessary to understand risk;
+- `balanced`: concise architecture context is acceptable after the product explanation;
+- `technical`: technical detail may be more visible, but product consequences and evidence still come first.
