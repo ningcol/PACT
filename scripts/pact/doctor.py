@@ -30,6 +30,7 @@ REQUIRED = [
     ".pact/schema/artifact.schema.json",
     ".pact/schema/config.schema.json",
     ".pact/schema/install-manifest.schema.json",
+    ".pact/schema/fitness.schema.json",
 ]
 
 
@@ -131,6 +132,30 @@ def main() -> int:
             checks.append(item("owner-profile", "fail", "owner profile output was not valid JSON"))
 
     checks.append(install_provenance_check(args.strict))
+
+    fitness_cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "pact" / "fitness.py"),
+        "--json",
+    ]
+    if args.strict:
+        fitness_cmd.append("--strict")
+    fitness_run = subprocess.run(fitness_cmd, capture_output=True, text=True)
+    if fitness_run.returncode not in {0, 1}:
+        checks.append(item("architecture-fitness", "fail", (fitness_run.stdout + fitness_run.stderr).strip()))
+    else:
+        try:
+            fitness = json.loads(fitness_run.stdout)
+            state = "pass" if fitness.get("configured") else "warn"
+            detail = (
+                f"{fitness.get('config_source')} "
+                f"(checks={fitness.get('check_count')}, overall={fitness.get('overall')})"
+            )
+            if fitness.get("overall") == "fail":
+                state = "fail"
+            checks.append(item("architecture-fitness", state, detail))
+        except json.JSONDecodeError:
+            checks.append(item("architecture-fitness", "fail", "fitness output was not valid JSON"))
 
     check_run = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pact" / "check.py")],
