@@ -205,7 +205,9 @@ def replay_case(case: dict) -> dict:
             "base_commit": case["base_commit"],
             "target_commit": case["target_commit"],
             "task": case["task"],
+            "task_source": case.get("task_source", "unknown"),
             "expanded_query": case["expanded_query"],
+            "expanded_query_source": case.get("expanded_query_source", "unknown"),
             "oracle_missing_at_base": missing_at_base,
             "direct": direct_metrics,
             "expanded": expanded_metrics,
@@ -253,10 +255,12 @@ def aggregate(results: list[dict]) -> dict:
             else None
         ),
         "interpretation": (
-            "Historical retrieval benchmark only. Oracle files are source files "
-            "actually changed by the later commit. precision_proxy is not semantic "
-            "precision because extra Context files may still be relevant. Low recall "
-            "is evidence for retrieval improvement, not a benchmark harness failure."
+            "Historical retrieval benchmark only. Owner task text is a commit-message-derived "
+            "proxy unless a case says otherwise. Expanded queries are curated post-hoc diagnostics, "
+            "not unbiased Agent outputs. Oracle files are source files actually changed by the "
+            "later commit. precision_proxy is not semantic precision because extra Context files "
+            "may still be relevant. Low recall is evidence for retrieval improvement, not a "
+            "benchmark harness failure."
         ),
     }
 
