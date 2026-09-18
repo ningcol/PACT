@@ -136,24 +136,27 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
 
 
 def ensure_index(path: pathlib.Path) -> None:
-    if path.exists():
-        return
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "pact" / "map.py"), "--output", str(path)],
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "pact" / "map.py"),
+            "--output",
+            str(path),
+            "--ensure",
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
     )
 
 
 def ensure_code_index(path: pathlib.Path) -> None:
-    if path.exists():
-        return
     subprocess.run(
         [
             sys.executable,
             str(ROOT / "scripts" / "pact" / "code_map.py"),
             "--output",
             str(path),
+            "--ensure",
         ],
         check=True,
         stdout=subprocess.DEVNULL,
@@ -173,6 +176,7 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
                 "is_test": item["is_test"],
                 "symbols": item.get("symbols", []),
                 "relation": "direct-match",
+                "confidence": "direct",
             })
 
     direct.sort(key=lambda x: (-x["score"], x["path"]))
@@ -187,14 +191,18 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
 
     for edge in code_index.get("edges", []):
         if edge["from"] in direct_paths and edge["to"] not in direct_paths:
-            neighbor_scores[edge["to"]] = max(neighbor_scores.get(edge["to"], 0), 30)
+            confidence = edge.get("confidence", "heuristic")
+            base = {"relative-resolved": 35, "ast-resolved": 32, "heuristic": 24}.get(confidence, 20)
+            neighbor_scores[edge["to"]] = max(neighbor_scores.get(edge["to"], 0), base)
             neighbor_reasons.setdefault(edge["to"], set()).add(
-                f"imported by direct match {edge['from']}"
+                f"imported by direct match {edge['from']} ({confidence})"
             )
         if edge["to"] in direct_paths and edge["from"] not in direct_paths:
-            neighbor_scores[edge["from"]] = max(neighbor_scores.get(edge["from"], 0), 35)
+            confidence = edge.get("confidence", "heuristic")
+            base = {"relative-resolved": 40, "ast-resolved": 37, "heuristic": 28}.get(confidence, 24)
+            neighbor_scores[edge["from"]] = max(neighbor_scores.get(edge["from"], 0), base)
             neighbor_reasons.setdefault(edge["from"], set()).add(
-                f"imports direct match {edge['to']}"
+                f"imports direct match {edge['to']} ({confidence})"
             )
 
     by_path = {item["path"]: item for item in code_index.get("files", [])}
@@ -213,6 +221,17 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
             "is_test": item["is_test"],
             "symbols": item.get("symbols", []),
             "relation": "import-neighbor",
+            "confidence": next(
+                (
+                    edge.get("confidence")
+                    for edge in code_index.get("edges", [])
+                    if (
+                        (edge["from"] == path and edge["to"] in direct_paths)
+                        or (edge["to"] == path and edge["from"] in direct_paths)
+                    )
+                ),
+                "heuristic",
+            ),
         })
 
     neighbors.sort(key=lambda x: (-x["score"], x["path"]))
