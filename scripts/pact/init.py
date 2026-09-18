@@ -16,9 +16,9 @@ from distribution import (
     github_actions_entry,
     legacy_seed_target,
     manifest_record,
+    minimal_source_manifest,
     runtime_version,
     sha256_file,
-    source_manifest,
 )
 from runtime_bundle import ensure_runtime_bundle
 
@@ -41,7 +41,10 @@ This repository uses PACT (Project AI Control Plane).
 
 ## Knowledge router
 
-- Governance: `docs/governance/`
+PACT starts physically minimal. These durable locations are created only when
+the project has real knowledge worth preserving:
+
+- Governance extensions: `docs/governance/`
 - Product Truth and vocabulary: `docs/product/`
 - Current architecture: `docs/architecture/`
 - Durable engineering rationale: `.agents/decisions/`
@@ -49,6 +52,10 @@ This repository uses PACT (Project AI Control Plane).
 - Drift: `docs/drift/`
 - Reusable procedures: `.agents/skills/`
 - Adoption readiness: `.pact/baseline.toml`
+
+An absent optional knowledge directory means "not materialized yet", not
+"healthy knowledge is missing". Do not create empty folders/templates merely
+to satisfy PACT.
 
 ## Decision boundary
 
@@ -95,9 +102,10 @@ Merge these concepts into the existing project agent guide:
 - communicate owner-facing results using the project Owner Profile in `.pact/config.toml`;
 - use product/business consequences before unnecessary implementation detail.
 
-Suggested knowledge router:
+Suggested knowledge router (materialize a location only when real durable
+project knowledge exists):
 
-- Governance: `docs/governance/`
+- Governance extensions: `docs/governance/`
 - Product Truth: `docs/product/`
 - Architecture: `docs/architecture/`
 - Decisions: `.agents/decisions/`
@@ -122,7 +130,7 @@ def generated_entry(path: str, management: str = "seed") -> dict:
 def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
-    for entry in source_manifest(SOURCE_ROOT):
+    for entry in minimal_source_manifest(SOURCE_ROOT):
         destination = target / entry["target"]
         legacy_rel = legacy_seed_target(entry["target"].as_posix())
         legacy_destination = target / legacy_rel if legacy_rel else None
@@ -147,7 +155,7 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
 
     agents = target / "AGENTS.md"
     if agents.exists():
-        rel = pathlib.Path("docs/governance/PACT_AGENT_BOOTSTRAP.md")
+        rel = pathlib.Path(".pact/AGENT_BOOTSTRAP.md")
         destination = target / rel
         operations.append({
             "action": "skip" if destination.exists() else "create-generated",
@@ -257,6 +265,9 @@ def write_install_manifest(
         ),
         "files": files,
     }
+    install_profile = existing.get("install_profile") if existing else "minimal"
+    if install_profile:
+        manifest["install_profile"] = install_profile
 
     path = target / INSTALL_MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,7 +296,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
             destination.write_text(TARGET_AGENTS, encoding="utf-8")
-        elif op["path"] == "docs/governance/PACT_AGENT_BOOTSTRAP.md":
+        elif op["path"] == ".pact/AGENT_BOOTSTRAP.md":
             destination.write_text(bootstrap_snippet(), encoding="utf-8")
         elif op["path"] == ".gitignore":
             destination.write_text(".pact/cache/\n", encoding="utf-8")
