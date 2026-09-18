@@ -99,6 +99,10 @@ def main() -> int:
     try:
         baseline, baseline_path, baseline_format = load_baseline(root)
         if baseline is not None:
+            if baseline_format == "legacy-yaml":
+                reviews = baseline.setdefault("reviews", {})
+                reviews.setdefault("agent_bootstrap", "pending")
+
             if not schema_path.exists():
                 baseline_errors.append(f"missing baseline schema at {schema_path}")
             else:
