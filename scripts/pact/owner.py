@@ -57,6 +57,12 @@ def main() -> int:
         print(f"PACT owner: {exc}", file=sys.stderr)
         return 2
 
+    if source_format == "legacy-yaml":
+        config = {
+            "version": config.get("version", 1),
+            "owner": config.get("owner", {}),
+        }
+
     errors = validate_instance(config, load_schema(schema_path))
     if errors:
         print(f"PACT owner: invalid configuration in {source}", file=sys.stderr)
