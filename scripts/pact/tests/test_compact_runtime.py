@@ -107,7 +107,7 @@ class CompactRuntimeTests(unittest.TestCase):
                     for path in legacy_entry.parent.iterdir()
                     if path.is_file()
                 ),
-                ["pact.py"],
+                ["converge.py", "pact.py", "report.py"],
             )
 
             manifest = json.loads(
@@ -124,7 +124,12 @@ class CompactRuntimeTests(unittest.TestCase):
             ]
             self.assertEqual(
                 runtime_entries,
-                [".pact/pact.pyz", "scripts/pact/pact.py"],
+                [
+                    ".pact/pact.pyz",
+                    "scripts/pact/converge.py",
+                    "scripts/pact/pact.py",
+                    "scripts/pact/report.py",
+                ],
             )
 
             help_result = subprocess.run(
@@ -152,6 +157,27 @@ class CompactRuntimeTests(unittest.TestCase):
                 legacy_help.stdout + legacy_help.stderr,
             )
             self.assertIn("PACT Project AI Control Plane", legacy_help.stdout)
+
+            for legacy_name, expected in [
+                ("converge.py", "Validate a PACT convergence report"),
+                ("report.py", "Render a PACT owner report"),
+            ]:
+                legacy_command = subprocess.run(
+                    [
+                        sys.executable,
+                        str(legacy_entry.parent / legacy_name),
+                        "--help",
+                    ],
+                    cwd=target,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    legacy_command.returncode,
+                    0,
+                    legacy_command.stdout + legacy_command.stderr,
+                )
+                self.assertIn(expected, legacy_command.stdout)
 
             status = subprocess.run(
                 [
