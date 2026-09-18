@@ -8,7 +8,7 @@ import json
 import pathlib
 import sys
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "evidence-receipt.schema.json"
@@ -19,12 +19,7 @@ def load(path: pathlib.Path) -> dict:
 
 
 def validate(receipt: dict) -> list[str]:
-    validator = Draft202012Validator(load(SCHEMA))
-    errors = []
-    for err in sorted(validator.iter_errors(receipt), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    return validate_instance(receipt, load_schema(SCHEMA))
 
 
 def readiness(receipt: dict) -> str:
