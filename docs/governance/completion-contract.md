@@ -10,7 +10,7 @@ A prepared task has a machine-readable Task Contract containing:
 - observable acceptance criteria with stable `AC-*` IDs;
 - explicit constraints that must remain true.
 
-Evidence claims may bind to one or more acceptance IDs. When a Task Contract is present, completion fails unless every acceptance criterion has passing Evidence and that Evidence is represented in the Owner Report.
+Evidence claims may bind to one or more acceptance IDs. Prepared Task Contracts are fingerprinted, and completion requires Evidence to carry the SHA256 of the exact contract it verified. When a Task Contract is present, completion fails if the contract changed after verification, if any acceptance criterion lacks passing Evidence, or if that Evidence is not represented in the Owner Report.
 
 Task Contract intent is task-scoped authority. It does not silently override confirmed durable Product Truth; conflicts require reconciliation or an owner-level product decision.
 
