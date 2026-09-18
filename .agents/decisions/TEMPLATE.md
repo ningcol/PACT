@@ -1,7 +1,15 @@
-# Decision: <title>
++++
+[pact]
+type = "decision"
+id = "DEC-EXAMPLE-001"
+status = "proposed"
+owners = ["engineering"]
+domains = []
+related = []
+supersedes = []
++++
 
-Status: proposed
-Date: YYYY-MM-DD
+# Decision: <title>
 
 ## Problem
 

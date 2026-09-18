@@ -1,5 +1,7 @@
 # PACT Runtime
 
+PACT core requires Python 3.11+ and uses only the standard library. No runtime pip dependencies are required.
+
 The stable v1 entry point is:
 
 ```bash
@@ -71,7 +73,7 @@ python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json
 
 ## Architecture fitness
 
-`.pact/fitness.yaml` is project-owned.
+`.pact/fitness.toml` is project-owned.
 
 PACT only standardizes how executable invariants are registered and reported; it does not prescribe architecture patterns.
 

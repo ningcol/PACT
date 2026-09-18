@@ -3,7 +3,7 @@
   "$id": "https://pact.local/schema/config.schema.json",
   "title": "PACT Project Configuration",
   "type": "object",
-  "required": ["version", "owner", "paths", "risk", "discovery", "convergence"],
+  "required": ["version", "owner"],
   "additionalProperties": false,
   "properties": {
     "version": { "const": 1 },
@@ -41,66 +41,11 @@
               "items": { "type": "string", "minLength": 1 },
               "uniqueItems": true
             },
-            "explain_consequence_before_technical_term": {
-              "type": "boolean"
-            },
-            "progressive_disclosure": {
-              "type": "boolean"
-            },
-            "decision_translation": {
-              "enum": ["consequence_first", "direct"]
-            }
+            "explain_consequence_before_technical_term": { "type": "boolean" },
+            "progressive_disclosure": { "type": "boolean" },
+            "decision_translation": { "enum": ["consequence_first", "direct"] }
           }
         }
-      }
-    },
-    "paths": {
-      "type": "object",
-      "required": ["product_truth", "architecture", "decisions", "changes", "drift", "skills"],
-      "additionalProperties": false,
-      "properties": {
-        "product_truth": { "type": "string", "minLength": 1 },
-        "architecture": { "type": "string", "minLength": 1 },
-        "decisions": { "type": "string", "minLength": 1 },
-        "changes": { "type": "string", "minLength": 1 },
-        "drift": { "type": "string", "minLength": 1 },
-        "skills": { "type": "string", "minLength": 1 }
-      }
-    },
-    "risk": {
-      "type": "object",
-      "required": ["levels"],
-      "additionalProperties": false,
-      "properties": {
-        "levels": {
-          "type": "array",
-          "minItems": 3,
-          "items": { "enum": ["low", "medium", "high"] },
-          "uniqueItems": true
-        }
-      }
-    },
-    "discovery": {
-      "type": "object",
-      "required": ["use_canonical_vocabulary", "derived_cache"],
-      "additionalProperties": false,
-      "properties": {
-        "use_canonical_vocabulary": { "type": "boolean" },
-        "derived_cache": { "type": "string", "minLength": 1 }
-      }
-    },
-    "convergence": {
-      "type": "object",
-      "required": [
-        "code_wins_product_truth",
-        "deterministic_fact_mismatch",
-        "heuristic_drift"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "code_wins_product_truth": { "const": false },
-        "deterministic_fact_mismatch": { "const": "fail" },
-        "heuristic_drift": { "enum": ["warn", "review"] }
       }
     }
   }

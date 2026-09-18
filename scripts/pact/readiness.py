@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Report explicit PACT adoption readiness.
-
-Readiness is not inferred from document counts. It combines deterministic
-foundation health with explicit baseline review states.
-"""
+"""Report explicit PACT adoption readiness."""
 
 from __future__ import annotations
 
@@ -13,11 +9,12 @@ import pathlib
 import subprocess
 import sys
 
-import yaml
-from jsonschema import Draft202012Validator
+from formats import load_legacy_yaml, load_toml
+from schema_validate import load_schema, validate_instance
 
 
 REVIEW_KEYS = [
+    "agent_bootstrap",
     "vocabulary",
     "product_truth",
     "architecture",
@@ -26,23 +23,6 @@ REVIEW_KEYS = [
     "verification",
     "known_drift",
 ]
-
-
-def load_yaml(path: pathlib.Path) -> dict:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("baseline root must be an object")
-    return data
-
-
-def validate(data: dict, schema_path: pathlib.Path) -> list[str]:
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(data), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
 
 
 def doctor_state(root: pathlib.Path) -> tuple[bool, str]:
@@ -67,12 +47,23 @@ def doctor_state(root: pathlib.Path) -> tuple[bool, str]:
     return report.get("overall") == "pass", report.get("overall", "unknown")
 
 
+def load_baseline(root: pathlib.Path) -> tuple[dict | None, pathlib.Path | None, str | None]:
+    toml_path = root / ".pact" / "baseline.toml"
+    if toml_path.exists():
+        return load_toml(toml_path), toml_path, "toml"
+
+    legacy_path = root / ".pact" / "baseline.yaml"
+    if legacy_path.exists():
+        return load_legacy_yaml(legacy_path), legacy_path, "legacy-yaml"
+
+    return None, None, None
+
+
 def derive_stage(foundation_valid: bool, reviews: dict | None) -> str:
     if not foundation_valid or reviews is None:
         return "scaffolded"
 
-    values = [reviews[key] for key in REVIEW_KEYS]
-    complete = [value != "pending" for value in values]
+    complete = [reviews.get(key) != "pending" for key in REVIEW_KEYS]
 
     if all(complete):
         return "pact-ready"
@@ -97,22 +88,27 @@ def main() -> int:
     default_root = pathlib.Path(__file__).resolve().parents[2]
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
-    baseline_path = root / ".pact" / "baseline.yaml"
     schema_path = root / ".pact" / "schema" / "baseline.schema.json"
-
     foundation_valid, foundation_detail = doctor_state(root)
 
     baseline = None
-    baseline_errors = []
-    if baseline_path.exists():
-        if not schema_path.exists():
-            baseline_errors.append(f"missing baseline schema at {schema_path}")
-        else:
-            try:
-                baseline = load_yaml(baseline_path)
-                baseline_errors.extend(validate(baseline, schema_path))
-            except Exception as exc:
-                baseline_errors.append(str(exc))
+    baseline_path = None
+    baseline_format = None
+    baseline_errors: list[str] = []
+
+    try:
+        baseline, baseline_path, baseline_format = load_baseline(root)
+        if baseline is not None:
+            if baseline_format == "legacy-yaml":
+                reviews = baseline.setdefault("reviews", {})
+                reviews.setdefault("agent_bootstrap", "pending")
+
+            if not schema_path.exists():
+                baseline_errors.append(f"missing baseline schema at {schema_path}")
+            else:
+                baseline_errors.extend(validate_instance(baseline, load_schema(schema_path)))
+    except Exception as exc:
+        baseline_errors.append(str(exc))
 
     reviews = baseline.get("reviews") if baseline and not baseline_errors else None
     stage = derive_stage(foundation_valid, reviews)
@@ -126,7 +122,13 @@ def main() -> int:
         "stage": stage,
         "foundation_valid": foundation_valid,
         "foundation_detail": foundation_detail,
-        "baseline_present": baseline_path.exists(),
+        "baseline_present": baseline_path is not None,
+        "baseline_source": (
+            baseline_path.relative_to(root).as_posix()
+            if baseline_path is not None
+            else None
+        ),
+        "baseline_format": baseline_format,
         "baseline_valid": baseline is not None and not baseline_errors,
         "reviews": reviews or {},
         "pending_reviews": pending,
@@ -140,6 +142,8 @@ def main() -> int:
         print(f"- foundation valid: {foundation_valid}")
         print(f"- baseline present: {result['baseline_present']}")
         print(f"- baseline valid: {result['baseline_valid']}")
+        if baseline_format:
+            print(f"- baseline format: {baseline_format}")
         if pending:
             print("Pending baseline reviews:")
             for key in pending:

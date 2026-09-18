@@ -6,7 +6,7 @@ The Human Interface layer is not a writing-style prompt. It is a contract betwee
 
 An owner-facing completion report should be grounded in:
 
-- the validated Owner Profile from `.pact/config.yaml`;
+- the validated Owner Profile from `.pact/config.toml`;
 - the requested product outcome;
 - Evidence Receipt;
 - Convergence Report;

@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "explanation-packet.schema.json"
@@ -107,13 +107,7 @@ def classify(doc: dict) -> str:
 
 
 def validate(packet: dict) -> list[str]:
-    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(packet), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    return validate_instance(packet, load_schema(SCHEMA))
 
 
 def main() -> int:

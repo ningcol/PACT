@@ -54,11 +54,7 @@ Owner-readable Result
 
 ## Quick start
 
-Install the small Python runtime dependencies:
-
-```bash
-python -m pip install -r scripts/pact/requirements.txt
-```
+PACT 0.3 core uses only the Python 3.11+ standard library. No pip install, virtualenv, PyYAML, or jsonschema package is required.
 
 Inspect this repository:
 
@@ -132,8 +128,7 @@ After adoption:
 
 ```bash
 cd ../my-existing-project
-python -m pip install -r scripts/pact/requirements.txt
-python scripts/pact/pact.py doctor --strict
+python3 scripts/pact/pact.py doctor --strict
 python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit
 ```
@@ -184,7 +179,7 @@ If both a framework-managed target file and the newer PACT source changed, autom
 
 ## Scaffolded is not PACT-ready
 
-`pact init` intentionally creates `.pact/baseline.yaml` with review areas marked `pending`.
+`pact init` intentionally creates `.pact/baseline.toml` with review areas marked `pending`.
 
 PACT derives adoption state as:
 

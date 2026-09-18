@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
@@ -58,13 +58,7 @@ def run_discovery(query: str, limit: int, code: bool = False) -> dict:
 
 
 def validate(envelope: dict) -> list[str]:
-    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(envelope), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    return validate_instance(envelope, load_schema(SCHEMA))
 
 
 def main() -> int:

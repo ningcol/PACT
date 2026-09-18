@@ -1,13 +1,13 @@
----
-pact:
-  type: rule
-  id: RULE-EXAMPLE-001
-  status: candidate
-  owners:
-    - product
-  domains:
-    - DOMAIN-EXAMPLE
----
++++
+[pact]
+type = "rule"
+id = "RULE-EXAMPLE-001"
+status = "candidate"
+owners = ["product"]
+domains = ["DOMAIN-EXAMPLE"]
+related = []
+verification = []
++++
 
 # RULE-EXAMPLE-001 — <Title>
 

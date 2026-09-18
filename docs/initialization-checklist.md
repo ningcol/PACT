@@ -110,7 +110,7 @@ For each important unresolved conflict:
 
 ## 10. Record baseline review state
 
-Update `.pact/baseline.yaml` only after each area was deliberately inspected:
+Update `.pact/baseline.toml` only after each area was deliberately inspected:
 
 - [ ] vocabulary: reviewed / not_applicable;
 - [ ] Product Truth: reviewed / not_applicable;

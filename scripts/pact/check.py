@@ -1,37 +1,17 @@
 #!/usr/bin/env python3
-"""Deterministic PACT repository checks.
-
-Checks only facts a machine can establish reliably:
-- PACT front matter/schema
-- stable ID uniqueness and local reference integrity
-- known lifecycle values
-- artifact type/path compatibility
-- lifecycle directory/status compatibility
-- resolvable internal Markdown links
-
-Semantic drift belongs to Convergence Review, not this script.
-"""
+"""Deterministic PACT repository checks."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import re
 import sys
 from dataclasses import dataclass
 from urllib.parse import unquote
 
-try:
-    import yaml
-    from jsonschema import Draft202012Validator
-except ImportError as exc:
-    print(
-        "Missing PACT check dependencies. Run: "
-        "python -m pip install -r scripts/pact/requirements.txt",
-        file=sys.stderr,
-    )
-    raise SystemExit(2) from exc
+from formats import parse_markdown_metadata
+from schema_validate import load_schema, validate_instance
 
 
 STATUS_BY_TYPE = {
@@ -53,8 +33,6 @@ PATH_PREFIX_BY_TYPE = {
 }
 
 ID_REQUIRED = {"domain", "rule", "decision", "drift"}
-
-FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 EXTERNAL_PREFIXES = (
     "http://",
@@ -64,7 +42,6 @@ EXTERNAL_PREFIXES = (
     "data:",
     "javascript:",
 )
-
 MANAGED_ROOT_FILES = {"README.md", "AGENTS.md"}
 MANAGED_PREFIXES = ("docs/", ".agents/")
 
@@ -73,6 +50,7 @@ MANAGED_PREFIXES = ("docs/", ".agents/")
 class Artifact:
     path: pathlib.Path
     pact: dict
+    metadata_format: str | None
 
 
 def rel(path: pathlib.Path, root: pathlib.Path) -> str:
@@ -81,33 +59,18 @@ def rel(path: pathlib.Path, root: pathlib.Path) -> str:
 
 def is_managed_markdown(path: pathlib.Path, root: pathlib.Path) -> bool:
     relative = rel(path, root)
-    return (
-        relative in MANAGED_ROOT_FILES
-        or relative.startswith(MANAGED_PREFIXES)
-    )
-
-
-def load_schema(root: pathlib.Path) -> dict:
-    return json.loads(
-        (root / ".pact" / "schema" / "artifact.schema.json").read_text(encoding="utf-8")
-    )
+    return relative in MANAGED_ROOT_FILES or relative.startswith(MANAGED_PREFIXES)
 
 
 def read_artifact(path: pathlib.Path) -> Artifact | None:
-    text = path.read_text(encoding="utf-8")
-    match = FRONT_MATTER.match(text)
-    if not match:
+    raw = path.read_text(encoding="utf-8")
+    data, _, metadata_format = parse_markdown_metadata(raw)
+    pact = data.get("pact") if isinstance(data, dict) else None
+    if pact is None:
         return None
-
-    data = yaml.safe_load(match.group(1))
-    if not isinstance(data, dict) or "pact" not in data:
-        return None
-
-    pact = data.get("pact")
     if not isinstance(pact, dict):
-        raise ValueError("front matter key 'pact' must be an object")
-
-    return Artifact(path=path, pact=pact)
+        raise ValueError("front matter table 'pact' must be an object/table")
+    return Artifact(path=path, pact=pact, metadata_format=metadata_format)
 
 
 def discover(root: pathlib.Path) -> tuple[list[Artifact], list[str]]:
@@ -166,17 +129,15 @@ def lifecycle_errors(path: str, typ: str | None, status: str | None) -> list[str
 
 def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[str]:
     errors: list[str] = []
-    validator = Draft202012Validator(load_schema(root))
+    schema = load_schema(root / ".pact" / "schema" / "artifact.schema.json")
     seen_ids: dict[str, Artifact] = {}
 
-    # First pass: local shape, lifecycle, and ID inventory.
     for artifact in artifacts:
         path = rel(artifact.path, root)
         wrapper = {"pact": artifact.pact}
 
-        for err in sorted(validator.iter_errors(wrapper), key=lambda e: list(e.path)):
-            loc = ".".join(str(part) for part in err.path)
-            errors.append(f"{path}: schema error at {loc or '<root>'}: {err.message}")
+        for error in validate_instance(wrapper, schema):
+            errors.append(f"{path}: schema error at {error}")
 
         typ = artifact.pact.get("type")
         status = artifact.pact.get("status")
@@ -209,7 +170,6 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
 
         errors.extend(lifecycle_errors(path, typ, status))
 
-    # Second pass: references need the complete ID inventory.
     for artifact in artifacts:
         path = rel(artifact.path, root)
         typ = artifact.pact.get("type")
@@ -262,7 +222,6 @@ def clean_link(raw: str) -> str:
     value = raw.strip()
     if value.startswith("<") and value.endswith(">"):
         value = value[1:-1].strip()
-    # Markdown destination may contain a title after whitespace; PACT docs use simple paths.
     if " " in value and not value.startswith(("http://", "https://")):
         value = value.split(" ", 1)[0]
     return unquote(value)
@@ -290,12 +249,13 @@ def validate_links(root: pathlib.Path) -> list[str]:
             if not destination:
                 continue
 
-            if destination.startswith("/"):
-                target = root / destination.lstrip("/")
-            else:
-                target = path.parent / destination
-
+            target = (
+                root / destination.lstrip("/")
+                if destination.startswith("/")
+                else path.parent / destination
+            )
             resolved = target.resolve()
+
             if resolved != root_resolved and root_resolved not in resolved.parents:
                 errors.append(
                     f"{rel(path, root)}: internal link escapes repository: '{raw}'"
@@ -303,9 +263,7 @@ def validate_links(root: pathlib.Path) -> list[str]:
                 continue
 
             if not resolved.exists():
-                errors.append(
-                    f"{rel(path, root)}: broken internal link '{raw}'"
-                )
+                errors.append(f"{rel(path, root)}: broken internal link '{raw}'")
 
     return errors
 
@@ -337,6 +295,13 @@ def main() -> int:
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
+
+    legacy = sum(a.metadata_format == "legacy-yaml" for a in artifacts)
+    if legacy:
+        print(
+            f"PACT: {legacy} legacy YAML artifact(s) remain readable; "
+            "new/edited artifacts should use TOML front matter."
+        )
 
     print("PACT: deterministic checks passed.")
     return 0

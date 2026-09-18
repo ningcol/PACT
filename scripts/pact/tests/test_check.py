@@ -41,60 +41,72 @@ class PactCheckTests(unittest.TestCase):
         self.write(
             "docs/product/domains/batch.md",
             """
-            ---
-            pact:
-              type: domain
-              id: DOMAIN-BATCH
-              status: confirmed
-              owners:
-                - product
-            ---
+            +++
+            [pact]
+            type = "domain"
+            id = "DOMAIN-BATCH"
+            status = "confirmed"
+            owners = ["product"]
+            aliases = ["批次", "examBatch"]
+            +++
             # Batch
             """,
         )
 
-    def test_valid_references_and_internal_link_pass(self) -> None:
+    def test_valid_toml_references_and_internal_link_pass(self) -> None:
         self.add_domain()
         self.write(
             "docs/product/rules/batch.md",
             """
-            ---
-            pact:
-              type: rule
-              id: RULE-BATCH-001
-              status: confirmed
-              owners:
-                - product
-              domains:
-                - DOMAIN-BATCH
-            ---
+            +++
+            [pact]
+            type = "rule"
+            id = "RULE-BATCH-001"
+            status = "confirmed"
+            owners = ["product"]
+            domains = ["DOMAIN-BATCH"]
+            +++
             # Batch Rule
             """,
         )
-        self.write(
-            "README.md",
-            "[Batch rule](docs/product/rules/batch.md)\n",
-        )
+        self.write("README.md", "[Batch rule](docs/product/rules/batch.md)\n")
 
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_legacy_yaml_artifact_remains_readable(self) -> None:
+        self.write(
+            "docs/product/domains/legacy.md",
+            """
+            ---
+            pact:
+              type: domain
+              id: DOMAIN-LEGACY
+              status: confirmed
+              owners:
+                - product
+            ---
+            # Legacy
+            """,
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("legacy YAML artifact", result.stdout)
 
     def test_missing_domain_reference_fails(self) -> None:
         self.write(
             "docs/product/rules/batch.md",
             """
-            ---
-            pact:
-              type: rule
-              id: RULE-BATCH-001
-              status: confirmed
-              domains:
-                - DOMAIN-MISSING
-            ---
+            +++
+            [pact]
+            type = "rule"
+            id = "RULE-BATCH-001"
+            status = "confirmed"
+            domains = ["DOMAIN-MISSING"]
+            +++
             # Batch Rule
             """,
         )
-
         result = self.run_check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("domains references missing id 'DOMAIN-MISSING'", result.stderr)
@@ -104,20 +116,17 @@ class PactCheckTests(unittest.TestCase):
         self.write(
             "docs/product/rules/batch.md",
             """
-            ---
-            pact:
-              type: rule
-              id: RULE-BATCH-001
-              status: confirmed
-              domains:
-                - DOMAIN-BATCH
-              related:
-                - DEC-BATCH-999
-            ---
+            +++
+            [pact]
+            type = "rule"
+            id = "RULE-BATCH-001"
+            status = "confirmed"
+            domains = ["DOMAIN-BATCH"]
+            related = ["DEC-BATCH-999"]
+            +++
             # Batch Rule
             """,
         )
-
         result = self.run_check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("related references missing id 'DEC-BATCH-999'", result.stderr)
@@ -126,23 +135,21 @@ class PactCheckTests(unittest.TestCase):
         self.write(
             "docs/changes/completed/example.md",
             """
-            ---
-            pact:
-              type: change
-              status: active
-              domains: []
-            ---
+            +++
+            [pact]
+            type = "change"
+            status = "active"
+            domains = []
+            +++
             # Example Change
             """,
         )
-
         result = self.run_check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("completed change path requires status 'completed'", result.stderr)
 
     def test_broken_internal_link_fails(self) -> None:
         self.write("README.md", "[Missing](docs/does-not-exist.md)\n")
-
         result = self.run_check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("broken internal link", result.stderr)

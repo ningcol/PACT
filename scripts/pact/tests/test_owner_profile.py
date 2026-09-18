@@ -13,8 +13,23 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 OWNER = PROJECT_ROOT / "scripts" / "pact" / "owner.py"
 SCHEMA = PROJECT_ROOT / ".pact" / "schema" / "config.schema.json"
 
+VALID_TOML = """
+version = 1
 
-VALID_CONFIG = """
+[owner]
+role = "product_project_owner"
+language = "zh-CN"
+technical_depth = "product"
+
+[owner.communication]
+prefer = ["user_behavior"]
+hide_by_default = ["implementation_patterns"]
+explain_consequence_before_technical_term = true
+progressive_disclosure = true
+decision_translation = "consequence_first"
+"""
+
+LEGACY_YAML = """
 version: 1
 
 owner:
@@ -32,22 +47,14 @@ owner:
 
 paths:
   product_truth: docs/product
-  architecture: docs/architecture
-  decisions: .agents/decisions
-  changes: docs/changes
-  drift: docs/drift
-  skills: .agents/skills
-
 risk:
   levels:
     - low
     - medium
     - high
-
 discovery:
   use_canonical_vocabulary: true
   derived_cache: .pact/cache
-
 convergence:
   code_wins_product_truth: false
   deterministic_fact_mismatch: fail
@@ -78,34 +85,39 @@ class OwnerProfileTests(unittest.TestCase):
             text=True,
         )
 
-    def test_valid_project_profile(self) -> None:
-        self.write(".pact/config.yaml", VALID_CONFIG)
+    def test_valid_toml_project_profile(self) -> None:
+        self.write(".pact/config.toml", VALID_TOML)
         result = self.run_owner("--strict", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"language": "zh-CN"', result.stdout)
         self.assertIn('"technical_depth": "product"', result.stdout)
+        self.assertIn('"source_format": "toml"', result.stdout)
 
-    def test_invalid_code_wins_policy_is_rejected(self) -> None:
-        invalid = VALID_CONFIG.replace(
-            "code_wins_product_truth: false",
-            "code_wins_product_truth: true",
-        )
-        self.write(".pact/config.yaml", invalid)
+    def test_legacy_yaml_profile_remains_readable(self) -> None:
+        self.write(".pact/config.yaml", LEGACY_YAML)
+        result = self.run_owner("--strict", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('"source_format": "legacy-yaml"', result.stdout)
+        self.assertIn('"language": "zh-CN"', result.stdout)
+
+    def test_invalid_toml_profile_is_rejected(self) -> None:
+        invalid = VALID_TOML.replace('technical_depth = "product"', 'technical_depth = "magic"')
+        self.write(".pact/config.toml", invalid)
         result = self.run_owner("--strict")
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid configuration", result.stderr)
 
     def test_example_fallback_is_not_project_config(self) -> None:
-        self.write(".pact/config.example.yaml", VALID_CONFIG)
+        self.write(".pact/config.example.toml", VALID_TOML)
         result = self.run_owner("--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"configured": false', result.stdout)
 
     def test_strict_requires_project_config(self) -> None:
-        self.write(".pact/config.example.yaml", VALID_CONFIG)
+        self.write(".pact/config.example.toml", VALID_TOML)
         result = self.run_owner("--strict")
         self.assertEqual(result.returncode, 2)
-        self.assertIn(".pact/config.yaml is missing", result.stderr)
+        self.assertIn(".pact/config.toml is missing", result.stderr)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import json
 import pathlib
 import sys
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "convergence-report.schema.json"
@@ -21,13 +21,7 @@ def load_json(path: pathlib.Path) -> dict:
 
 
 def validate(report: dict) -> list[str]:
-    schema = load_json(SCHEMA)
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(report), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    return validate_instance(report, load_schema(SCHEMA))
 
 
 def outcome(report: dict) -> str:

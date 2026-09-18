@@ -76,7 +76,7 @@ This prevents future agents from repeatedly rediscovering or silently "fixing" a
 
 `pact init` creates structure. It does **not** certify project knowledge.
 
-Initialization creates `.pact/baseline.yaml` with review areas initially marked `pending`:
+Initialization creates `.pact/baseline.toml` with review areas initially marked `pending`:
 
 - vocabulary;
 - Product Truth;

@@ -7,6 +7,7 @@ import pathlib
 
 
 FRAMEWORK_DOCS = [
+    "pact.py",
     "docs/product/README.md",
     "docs/product/glossary/README.md",
     "docs/product/domains/README.md",
@@ -37,10 +38,20 @@ FRAMEWORK_DOCS = [
 ]
 
 SEED_SOURCE_MAPPINGS = [
-    (".pact/config.example.yaml", ".pact/config.yaml"),
-    (".pact/baseline.example.yaml", ".pact/baseline.yaml"),
-    (".pact/fitness.example.yaml", ".pact/fitness.yaml"),
+    (".pact/config.example.toml", ".pact/config.toml"),
+    (".pact/baseline.example.toml", ".pact/baseline.toml"),
+    (".pact/fitness.example.toml", ".pact/fitness.toml"),
 ]
+
+LEGACY_SEED_TARGETS = {
+    ".pact/config.toml": ".pact/config.yaml",
+    ".pact/baseline.toml": ".pact/baseline.yaml",
+    ".pact/fitness.toml": ".pact/fitness.yaml",
+}
+
+
+def legacy_seed_target(target_rel: str) -> str | None:
+    return LEGACY_SEED_TARGETS.get(target_rel)
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -107,18 +118,20 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
             "management": "framework",
         })
 
-    for path in sorted((source_root / "scripts" / "pact").iterdir()):
-        if (
-            path.is_file()
-            and path.suffix in {".py", ".md", ".txt"}
-            and path.name != "__pycache__"
-        ):
-            entries.append({
-                "source": path,
-                "source_path": path.relative_to(source_root).as_posix(),
-                "target": path.relative_to(source_root),
-                "management": "framework",
-            })
+    runtime_dir = source_root / "scripts" / "pact"
+    if runtime_dir.exists():
+        for path in sorted(runtime_dir.iterdir()):
+            if (
+                path.is_file()
+                and path.suffix in {".py", ".md", ".txt"}
+                and path.name != "__pycache__"
+            ):
+                entries.append({
+                    "source": path,
+                    "source_path": path.relative_to(source_root).as_posix(),
+                    "target": path.relative_to(source_root),
+                    "management": "framework",
+                })
 
     for source_rel, target_rel in SEED_SOURCE_MAPPINGS:
         add(source_rel, target_rel, management="seed")

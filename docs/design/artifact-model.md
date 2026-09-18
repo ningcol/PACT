@@ -33,25 +33,21 @@ IDs should survive file renames and directory moves.
 
 ## 3. Front matter
 
-Durable PACT artifacts should use YAML front matter.
+Durable PACT artifacts should use TOML front matter. PACT 0.3 still reads the restricted YAML subset emitted by 0.2 for compatibility, but new/edited artifacts should converge to TOML.
 
 Example:
 
-```yaml
----
-pact:
-  type: rule
-  id: RULE-BATCH-001
-  status: confirmed
-  owners:
-    - product
-  domains:
-    - DOMAIN-BATCH
-  related:
-    - DEC-BATCH-002
-  verification:
-    - e2e/batch-switch.spec.ts
----
+```toml
++++
+[pact]
+type = "rule"
+id = "RULE-BATCH-001"
+status = "confirmed"
+owners = ["product"]
+domains = ["DOMAIN-BATCH"]
+related = ["DEC-BATCH-002"]
+verification = ["e2e/batch-switch.spec.ts"]
++++
 ```
 
 Only fields that carry durable meaning should be added.

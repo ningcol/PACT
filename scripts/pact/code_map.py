@@ -9,7 +9,7 @@ import json
 import pathlib
 import re
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 
 DEFAULT_EXCLUDES = {
@@ -296,11 +296,10 @@ def main() -> int:
 
     schema_path = root / ".pact" / "schema" / "code-map.schema.json"
     if schema_path.exists():
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        errors = list(Draft202012Validator(schema).iter_errors(data))
+        errors = validate_instance(data, load_schema(schema_path))
         if errors:
             for error in errors:
-                print(f"PACT code-map schema error: {error.message}")
+                print(f"PACT code-map schema error: {error}")
             return 2
 
     output.parent.mkdir(parents=True, exist_ok=True)

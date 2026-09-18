@@ -9,25 +9,37 @@ import pathlib
 import subprocess
 import sys
 
-import yaml
-from jsonschema import Draft202012Validator
+from formats import load_legacy_yaml, load_toml
+from schema_validate import load_schema, validate_instance
 
 
-def load_yaml(path: pathlib.Path) -> dict:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("fitness configuration root must be an object")
-    return data
+def load_config(root: pathlib.Path, explicit: str | None, strict: bool):
+    if explicit:
+        path = pathlib.Path(explicit)
+        if not path.is_absolute():
+            path = root / path
+        if not path.exists():
+            raise FileNotFoundError(f"missing config at {path}")
+        if path.suffix == ".toml":
+            return load_toml(path), path, "toml", path.name == "fitness.toml"
+        return load_legacy_yaml(path), path, "legacy-yaml", path.name == "fitness.yaml"
 
+    candidates = [
+        (root / ".pact" / "fitness.toml", "toml", True),
+        (root / ".pact" / "fitness.yaml", "legacy-yaml", True),
+    ]
+    if not strict:
+        candidates.extend([
+            (root / ".pact" / "fitness.example.toml", "toml", False),
+            (root / ".pact" / "fitness.example.yaml", "legacy-yaml", False),
+        ])
 
-def validate(config: dict, schema_path: pathlib.Path) -> list[str]:
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(config), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    for path, kind, configured in candidates:
+        if path.exists():
+            data = load_toml(path) if kind == "toml" else load_legacy_yaml(path)
+            return data, path, kind, configured
+
+    raise FileNotFoundError("missing config at .pact/fitness.toml")
 
 
 def run_check(root: pathlib.Path, check: dict) -> dict:
@@ -89,11 +101,11 @@ def run_check(root: pathlib.Path, check: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run PACT architecture fitness functions")
     parser.add_argument("--root", help="repository root; defaults to this script's repository")
-    parser.add_argument("--config", help="fitness config path; defaults to .pact/fitness.yaml")
+    parser.add_argument("--config", help="fitness TOML (legacy YAML remains readable)")
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="require project .pact/fitness.yaml instead of falling back to the example",
+        help="require project fitness config instead of an example fallback",
     )
     parser.add_argument(
         "--validate-only",
@@ -105,52 +117,39 @@ def main() -> int:
 
     default_root = pathlib.Path(__file__).resolve().parents[2]
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
-
-    if args.config:
-        config_path = pathlib.Path(args.config)
-        if not config_path.is_absolute():
-            config_path = root / config_path
-        configured = config_path.name == "fitness.yaml"
-    else:
-        project_config = root / ".pact" / "fitness.yaml"
-        example_config = root / ".pact" / "fitness.example.yaml"
-        if project_config.exists():
-            config_path = project_config
-            configured = True
-        elif not args.strict and example_config.exists():
-            config_path = example_config
-            configured = False
-        else:
-            config_path = project_config
-            configured = False
-
     schema_path = root / ".pact" / "schema" / "fitness.schema.json"
 
     if not schema_path.exists():
         print(f"PACT fitness: missing schema at {schema_path}", file=sys.stderr)
         return 2
-    if not config_path.exists():
-        print(f"PACT fitness: missing config at {config_path}", file=sys.stderr)
-        return 2
 
     try:
-        config = load_yaml(config_path)
+        config, config_path, config_format, configured = load_config(
+            root, args.config, args.strict
+        )
     except Exception as exc:
-        print(f"PACT fitness: cannot parse config: {exc}", file=sys.stderr)
+        print(f"PACT fitness: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate(config, schema_path)
+    errors = validate_instance(config, load_schema(schema_path))
     if errors:
         print("PACT fitness: invalid config", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
+    source = (
+        config_path.relative_to(root).as_posix()
+        if config_path.is_relative_to(root)
+        else str(config_path)
+    )
+
     if args.validate_only:
         summary = {
             "overall": "pass",
             "configured": configured,
-            "config_source": config_path.relative_to(root).as_posix() if config_path.is_relative_to(root) else str(config_path),
+            "config_source": source,
+            "config_format": config_format,
             "check_count": len(config["checks"]),
             "blocking_failures": 0,
             "warnings": 0,
@@ -161,27 +160,25 @@ def main() -> int:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
             print("PACT fitness: config valid")
-            print(f"- source: {summary['config_source']}")
+            print(f"- source: {source} ({config_format})")
             print(f"- configured checks: {summary['check_count']}")
         return 0
 
     results = [run_check(root, check) for check in config["checks"]]
-
     blocking = [
-        item
-        for item in results
+        item for item in results
         if item["status"] == "fail" and item["severity"] == "error"
     ]
     warnings = [
-        item
-        for item in results
+        item for item in results
         if item["status"] == "fail" and item["severity"] == "warn"
     ]
 
     summary = {
         "overall": "fail" if blocking else ("warn" if warnings else "pass"),
         "configured": configured,
-        "config_source": config_path.relative_to(root).as_posix() if config_path.is_relative_to(root) else str(config_path),
+        "config_source": source,
+        "config_format": config_format,
         "check_count": len(results),
         "blocking_failures": len(blocking),
         "warnings": len(warnings),
@@ -194,7 +191,7 @@ def main() -> int:
     else:
         print(f"PACT fitness: {summary['overall']}")
         if not configured:
-            print(f"Using example fitness config: {summary['config_source']}")
+            print(f"Using example fitness config: {source}")
         if not results:
             print("No architecture fitness functions configured.")
         for item in results:

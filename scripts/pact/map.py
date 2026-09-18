@@ -9,11 +9,10 @@ import pathlib
 import re
 from datetime import datetime, timezone
 
-import yaml
+from formats import parse_markdown_metadata
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = ROOT / ".pact" / "cache" / "project-map.json"
-FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 TITLE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -28,15 +27,10 @@ def as_list(value) -> list:
 
 def parse_document(path: pathlib.Path) -> dict:
     raw = path.read_text(encoding="utf-8")
-    pact: dict = {}
-    body = raw
-
-    match = FRONT_MATTER.match(raw)
-    if match:
-        data = yaml.safe_load(match.group(1))
-        if isinstance(data, dict) and isinstance(data.get("pact"), dict):
-            pact = data["pact"]
-        body = raw[match.end():]
+    data, body, metadata_format = parse_markdown_metadata(raw)
+    pact = data.get("pact", {}) if isinstance(data, dict) else {}
+    if not isinstance(pact, dict):
+        pact = {}
 
     heading = TITLE.search(body)
     title = heading.group(1).strip() if heading else path.stem
@@ -58,6 +52,7 @@ def parse_document(path: pathlib.Path) -> dict:
         "related": as_list(pact.get("related")),
         "verification": as_list(pact.get("verification")),
         "links": sorted(set(links)),
+        "metadata_format": metadata_format,
         "text": body.strip(),
     }
 
@@ -89,7 +84,7 @@ def build_index() -> dict:
     }
 
     return {
-        "format_version": 1,
+        "format_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository_root": ".",
         "documents": documents,

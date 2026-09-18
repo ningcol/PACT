@@ -16,8 +16,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install PACT checker dependencies
-        run: python -m pip install -r scripts/pact/requirements.txt
+      - name: Assert zero third-party runtime dependencies
+        run: |
+          test ! -e scripts/pact/requirements.txt
+          if grep -R -n -E '^(from|import) (yaml|jsonschema)([ .]|$)' scripts/pact --include='*.py'; then
+            echo "PACT core must remain stdlib-only"
+            exit 1
+          fi
 
       - name: PACT doctor
         run: python scripts/pact/pact.py doctor
@@ -26,7 +31,7 @@ jobs:
         run: python scripts/pact/pact.py audit
 
       - name: Validate framework fitness template
-        run: python scripts/pact/pact.py fitness --config .pact/fitness.example.yaml --validate-only --json
+        run: python scripts/pact/pact.py fitness --config .pact/fitness.example.toml --validate-only --json
 
       - name: Validate Owner Profile fallback
         run: python scripts/pact/pact.py owner --json
@@ -107,7 +112,7 @@ jobs:
           python scripts/pact/pact.py upgrade --target /tmp/pact-adopted --json
           python /tmp/pact-adopted/scripts/pact/pact.py owner --strict --json
           python /tmp/pact-adopted/scripts/pact/pact.py readiness --json
-          sed -i 's/: pending/: reviewed/g' /tmp/pact-adopted/.pact/baseline.yaml
+          sed -i 's/"pending"/"reviewed"/g' /tmp/pact-adopted/.pact/baseline.toml
           python /tmp/pact-adopted/scripts/pact/pact.py readiness --require-ready --json
           python /tmp/pact-adopted/scripts/pact/pact.py audit
           python /tmp/pact-adopted/scripts/pact/pact.py explain "product truth" --json
