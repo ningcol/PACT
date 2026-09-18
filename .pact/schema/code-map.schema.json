@@ -14,7 +14,7 @@
   "additionalProperties": false,
   "properties": {
     "format_version": {
-      "const": 3
+      "const": 4
     },
     "root": {
       "type": "string"
@@ -50,6 +50,8 @@
         "language",
         "symbols",
         "identifiers",
+        "contracts",
+        "imported_names",
         "imports",
         "is_test"
       ],
@@ -119,6 +121,22 @@
         "identifiers": {
           "type": "array",
           "maxItems": 512,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "imported_names": {
+          "type": "array",
           "items": {
             "type": "string",
             "minLength": 1
