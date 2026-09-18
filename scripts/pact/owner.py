@@ -47,11 +47,9 @@ def main() -> int:
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
     schema_path = root / ".pact" / "schema" / "config.schema.json"
-    if not schema_path.exists():
-        print(f"PACT owner: missing config schema at {schema_path}", file=sys.stderr)
-        return 2
 
     try:
+        schema = load_schema(schema_path)
         config, source, source_format, configured = load_config(root, args.strict)
     except Exception as exc:
         print(f"PACT owner: {exc}", file=sys.stderr)
@@ -63,7 +61,7 @@ def main() -> int:
             "owner": config.get("owner", {}),
         }
 
-    errors = validate_instance(config, load_schema(schema_path))
+    errors = validate_instance(config, schema)
     if errors:
         print(f"PACT owner: invalid configuration in {source}", file=sys.stderr)
         for error in errors:
