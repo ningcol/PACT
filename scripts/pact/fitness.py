@@ -90,15 +90,34 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run PACT architecture fitness functions")
     parser.add_argument("--root", help="repository root; defaults to this script's repository")
     parser.add_argument("--config", help="fitness config path; defaults to .pact/fitness.yaml")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="require project .pact/fitness.yaml instead of falling back to the example",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     default_root = pathlib.Path(__file__).resolve().parents[2]
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
-    config_path = pathlib.Path(args.config) if args.config else pathlib.Path(".pact/fitness.yaml")
-    if not config_path.is_absolute():
-        config_path = root / config_path
+    if args.config:
+        config_path = pathlib.Path(args.config)
+        if not config_path.is_absolute():
+            config_path = root / config_path
+        configured = config_path.name == "fitness.yaml"
+    else:
+        project_config = root / ".pact" / "fitness.yaml"
+        example_config = root / ".pact" / "fitness.example.yaml"
+        if project_config.exists():
+            config_path = project_config
+            configured = True
+        elif not args.strict and example_config.exists():
+            config_path = example_config
+            configured = False
+        else:
+            config_path = project_config
+            configured = False
 
     schema_path = root / ".pact" / "schema" / "fitness.schema.json"
 
@@ -137,6 +156,8 @@ def main() -> int:
 
     summary = {
         "overall": "fail" if blocking else ("warn" if warnings else "pass"),
+        "configured": configured,
+        "config_source": config_path.relative_to(root).as_posix() if config_path.is_relative_to(root) else str(config_path),
         "check_count": len(results),
         "blocking_failures": len(blocking),
         "warnings": len(warnings),
@@ -147,6 +168,8 @@ def main() -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
         print(f"PACT fitness: {summary['overall']}")
+        if not configured:
+            print(f"Using example fitness config: {summary['config_source']}")
         if not results:
             print("No architecture fitness functions configured.")
         for item in results:
