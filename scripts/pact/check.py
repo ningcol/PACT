@@ -6,7 +6,7 @@ This intentionally checks only facts a machine can establish reliably:
 - stable ID uniqueness
 - known lifecycle values
 - artifact type/path compatibility
-- DOMAIN references use canonical ID shape
+- lifecycle directory/status compatibility
 
 Semantic drift belongs to convergence review, not this script.
 """
@@ -94,14 +94,17 @@ def discover() -> tuple[list[Artifact], list[str]]:
     errors: list[str] = []
 
     for path in sorted(ROOT.rglob("*.md")):
-        if any(part in {".git", ".pact/cache"} for part in path.parts):
+        r = rel(path)
+        if ".git" in path.parts or r.startswith(".pact/cache/"):
+            continue
+        if r.endswith("/TEMPLATE.md") or r == "TEMPLATE.md":
             continue
         try:
             artifact = read_artifact(path)
             if artifact:
                 artifacts.append(artifact)
-        except Exception as exc:  # deterministic parse failure
-            errors.append(f"{rel(path)}: invalid PACT front matter: {exc}")
+        except Exception as exc:
+            errors.append(f"{r}: invalid PACT front matter: {exc}")
 
     return artifacts, errors
 
@@ -156,6 +159,14 @@ def validate_artifacts(artifacts: list[Artifact]) -> list[str]:
                 errors.append(f"{path}: rejected decision path requires status 'rejected'")
             if "/archived/" in path and status != "archived":
                 errors.append(f"{path}: archived decision path requires status 'archived'")
+
+        if typ == "drift":
+            if "/known/" in path and status != "known":
+                errors.append(f"{path}: known drift path requires status 'known'")
+            if "/resolved/" in path and status != "resolved":
+                errors.append(f"{path}: resolved drift path requires status 'resolved'")
+            if "/accepted/" in path and status != "accepted":
+                errors.append(f"{path}: accepted drift path requires status 'accepted'")
 
     return errors
 

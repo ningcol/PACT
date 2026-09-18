@@ -22,6 +22,9 @@ jobs:
       - name: PACT doctor
         run: python scripts/pact/pact.py doctor
 
+      - name: PACT audit
+        run: python scripts/pact/pact.py audit
+
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
@@ -52,3 +55,10 @@ jobs:
           python scripts/pact/pact.py report .pact/examples/owner-report.example.json \
             --evidence .pact/examples/evidence-receipt.example.json \
             --convergence .pact/examples/convergence-report.example.json
+
+      - name: End-to-end brownfield scaffold
+        run: |
+          rm -rf /tmp/pact-adopted
+          python scripts/pact/pact.py init --target /tmp/pact-adopted --apply
+          python /tmp/pact-adopted/scripts/pact/pact.py doctor --strict
+          python /tmp/pact-adopted/scripts/pact/pact.py audit
