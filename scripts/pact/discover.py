@@ -123,6 +123,7 @@ def main() -> int:
                 "status": doc.get("status"),
                 "domains": doc.get("domains", []),
                 "related": doc.get("related", []),
+                "verification": doc.get("verification", []),
             })
 
     ranked.sort(key=lambda x: (-x["score"], x["path"]))
