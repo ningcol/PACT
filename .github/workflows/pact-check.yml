@@ -30,3 +30,12 @@ jobs:
 
       - name: Validate convergence report contract
         run: python scripts/pact/converge.py .pact/examples/convergence-report.example.json
+
+      - name: Validate evidence receipt contract
+        run: python scripts/pact/evidence.py .pact/examples/evidence-receipt.example.json
+
+      - name: Validate evidence-backed owner report
+        run: |
+          python scripts/pact/report.py .pact/examples/owner-report.example.json \
+            --evidence .pact/examples/evidence-receipt.example.json \
+            --convergence .pact/examples/convergence-report.example.json
