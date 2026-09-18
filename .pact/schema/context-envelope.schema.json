@@ -16,7 +16,8 @@
     "applicable_rules",
     "decisions",
     "verification_targets",
-    "known_unknowns"
+    "known_unknowns",
+    "risk_policy"
   ],
   "additionalProperties": false,
   "properties": {
@@ -147,7 +148,8 @@
           "symbols",
           "score",
           "reasons",
-          "relation"
+          "relation",
+          "confidence"
         ],
         "additionalProperties": false,
         "properties": {
@@ -181,6 +183,44 @@
             }
           },
           "relation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confidence": {
+            "enum": [
+              "direct",
+              "relative-resolved",
+              "ast-resolved",
+              "heuristic"
+            ]
+          }
+        }
+      }
+    },
+    "risk_policy": {
+      "type": "object",
+      "required": [
+        "knowledge_limit",
+        "code_context",
+        "code_limit",
+        "completion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "knowledge_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "code_context": {
+          "type": "boolean"
+        },
+        "code_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "completion": {
+          "type": "array",
+          "items": {
             "type": "string",
             "minLength": 1
           }
