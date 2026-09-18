@@ -67,7 +67,7 @@ JS_SYMBOL = re.compile(
     re.VERBOSE,
 )
 
-CODE_IDENTIFIER = re.compile(r"\b[A-Za-z_$][A-Za-z0-9_$]*\b")
+JS_MEMBER_IDENTIFIER = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)")
 MAX_IDENTIFIERS_PER_FILE = 512
 COMMON_IDENTIFIERS = {
     "async", "await", "break", "case", "catch", "class", "const", "continue",
@@ -217,7 +217,7 @@ def parse_js_like(
         if symbol:
             symbols.append(symbol)
 
-    identifiers = lexical_identifiers(CODE_IDENTIFIER.findall(text))
+    identifiers = lexical_identifiers(JS_MEMBER_IDENTIFIER.findall(text))
     return sorted(set(symbols)), list(dict.fromkeys(imports)), identifiers
 
 
