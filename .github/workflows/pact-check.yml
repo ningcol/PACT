@@ -37,8 +37,19 @@ jobs:
       - name: Build derived project map
         run: python scripts/pact/pact.py map --output /tmp/pact-project-map.json
 
+      - name: Build generated code map
+        run: python scripts/pact/pact.py code-map --output /tmp/pact-code-map.json
+
       - name: Smoke-test Project Discovery
         run: python scripts/pact/pact.py discover "product truth" --index /tmp/pact-project-map.json --json
+
+      - name: Smoke-test code-aware Project Discovery
+        run: |
+          python scripts/pact/pact.py discover "upgrade" \
+            --index /tmp/pact-project-map.json \
+            --code \
+            --code-index /tmp/pact-code-map.json \
+            --json
 
       - name: Smoke-test Project Explanation packet
         run: python scripts/pact/pact.py explain "product truth governance" --json
@@ -52,6 +63,9 @@ jobs:
 
       - name: Smoke-test Impact Analysis
         run: python scripts/pact/pact.py impact --files AGENTS.md --json
+
+      - name: Smoke-test code-aware Impact Analysis
+        run: python scripts/pact/pact.py impact --files scripts/pact/upgrade.py --code --json
 
       - name: Validate convergence report contract
         run: python scripts/pact/pact.py converge .pact/examples/convergence-report.example.json
