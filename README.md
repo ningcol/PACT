@@ -65,6 +65,7 @@ Inspect this repository:
 ```bash
 python scripts/pact/pact.py doctor
 python scripts/pact/pact.py audit
+python scripts/pact/pact.py owner --json
 ```
 
 Discover project knowledge:
@@ -133,6 +134,7 @@ init       safely scaffold PACT into an existing repository
 check      deterministic artifact checks
 doctor     repository readiness
 audit      repository health inventory
+owner      validate/expose project Owner Profile
 map        rebuild disposable discovery index
 discover   locate project knowledge
 explain    prepare evidence for an owner-readable project explanation
@@ -184,6 +186,7 @@ The rule is:
 PACT v1 currently includes the executable foundation for:
 
 - brownfield initialization;
+- validated project Owner Profiles for language/technical-depth communication;
 - Truth ownership and artifact lifecycle;
 - Project Discovery;
 - Project Explanation evidence packets;

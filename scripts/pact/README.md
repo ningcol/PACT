@@ -13,6 +13,7 @@ init       safely scaffold PACT into an existing repository
 check      deterministic artifact checks
 doctor     PACT repository readiness
 audit      deterministic repository health inventory
+owner      validate and expose project Owner Profile
 map        rebuild disposable project map
 discover   deterministic project discovery
 explain    build an explanation evidence packet for an owner query
@@ -31,6 +32,7 @@ python scripts/pact/pact.py init --target ../existing-project --apply
 
 python scripts/pact/pact.py doctor
 python scripts/pact/pact.py audit --json
+python scripts/pact/pact.py owner --json
 
 python scripts/pact/pact.py discover "batch state"
 

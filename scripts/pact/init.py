@@ -47,6 +47,16 @@ Escalate only when a decision changes user-observable behavior, business/data me
 ## Completion boundary
 
 "Done" requires appropriate evidence and convergence, not only code changes or green tests.
+
+## Owner communication
+
+Before owner-facing output, read the validated Owner Profile:
+
+```bash
+python scripts/pact/pact.py owner --json
+```
+
+Honor its language, technical depth, consequence-first translation, and progressive-disclosure preferences.
 """
 
 
@@ -118,7 +128,8 @@ Merge these concepts into the existing project agent guide:
 - let AI decide ordinary technical implementation;
 - escalate only product/risk decisions;
 - require evidence and convergence before claiming completion;
-- communicate owner-facing results in product/business language.
+- communicate owner-facing results using the project Owner Profile in `.pact/config.yaml`;
+- use product/business consequences before unnecessary implementation detail.
 
 Suggested knowledge router:
 

@@ -2,6 +2,27 @@
 
 The owner should be able to control the product without becoming the technical reviewer.
 
+## Owner Profile
+
+Project-specific communication preferences live in `.pact/config.yaml`.
+
+Before owner-facing explanations, decisions, or completion reports, use the configured profile:
+
+- `role` — the owner's decision role;
+- `language` — preferred communication language/locale (`auto` follows the active conversation);
+- `technical_depth` — `product`, `balanced`, or `technical`;
+- `communication.prefer` — concepts to prioritize;
+- `communication.hide_by_default` — implementation detail kept behind disclosure;
+- `progressive_disclosure` and `decision_translation` — interaction policy.
+
+Read the validated profile with:
+
+```bash
+python scripts/pact/pact.py owner --json
+```
+
+Owner Profile changes communication, not the Agent's internal engineering capability.
+
 ## Default owner role
 
 Product/project owner, not code reviewer.

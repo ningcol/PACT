@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 REQUIRED = [
@@ -24,6 +25,7 @@ REQUIRED = [
     ".agents/decisions",
     ".agents/skills",
     ".pact/schema/artifact.schema.json",
+    ".pact/schema/config.schema.json",
 ]
 
 
@@ -33,7 +35,11 @@ def item(name: str, state: str, detail: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check PACT repository readiness")
-    parser.add_argument("--strict", action="store_true", help="treat missing project config as failure")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="require a project-specific .pact/config.yaml",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -49,14 +55,35 @@ def main() -> int:
             )
         )
 
-    config = ROOT / ".pact" / "config.yaml"
-    example = ROOT / ".pact" / "config.example.yaml"
-    if config.exists():
-        checks.append(item("config", "pass", ".pact/config.yaml present"))
-    elif example.exists() and not args.strict:
-        checks.append(item("config", "warn", "using framework/example configuration only"))
+    owner_cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "pact" / "owner.py"),
+        "--json",
+    ]
+    if args.strict:
+        owner_cmd.append("--strict")
+
+    owner_run = subprocess.run(owner_cmd, capture_output=True, text=True)
+    if owner_run.returncode != 0:
+        checks.append(
+            item(
+                "owner-profile",
+                "fail",
+                (owner_run.stdout + owner_run.stderr).strip(),
+            )
+        )
     else:
-        checks.append(item("config", "fail", ".pact/config.yaml missing"))
+        try:
+            owner = json.loads(owner_run.stdout)
+            state = "pass" if owner.get("configured") else "warn"
+            detail = (
+                f"{owner.get('source')} "
+                f"(language={owner.get('language')}, "
+                f"technical_depth={owner.get('technical_depth')})"
+            )
+            checks.append(item("owner-profile", state, detail))
+        except json.JSONDecodeError:
+            checks.append(item("owner-profile", "fail", "owner profile output was not valid JSON"))
 
     check_run = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pact" / "check.py")],
