@@ -197,7 +197,7 @@ High-level task preparation persists `.pact/tasks/<TASK-ID>/contract.json`.
 
 - `--success` creates `AC-1`;
 - repeatable `--accept` adds `AC-2`, `AC-3`, ...;
-- repeatable `--constraint` records task-scoped constraints;
+- repeatable `--constraint` adds acceptance-bound criteria with `kind=constraint`;
 - Evidence claims bind to acceptance criteria through optional `criteria: ["AC-1"]`;
 - `task finish` automatically supplies the contract to the completion gate.
 
