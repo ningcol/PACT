@@ -15,6 +15,19 @@ from schema_validate import load_schema, validate_instance  # noqa: E402
 
 
 class StdlibRuntimeTests(unittest.TestCase):
+    def test_runtime_module_names_do_not_shadow_python_stdlib(self) -> None:
+        runtime_modules = {
+            path.stem
+            for path in PACT_RUNTIME.glob("*.py")
+            if path.name != "__init__.py"
+        }
+        collisions = sorted(runtime_modules & set(sys.stdlib_module_names))
+        self.assertEqual(
+            collisions,
+            [],
+            f"PACT runtime files shadow Python stdlib modules: {collisions}",
+        )
+
     def test_toml_front_matter(self) -> None:
         data, body, kind = parse_markdown_metadata(
             '+++\n[pact]\ntype = "domain"\nid = "DOMAIN-BATCH"\naliases = ["批次", "examBatch"]\n+++\n# Batch\n'
