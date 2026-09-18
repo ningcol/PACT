@@ -43,7 +43,39 @@ Generated drift:
 Machine-enforceable invariant drift:
 - fail the deterministic gate.
 
-## 4. Structured reviewer output
+## 4. Coverage before findings
+
+A finding list answers:
+
+> What inconsistency did the reviewer notice?
+
+It does **not** prove that the reviewer looked at every relevant knowledge artifact.
+
+For a prepared task, PACT therefore binds semantic Convergence to the exact Task Context:
+
+```text
+Task Context SHA256
+        ↓
+Convergence.context_sha256
+
+Task Context artifacts
+        ↓
+Convergence.coverage[]
+```
+
+Every knowledge artifact selected into the task Context needs one explicit disposition:
+
+- `aligned`;
+- `updated`;
+- `stale`;
+- `owner-decision`;
+- `not-applicable`.
+
+This is a coverage guarantee, not a semantic oracle. PACT can prove that `README.md` was not silently omitted; it cannot mechanically prove that an Agent was correct to call the README aligned.
+
+Prepared Context artifacts also carry their content SHA when available. An `updated` disposition must correspond to an actual artifact content change.
+
+## 5. Structured reviewer output
 
 Semantic reviewers should emit a Convergence Report conforming to:
 
@@ -51,7 +83,7 @@ Semantic reviewers should emit a Convergence Report conforming to:
 
 This makes LLM judgment inspectable without pretending the judgment itself is deterministic.
 
-## 5. Owner boundary
+## 6. Owner boundary
 
 A finding may interrupt the owner only when classified `owner-decision`.
 
@@ -63,7 +95,7 @@ The report must describe:
 
 Raw technical alternatives are not sufficient.
 
-## 6. Done boundary
+## 7. Done boundary
 
 A task should not be called complete if the report contains unresolved blocking:
 
