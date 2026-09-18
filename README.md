@@ -289,3 +289,10 @@ PACT also includes an optional pilot scorecard so future framework changes can b
 The only intentionally open validation work is the real brownfield pilot and evaluation with observed project data.
 
 The next iterations should be driven primarily by real brownfield pilot results: simplify or remove mechanisms that do not reduce owner cognitive load or improve engineering reliability.
+
+## Project governance
+
+- Security reporting: `SECURITY.md`
+- Contributing: `CONTRIBUTING.md`
+- Release process: `docs/releasing.md`
+- Repository license: pending explicit owner decision; public visibility alone is not treated as a license grant.
