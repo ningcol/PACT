@@ -1,0 +1,443 @@
+name: External Multi-Repo Pilots
+
+on:
+  workflow_dispatch:
+    inputs:
+      pact_ref:
+        description: "PACT tag, commit, or branch to test"
+        required: true
+        default: "main"
+        type: string
+      flask_ref:
+        description: "pallets/flask commit/ref"
+        required: true
+        default: "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35"
+        type: string
+      pinia_ref:
+        description: "vuejs/pinia commit/ref"
+        required: true
+        default: "f4e0cb7a8193f564c27f6527b3f954e114a7534c"
+        type: string
+      bubbletea_ref:
+        description: "charmbracelet/bubbletea commit/ref"
+        required: true
+        default: "657aaae216e3f87df09b60959a9fe5de7b2ca419"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PACT_REF: ${{ inputs.pact_ref }}
+
+jobs:
+  flask:
+    name: Flask / Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_DIR: /tmp/flask
+      TARGET_REF: ${{ inputs.flask_ref }}
+      TASK_ID: EXT-FLASK-001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Clone pinned Flask
+        run: |
+          git clone https://github.com/pallets/flask.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - name: Adopt PACT
+        run: |
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF"
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF" --apply
+
+      - name: Assert additive adoption
+        run: test -z "$(git -C "$TARGET_DIR" diff --name-only)"
+
+      - name: Validate foundation and supported Python discovery
+        working-directory: /tmp/flask
+        run: |
+          python3 pact.py doctor --strict
+          python3 pact.py discover "request context" --code --json | tee /tmp/flask-discover.json
+          python3 pact.py context "change request context behavior"             --success "Request context behavior remains correct"             --risk medium             --output /tmp/flask-context.json
+          python3 pact.py impact --files src/flask/ctx.py --risk medium --json | tee /tmp/flask-impact.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("/tmp/flask-discover.json"))
+          c=json.load(open("/tmp/flask-context.json"))
+          i=json.load(open("/tmp/flask-impact.json"))
+          assert d["code_result_count"] > 0, d
+          assert len(c["code_artifacts"]) > 0, c
+          assert i["code_analysis"] is True, i
+          assert len(i["code_candidate_impacts"]) > 0, i
+          print("Flask PACT quality assertions passed")
+          print("code matches", d["code_result_count"])
+          print("context code artifacts", len(c["code_artifacts"]))
+          print("impact code candidates", len(i["code_candidate_impacts"]))
+          PY
+
+      - name: Install Flask test dependencies
+        working-directory: /tmp/flask
+        run: uv sync --locked --no-default-groups --group tests
+
+      - name: Run upstream Flask tests through PACT
+        working-directory: /tmp/flask
+        run: |
+          mkdir -p ".pact/runs/$TASK_ID"
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/tests.json"             -- bash -lc 'uv run --locked --no-default-groups --group tests pytest -q'
+
+      - name: Complete Flask pilot
+        working-directory: /tmp/flask
+        run: |
+          B=".pact/completions/$TASK_ID"; mkdir -p "$B"
+          cat > "$B/evidence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-FLASK-001",
+            "task":"Validate PACT on pinned Flask repository",
+            "risk_level":"medium",
+            "claims":[
+              {
+                "id":"EV-FLASK-TESTS",
+                "claim":"The pinned Flask test suite passes after additive PACT adoption.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"test","provenance":"pact-run","ref":".pact/runs/EXT-FLASK-001/tests.json"}]
+              },
+              {
+                "id":"EV-FLASK-CONTEXT",
+                "claim":"PACT produced code-aware Flask request-context evidence.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/flask-context.json"}]
+              }
+            ],
+            "limitations":[]
+          }
+          JSON
+          cat > "$B/convergence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-FLASK-001",
+            "change":"Ephemeral additive PACT adoption for external Flask pilot",
+            "owner_summary":"PACT discovered Python code relationships and the pinned upstream tests passed.",
+            "evidence":["EV-FLASK-TESTS","EV-FLASK-CONTEXT"],
+            "findings":[]
+          }
+          JSON
+          cat > "$B/owner-report.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-FLASK-001",
+            "status":"completed",
+            "summary":"PACT passed the Flask external pilot.",
+            "before":"The pinned Flask checkout had no PACT scaffold.",
+            "after":"PACT was added additively, code-aware context was produced, and upstream tests still pass.",
+            "verification":[
+              {"claim":"Flask tests pass.","evidence_ids":["EV-FLASK-TESTS"]},
+              {"claim":"Python code-aware context was produced.","evidence_ids":["EV-FLASK-CONTEXT"]}
+            ],
+            "consistency":{"status":"aligned","summary":"No tracked upstream file was modified."},
+            "owner_decisions":[]
+          }
+          JSON
+          python3 pact.py complete "$B" --json | tee /tmp/flask-complete.json
+
+      - name: Upload Flask pilot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-flask
+          path: |
+            /tmp/flask-discover.json
+            /tmp/flask-context.json
+            /tmp/flask-impact.json
+            /tmp/flask-complete.json
+            /tmp/flask/.pact/runs/
+            /tmp/flask/.pact/completions/
+          if-no-files-found: warn
+          retention-days: 7
+
+  pinia:
+    name: Pinia / Vue TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TARGET_DIR: /tmp/pinia
+      TARGET_REF: ${{ inputs.pinia_ref }}
+      TASK_ID: EXT-PINIA-001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.21.0"
+
+      - name: Clone pinned Pinia
+        run: |
+          git clone https://github.com/vuejs/pinia.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Adopt PACT
+        run: |
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF"
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF" --apply
+
+      - name: Assert additive adoption
+        run: test -z "$(git -C "$TARGET_DIR" diff --name-only)"
+
+      - name: Validate foundation and Vue TypeScript discovery
+        working-directory: /tmp/pinia
+        run: |
+          python3 pact.py doctor --strict
+          python3 pact.py discover "defineStore" --code --json | tee /tmp/pinia-discover.json
+          python3 pact.py context "change defineStore behavior"             --success "Store creation remains type-safe and behaviorally compatible"             --risk medium             --output /tmp/pinia-context.json
+          python3 pact.py impact --files packages/pinia/src/store.ts --risk medium --json | tee /tmp/pinia-impact.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("/tmp/pinia-discover.json"))
+          c=json.load(open("/tmp/pinia-context.json"))
+          i=json.load(open("/tmp/pinia-impact.json"))
+          assert d["code_result_count"] > 0, d
+          assert len(c["code_artifacts"]) > 0, c
+          assert i["code_analysis"] is True, i
+          assert len(i["code_candidate_impacts"]) > 0, i
+          confidences={x["confidence"] for x in i["code_candidate_impacts"]}
+          assert confidences <= {"relative-resolved","ast-resolved","heuristic"}, confidences
+          print("Pinia PACT quality assertions passed")
+          print("code matches", d["code_result_count"])
+          print("context code artifacts", len(c["code_artifacts"]))
+          print("impact code candidates", len(i["code_candidate_impacts"]))
+          print("impact confidences", sorted(confidences))
+          PY
+
+      - name: Install Pinia dependencies
+        working-directory: /tmp/pinia
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Pinia typecheck and build through PACT
+        working-directory: /tmp/pinia
+        run: |
+          mkdir -p ".pact/runs/$TASK_ID"
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/verify.json"             -- bash -lc 'pnpm run test:types && pnpm run build'
+
+      - name: Complete Pinia pilot
+        working-directory: /tmp/pinia
+        run: |
+          B=".pact/completions/$TASK_ID"; mkdir -p "$B"
+          cat > "$B/evidence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-PINIA-001",
+            "task":"Validate PACT on pinned Pinia Vue/TypeScript repository",
+            "risk_level":"medium",
+            "claims":[
+              {
+                "id":"EV-PINIA-VERIFY",
+                "claim":"Pinia type checking and build pass after additive PACT adoption.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"test","provenance":"pact-run","ref":".pact/runs/EXT-PINIA-001/verify.json"}]
+              },
+              {
+                "id":"EV-PINIA-CONTEXT",
+                "claim":"PACT produced code-aware Vue/TypeScript context.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/pinia-context.json"}]
+              }
+            ],
+            "limitations":[]
+          }
+          JSON
+          cat > "$B/convergence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-PINIA-001",
+            "change":"Ephemeral additive PACT adoption for external Pinia pilot",
+            "owner_summary":"PACT produced Vue/TypeScript relationships and Pinia typecheck/build passed.",
+            "evidence":["EV-PINIA-VERIFY","EV-PINIA-CONTEXT"],
+            "findings":[]
+          }
+          JSON
+          cat > "$B/owner-report.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-PINIA-001",
+            "status":"completed",
+            "summary":"PACT passed the Pinia external pilot.",
+            "before":"The pinned Pinia checkout had no PACT scaffold.",
+            "after":"PACT was added additively, Vue/TypeScript context was produced, and typecheck/build still pass.",
+            "verification":[
+              {"claim":"Pinia typecheck/build pass.","evidence_ids":["EV-PINIA-VERIFY"]},
+              {"claim":"Vue/TypeScript code-aware context was produced.","evidence_ids":["EV-PINIA-CONTEXT"]}
+            ],
+            "consistency":{"status":"aligned","summary":"No tracked upstream file was modified."},
+            "owner_decisions":[]
+          }
+          JSON
+          python3 pact.py complete "$B" --json | tee /tmp/pinia-complete.json
+
+      - name: Upload Pinia pilot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-pinia
+          path: |
+            /tmp/pinia-discover.json
+            /tmp/pinia-context.json
+            /tmp/pinia-impact.json
+            /tmp/pinia-complete.json
+            /tmp/pinia/.pact/runs/
+            /tmp/pinia/.pact/completions/
+          if-no-files-found: warn
+          retention-days: 7
+
+  bubbletea:
+    name: Bubble Tea / Go graceful degradation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_DIR: /tmp/bubbletea
+      TARGET_REF: ${{ inputs.bubbletea_ref }}
+      TASK_ID: EXT-BUBBLETEA-001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned Bubble Tea
+        run: |
+          git clone https://github.com/charmbracelet/bubbletea.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: /tmp/bubbletea/go.mod
+
+      - name: Adopt PACT
+        run: |
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF"
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF" --apply
+
+      - name: Assert additive adoption
+        run: test -z "$(git -C "$TARGET_DIR" diff --name-only)"
+
+      - name: Validate graceful unsupported-language behavior
+        working-directory: /tmp/bubbletea
+        run: |
+          python3 pact.py doctor --strict
+          python3 pact.py discover "Elm Architecture" --json | tee /tmp/bubbletea-discover.json
+          python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --output /tmp/bubbletea-context.json
+          python3 pact.py impact --files tea.go --risk medium --json | tee /tmp/bubbletea-impact.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("/tmp/bubbletea-discover.json"))
+          c=json.load(open("/tmp/bubbletea-context.json"))
+          i=json.load(open("/tmp/bubbletea-impact.json"))
+          assert d["result_count"] > 0, d
+          assert c["risk_policy"]["code_context"] is True, c
+          assert len(c["code_artifacts"]) == 0, c
+          assert any("Code-aware discovery found no matching code artifact" in x for x in c["known_unknowns"]), c
+          assert i["code_analysis"] is True, i
+          assert len(i["code_candidate_impacts"]) == 0, i
+          print("Bubble Tea graceful-degradation assertions passed")
+          print("knowledge matches", d["result_count"])
+          print("code artifacts", len(c["code_artifacts"]))
+          print("impact code candidates", len(i["code_candidate_impacts"]))
+          PY
+
+      - name: Run Bubble Tea tests through PACT
+        working-directory: /tmp/bubbletea
+        run: |
+          mkdir -p ".pact/runs/$TASK_ID"
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/tests.json"             -- go test ./...
+
+      - name: Complete Bubble Tea pilot
+        working-directory: /tmp/bubbletea
+        run: |
+          B=".pact/completions/$TASK_ID"; mkdir -p "$B"
+          cat > "$B/evidence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-BUBBLETEA-001",
+            "task":"Validate PACT graceful degradation on pinned Go repository",
+            "risk_level":"medium",
+            "claims":[
+              {
+                "id":"EV-BUBBLE-GO-TESTS",
+                "claim":"Bubble Tea Go tests pass after additive PACT adoption.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"test","provenance":"pact-run","ref":".pact/runs/EXT-BUBBLETEA-001/tests.json"}]
+              },
+              {
+                "id":"EV-BUBBLE-DEGRADE",
+                "claim":"PACT explicitly reported unsupported code-aware context instead of fabricating Go relationships.",
+                "required":true,
+                "status":"pass",
+                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/bubbletea-context.json"}]
+              }
+            ],
+            "limitations":[
+              "PACT 0.3 does not parse Go source relationships; this pilot validates explicit graceful degradation rather than Go code understanding."
+            ]
+          }
+          JSON
+          cat > "$B/convergence.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-BUBBLETEA-001",
+            "change":"Ephemeral additive PACT adoption for unsupported-language pilot",
+            "owner_summary":"PACT preserved the Go project, exposed its code-analysis limitation, and upstream tests passed.",
+            "evidence":["EV-BUBBLE-GO-TESTS","EV-BUBBLE-DEGRADE"],
+            "findings":[]
+          }
+          JSON
+          cat > "$B/owner-report.json" <<'JSON'
+          {
+            "version":1,
+            "task_id":"EXT-BUBBLETEA-001",
+            "status":"completed",
+            "summary":"PACT gracefully degraded on the Go-only Bubble Tea repository.",
+            "before":"The pinned Bubble Tea checkout had no PACT scaffold.",
+            "after":"PACT was added additively, did not fabricate Go code relationships, and Go tests still pass.",
+            "verification":[
+              {"claim":"Bubble Tea Go tests pass.","evidence_ids":["EV-BUBBLE-GO-TESTS"]},
+              {"claim":"Unsupported-language behavior was explicit.","evidence_ids":["EV-BUBBLE-DEGRADE"]}
+            ],
+            "consistency":{"status":"aligned","summary":"No tracked upstream file was modified; Go code-map limitation remained explicit."},
+            "owner_decisions":[]
+          }
+          JSON
+          python3 pact.py complete "$B" --json | tee /tmp/bubbletea-complete.json
+
+      - name: Upload Bubble Tea pilot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-bubbletea
+          path: |
+            /tmp/bubbletea-discover.json
+            /tmp/bubbletea-context.json
+            /tmp/bubbletea-impact.json
+            /tmp/bubbletea-complete.json
+            /tmp/bubbletea/.pact/runs/
+            /tmp/bubbletea/.pact/completions/
+          if-no-files-found: warn
+          retention-days: 7
