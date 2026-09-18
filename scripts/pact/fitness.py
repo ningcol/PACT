@@ -95,6 +95,11 @@ def main() -> int:
         action="store_true",
         help="require project .pact/fitness.yaml instead of falling back to the example",
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="validate configuration without executing project checks",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -141,6 +146,25 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
+    if args.validate_only:
+        summary = {
+            "overall": "pass",
+            "configured": configured,
+            "config_source": config_path.relative_to(root).as_posix() if config_path.is_relative_to(root) else str(config_path),
+            "check_count": len(config["checks"]),
+            "blocking_failures": 0,
+            "warnings": 0,
+            "validated_only": True,
+            "results": [],
+        }
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            print("PACT fitness: config valid")
+            print(f"- source: {summary['config_source']}")
+            print(f"- configured checks: {summary['check_count']}")
+        return 0
+
     results = [run_check(root, check) for check in config["checks"]]
 
     blocking = [
@@ -161,6 +185,7 @@ def main() -> int:
         "check_count": len(results),
         "blocking_failures": len(blocking),
         "warnings": len(warnings),
+        "validated_only": False,
         "results": results,
     }
 
