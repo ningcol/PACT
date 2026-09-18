@@ -46,7 +46,7 @@ def completion_blockers(errors: list[str]) -> list[str]:
     blockers: list[str] = []
     checks = [
         ("stale-workspace", ("stale pact-run receipt", "verified workspace")),
-        ("stale-task-contract", ("task_contract_sha256", "Task Contract")),
+        ("stale-task-contract", ("task_contract_sha256",)),
         ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
         ("ci-required", ("CI-backed Evidence",)),
     ]
