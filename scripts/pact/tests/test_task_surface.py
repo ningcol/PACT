@@ -307,5 +307,16 @@ class TaskSurfaceTests(unittest.TestCase):
         )
 
 
+    def test_task_finish_requires_prepared_task(self) -> None:
+        finished = self.pact(
+            "task",
+            "finish",
+            "TASK-NOT-PREPARED",
+            "--json",
+        )
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("task was not prepared", finished.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
