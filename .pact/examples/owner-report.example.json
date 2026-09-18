@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "status": "completed",
+  "summary": "Province switching now keeps the displayed data aligned with the selected province.",
+  "before": "The page could show a newly selected province while some displayed data still belonged to the previous province.",
+  "after": "The selected province and displayed data move together.",
+  "verification": [
+    {
+      "claim": "Switching province updates the displayed data.",
+      "evidence_ids": ["EV-PROVINCE-SWITCH"]
+    },
+    {
+      "claim": "The expected province state remains correct after refresh.",
+      "evidence_ids": ["EV-PROVINCE-REFRESH"]
+    }
+  ],
+  "consistency": {
+    "status": "aligned",
+    "summary": "The example product expectation, observed behavior, and verification evidence are aligned."
+  },
+  "owner_decisions": [],
+  "technical_details": [
+    "Example only; real reports may reference files/diffs here for progressive disclosure."
+  ]
+}
