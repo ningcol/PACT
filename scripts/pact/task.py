@@ -76,6 +76,7 @@ def prepare(args) -> int:
 
     contract_path = task_dir / "contract.json"
     write_json(contract_path, contract)
+    contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
 
     context_path = task_dir / "context.json"
     context_cmd = [
@@ -143,6 +144,7 @@ def prepare(args) -> int:
         "risk_level": args.risk,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "contract": contract_path.relative_to(ROOT).as_posix(),
+        "contract_sha256": contract_sha256,
         "acceptance_criteria_count": len(contract["acceptance_criteria"]),
         "context": context_path.relative_to(ROOT).as_posix(),
         "impact": (
