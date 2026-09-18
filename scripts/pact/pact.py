@@ -16,6 +16,7 @@ COMMANDS = {
     "audit": "audit.py",
     "map": "map.py",
     "discover": "discover.py",
+    "explain": "explain.py",
     "context": "context.py",
     "impact": "impact.py",
     "converge": "converge.py",
