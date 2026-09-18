@@ -10,7 +10,7 @@ Every file created by PACT is treated as one of two classes.
 
 Examples:
 
-- `scripts/pact/` runtime;
+- `.pact/pact.pyz` compact runtime;
 - `.pact/schema/`;
 - generic lifecycle/readme/templates;
 - PACT initialization guidance;
@@ -61,6 +61,8 @@ For framework-managed files:
 - existing but untracked file → conflict.
 
 If any framework conflict exists, `--apply` refuses the entire automatic update. PACT does not create a mixed partial runtime version.
+
+When a newer distribution makes an old framework-managed path obsolete, upgrade may delete it only when the current file is still byte-identical to the prior install manifest. Locally modified obsolete framework files are preserved and detached from framework management.
 
 Seed files are never overwritten. Template/framework changes affecting a seed are reported for manual reconciliation.
 
