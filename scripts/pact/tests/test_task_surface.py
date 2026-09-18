@@ -215,6 +215,19 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(final_status.returncode, 0, final_status.stdout + final_status.stderr)
         self.assertEqual(json.loads(final_status.stdout)["status"], "completed")
 
+        observation = self.pact("eval", "--task", task_id, "--json")
+        self.assertEqual(observation.returncode, 0, observation.stdout + observation.stderr)
+        observed = json.loads(observation.stdout)
+        self.assertEqual(observed["acceptance"]["total"], 3)
+        self.assertEqual(observed["acceptance"]["owner_report_covered"], 3)
+        self.assertEqual(observed["completion"]["attempts"], 1)
+        self.assertEqual(observed["completion"]["failed_attempts"], 0)
+        self.assertTrue(observed["completion"]["final_complete"])
+        self.assertIn(
+            "owner_interactions.technical_escalations",
+            observed["human_required"],
+        )
+
 
     def test_task_finish_rejects_unverified_acceptance_criterion(self) -> None:
         task_id = "TASK-AC-GAP"
@@ -308,6 +321,14 @@ class TaskSurfaceTests(unittest.TestCase):
                 for error in result["errors"]
             )
         )
+
+        observation = self.pact("eval", "--task", task_id, "--json")
+        self.assertEqual(observation.returncode, 0, observation.stdout + observation.stderr)
+        observed = json.loads(observation.stdout)
+        self.assertEqual(observed["completion"]["attempts"], 1)
+        self.assertEqual(observed["completion"]["failed_attempts"], 1)
+        self.assertEqual(observed["completion"]["acceptance_gap_blocks"], 1)
+        self.assertFalse(observed["completion"]["final_complete"])
 
 
 
