@@ -11,7 +11,8 @@ python scripts/pact/pact.py <command> [args...]
 ```text
 init       safely scaffold PACT into an existing repository
 check      deterministic artifact checks
-doctor     PACT repository readiness
+doctor     deterministic PACT foundation health
+readiness  explicit brownfield baseline readiness
 audit      deterministic repository health inventory
 owner      validate and expose project Owner Profile
 map        rebuild disposable project map
@@ -29,8 +30,10 @@ Examples:
 ```bash
 python scripts/pact/pact.py init --target ../existing-project
 python scripts/pact/pact.py init --target ../existing-project --apply
+python scripts/pact/pact.py init --target ../existing-project --apply --github-actions
 
 python scripts/pact/pact.py doctor
+python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit --json
 python scripts/pact/pact.py owner --json
 
@@ -52,6 +55,15 @@ python scripts/pact/pact.py impact --base main --json
 - `context`: build a task-oriented candidate context envelope for implementation work.
 
 `explain` prepares evidence. An Agent still performs the semantic, owner-readable explanation and must inspect code/runtime/Git when the evidence packet says that is necessary.
+
+## Doctor vs Readiness
+
+- `doctor` answers whether PACT infrastructure/configuration is valid.
+- `readiness` answers whether the existing project's baseline was explicitly reviewed.
+
+A freshly scaffolded project should normally be `foundation-valid`, not `pact-ready`.
+
+Use `readiness --require-ready` only when the project has chosen readiness as a gate.
 
 ## Safety boundary
 
