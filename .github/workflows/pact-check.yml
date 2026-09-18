@@ -21,3 +21,12 @@ jobs:
 
       - name: Run deterministic PACT checks
         run: python scripts/pact/check.py
+
+      - name: Build derived project map
+        run: python scripts/pact/map.py --output /tmp/pact-project-map.json
+
+      - name: Smoke-test Project Discovery
+        run: python scripts/pact/discover.py "product truth" --index /tmp/pact-project-map.json --json
+
+      - name: Validate convergence report contract
+        run: python scripts/pact/converge.py .pact/examples/convergence-report.example.json
