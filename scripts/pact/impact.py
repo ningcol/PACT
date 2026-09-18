@@ -60,6 +60,26 @@ def build_map() -> dict:
         return json.loads(output.read_text(encoding="utf-8"))
 
 
+def build_code_map() -> dict:
+    with tempfile.TemporaryDirectory(prefix="pact-code-impact-") as tmp:
+        output = pathlib.Path(tmp) / "code-map.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "pact" / "code_map.py"),
+                "--output",
+                str(output),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                result.stderr.strip() or result.stdout.strip() or "code-map failed"
+            )
+        return json.loads(output.read_text(encoding="utf-8"))
+
+
 def read_text(path: str) -> str:
     candidate = ROOT / path
     if not candidate.is_file() or candidate.stat().st_size > 1_000_000:
@@ -80,12 +100,53 @@ def validate(report: dict) -> list[str]:
     return errors
 
 
+def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
+    file_info = {item["path"]: item for item in code_map.get("files", [])}
+    changed_set = set(changed)
+    candidates: dict[tuple[str, str, str], dict] = {}
+
+    for edge in code_map.get("edges", []):
+        if edge["from"] in changed_set and edge["to"] not in changed_set:
+            related = file_info.get(edge["to"], {})
+            score = 70 + (15 if related.get("is_test") else 0)
+            key = (edge["from"], edge["to"], "imports")
+            candidates[key] = {
+                "changed_file": edge["from"],
+                "related_file": edge["to"],
+                "relation": "imports",
+                "score": score,
+                "is_test": bool(related.get("is_test")),
+            }
+
+        if edge["to"] in changed_set and edge["from"] not in changed_set:
+            related = file_info.get(edge["from"], {})
+            score = 85 + (15 if related.get("is_test") else 0)
+            key = (edge["to"], edge["from"], "imported-by")
+            candidates[key] = {
+                "changed_file": edge["to"],
+                "related_file": edge["from"],
+                "relation": "imported-by",
+                "score": score,
+                "is_test": bool(related.get("is_test")),
+            }
+
+    return sorted(
+        candidates.values(),
+        key=lambda item: (-item["score"], item["changed_file"], item["related_file"]),
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze project knowledge impact")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--files", nargs="+", help="explicit changed repository paths")
     source.add_argument("--base", help="git base ref for BASE...HEAD diff")
     parser.add_argument("--head", default="HEAD")
+    parser.add_argument(
+        "--code",
+        action="store_true",
+        help="also include generated import-neighbor code candidates",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -98,6 +159,7 @@ def main() -> int:
         )
         changed = sorted(set(changed))
         index = build_map()
+        code_map = build_code_map() if args.code else None
     except Exception as exc:
         print(f"PACT impact: setup failed: {exc}", file=sys.stderr)
         return 2
@@ -186,12 +248,19 @@ def main() -> int:
         })
     candidates.sort(key=lambda x: (-x["score"], x["target"]["path"]))
 
+    code_candidates = (
+        code_impact_candidates(changed, code_map)
+        if code_map is not None
+        else []
+    )
+
     report = {
         "version": 1,
         "changed_files": changed,
         "impacted_domains": sorted(impacted_domains),
         "deterministic_impacts": deterministic,
         "candidate_impacts": candidates,
+        "code_candidate_impacts": code_candidates,
         "unmapped_files": sorted(set(changed) - mapped_files),
     }
 
@@ -217,10 +286,19 @@ def main() -> int:
         return 0
 
     print(f"PACT impact: {len(changed)} changed file(s)")
-    print(f"Deterministic relationships: {len(deterministic)}")
-    print(f"Candidate relationships: {len(candidates)}")
+    print(f"Deterministic project relationships: {len(deterministic)}")
+    print(f"Candidate project relationships: {len(candidates)}")
+    print(f"Candidate code relationships: {len(code_candidates)}")
     if impacted_domains:
         print("Impacted domains: " + ", ".join(sorted(impacted_domains)))
+    if code_candidates:
+        print("Code candidates:")
+        for item in code_candidates[:20]:
+            marker = " test" if item["is_test"] else ""
+            print(
+                f"- {item['changed_file']} -> {item['related_file']} "
+                f"({item['relation']},{marker.strip() or 'code'}, score {item['score']})"
+            )
     if report["unmapped_files"]:
         print("Unmapped changed files:")
         for path in report["unmapped_files"]:
