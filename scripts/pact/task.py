@@ -192,13 +192,20 @@ def prepare(args) -> int:
 def finish(args) -> int:
     task_dir = TASK_ROOT / args.task_id
     manifest_path = task_dir / "task.json"
-    manifest = None
-    if manifest_path.is_file():
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
-            return 2
+    if not manifest_path.is_file():
+        print(
+            f"PACT task finish: task was not prepared: {args.task_id}. "
+            "Use 'pact task prepare' first, or use the low-level 'pact complete' "
+            "primitive for a legacy/unmanaged completion bundle.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
+        return 2
 
     bundle = pathlib.Path(args.bundle) if args.bundle else COMPLETION_ROOT / args.task_id
     if not bundle.is_absolute():
