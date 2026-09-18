@@ -68,6 +68,10 @@ JS_SYMBOL = re.compile(
 )
 
 JS_MEMBER_IDENTIFIER = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)")
+VUE_SCRIPT_BLOCK = re.compile(
+    r"<script(?:\s[^>]*)?>(.*?)</script>",
+    re.IGNORECASE | re.DOTALL,
+)
 MAX_IDENTIFIERS_PER_FILE = 512
 COMMON_IDENTIFIERS = {
     "async", "await", "break", "case", "catch", "class", "const", "continue",
@@ -96,6 +100,87 @@ def lexical_identifiers(values: list[str]) -> list[str]:
         ),
     )
     return ranked[:MAX_IDENTIFIERS_PER_FILE]
+
+
+def strip_js_noncode(text: str) -> str:
+    """Mask strings/comments while preserving code positions and newlines."""
+    output: list[str] = []
+    state = "code"
+    quote = ""
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+        nxt = text[index + 1] if index + 1 < len(text) else ""
+
+        if state == "code":
+            if char == "/" and nxt == "/":
+                output.extend([" ", " "])
+                state = "line-comment"
+                index += 2
+                continue
+            if char == "/" and nxt == "*":
+                output.extend([" ", " "])
+                state = "block-comment"
+                index += 2
+                continue
+            if char in {"'", '"', "`"}:
+                quote = char
+                output.append(" ")
+                state = "string"
+                index += 1
+                continue
+            output.append(char)
+            index += 1
+            continue
+
+        if state == "line-comment":
+            if char == "\n":
+                output.append("\n")
+                state = "code"
+            else:
+                output.append(" ")
+            index += 1
+            continue
+
+        if state == "block-comment":
+            if char == "*" and nxt == "/":
+                output.extend([" ", " "])
+                state = "code"
+                index += 2
+                continue
+            output.append("\n" if char == "\n" else " ")
+            index += 1
+            continue
+
+        if state == "string":
+            if char == "\\":
+                output.append(" ")
+                if index + 1 < len(text):
+                    output.append("\n" if nxt == "\n" else " ")
+                    index += 2
+                else:
+                    index += 1
+                continue
+            if char == quote:
+                output.append(" ")
+                state = "code"
+                index += 1
+                continue
+            output.append("\n" if char == "\n" else " ")
+            index += 1
+
+    return "".join(output)
+
+
+def js_identifier_text(path: pathlib.Path, text: str) -> str:
+    if path.suffix.lower() != ".vue":
+        return strip_js_noncode(text)
+
+    blocks = VUE_SCRIPT_BLOCK.findall(text)
+    if not blocks:
+        return ""
+    return "\n".join(strip_js_noncode(block) for block in blocks)
 
 
 def rel(path: pathlib.Path, root: pathlib.Path) -> str:
@@ -217,7 +302,10 @@ def parse_js_like(
         if symbol:
             symbols.append(symbol)
 
-    identifiers = lexical_identifiers(JS_MEMBER_IDENTIFIER.findall(text))
+    identifier_text = js_identifier_text(path, text)
+    identifiers = lexical_identifiers(
+        JS_MEMBER_IDENTIFIER.findall(identifier_text)
+    )
     return sorted(set(symbols)), list(dict.fromkeys(imports)), identifiers
 
 
