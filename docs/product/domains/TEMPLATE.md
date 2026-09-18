@@ -1,12 +1,12 @@
----
-pact:
-  type: domain
-  id: DOMAIN-EXAMPLE
-  status: confirmed
-  owners:
-    - product
-  paths: []
----
++++
+[pact]
+type = "domain"
+id = "DOMAIN-EXAMPLE"
+status = "confirmed"
+owners = ["product"]
+aliases = ["Example Name", "legacyExample"]
+paths = []
++++
 
 # <Canonical Domain Name>
 
@@ -16,17 +16,13 @@ What does this concept mean in the business/product world?
 
 ## Aliases
 
-Owner/UI terms:
+Keep **all machine-searchable aliases** in `pact.aliases` above, including:
 
-- ...
+- owner/UI terms;
+- code/data aliases;
+- historical names.
 
-Code/data aliases:
-
-- ...
-
-Historical aliases:
-
-- ...
+Use this section only to explain confusing aliases or distinctions; do not maintain a second alias list here.
 
 ## Not the same as
 
