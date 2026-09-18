@@ -87,24 +87,19 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertTrue(manifest_path.exists())
         return json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    def test_init_records_framework_and_toml_seed_ownership(self) -> None:
+    def test_init_records_minimal_profile_and_toml_seed_ownership(self) -> None:
         manifest = self.scaffold()
         self.assertEqual(manifest["runtime_version"], SOURCE_VERSION)
+        self.assertEqual(manifest.get("install_profile"), "minimal")
+        self.assertLessEqual(len(manifest["files"]), 8)
         self.assertEqual(
             manifest["files"][".pact/pact.pyz"]["management"],
             "framework",
         )
         self.assertTrue((self.target / ".pact" / "pact.pyz").is_file())
-        legacy_entry = self.target / "scripts" / "pact" / "pact.py"
-        self.assertTrue(legacy_entry.is_file())
-        self.assertEqual(
-            sorted(
-                path.name
-                for path in legacy_entry.parent.iterdir()
-                if path.is_file()
-            ),
-            ["converge.py", "pact.py", "report.py"],
-        )
+        self.assertFalse((self.target / "scripts" / "pact").exists())
+        self.assertFalse((self.target / "docs" / "product").exists())
+        self.assertFalse((self.target / ".agents" / "decisions").exists())
 
         version = self.run_target("version", "--json")
         self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
@@ -112,6 +107,9 @@ class DistributionUpgradeTests(unittest.TestCase):
             manifest["files"][".pact/config.toml"]["management"],
             "seed",
         )
+
+        doctor = self.run_target("doctor", "--strict")
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
 
     def test_reinit_from_different_runtime_is_rejected(self) -> None:
         manifest = self.scaffold()
@@ -152,6 +150,9 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertEqual(manifest["runtime_version"], NEXT_VERSION)
         self.assertIn(".pact/pact.pyz", manifest["files"])
+        self.assertEqual(manifest.get("install_profile"), "minimal")
+        self.assertFalse((self.target / "docs" / "product").exists())
+        self.assertFalse((self.target / "scripts" / "pact").exists())
 
     def test_conflicting_compact_runtime_change_blocks_entire_apply(self) -> None:
         manifest = self.scaffold()
@@ -226,6 +227,9 @@ class DistributionUpgradeTests(unittest.TestCase):
 
     def make_legacy_runtime_install(self, *, modify_one: bool = False) -> dict:
         manifest = self.scaffold()
+        # Simulate an older/full-profile installation. Legacy manifests predate
+        # install_profile and must retain the historical compatibility surface.
+        manifest.pop("install_profile", None)
         compact = self.target / ".pact" / "pact.pyz"
         compact.unlink()
         manifest["files"].pop(".pact/pact.pyz", None)
@@ -395,11 +399,20 @@ class DistributionUpgradeTests(unittest.TestCase):
         manifest = self.scaffold()
 
         seed_path = self.target / ".agents" / "skills" / "convergence-review.md"
+        seed_path.parent.mkdir(parents=True, exist_ok=True)
         seed_path.write_text(
-            seed_path.read_text(encoding="utf-8")
-            + "\nLegacy schema reference: .pact/schema/convergence-report.schema.json\n",
+            "# Project convergence guidance\n"
+            "Legacy schema reference: .pact/schema/convergence-report.schema.json\n",
             encoding="utf-8",
         )
+        import hashlib
+        seed_sha = hashlib.sha256(seed_path.read_bytes()).hexdigest()
+        manifest["files"][".agents/skills/convergence-review.md"] = {
+            "management": "seed",
+            "source_path": None,
+            "source_sha256": None,
+            "installed_sha256": seed_sha,
+        }
 
         relative = ".pact/schema/convergence-report.schema.json"
         source = PROJECT_ROOT / relative
@@ -407,7 +420,6 @@ class DistributionUpgradeTests(unittest.TestCase):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-        import hashlib
         installed_sha = hashlib.sha256(destination.read_bytes()).hexdigest()
         manifest["files"][relative] = {
             "management": "framework",
