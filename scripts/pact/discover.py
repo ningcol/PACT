@@ -141,6 +141,7 @@ def ensure_index(path: pathlib.Path) -> None:
     subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pact" / "map.py"), "--output", str(path)],
         check=True,
+        stdout=subprocess.DEVNULL,
     )
 
 
@@ -155,6 +156,7 @@ def ensure_code_index(path: pathlib.Path) -> None:
             str(path),
         ],
         check=True,
+        stdout=subprocess.DEVNULL,
     )
 
 
