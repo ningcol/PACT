@@ -285,7 +285,6 @@ def derive_task(task_id: str) -> dict:
                 attempts,
                 "stale-task-contract",
                 "task_contract_sha256",
-                "Task Contract",
             ),
             "acceptance_gap_blocks": blocker_count(
                 attempts,
