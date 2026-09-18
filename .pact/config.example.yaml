@@ -20,7 +20,7 @@ paths:
   architecture: docs/architecture
   decisions: .agents/decisions
   changes: docs/changes
-  known_drift: docs/drift/known.md
+  drift: docs/drift
   skills: .agents/skills
 
 risk:
