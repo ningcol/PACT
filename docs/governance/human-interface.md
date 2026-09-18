@@ -74,8 +74,11 @@ A normal owner report should communicate:
 - what changed;
 - what changed for the user/business;
 - what was actually verified;
+- coverage of every Task Contract acceptance criterion;
 - whether project consistency is healthy;
 - whether an owner decision remains.
+
+A completed report must not hide a verified acceptance criterion by omitting its Evidence from the verification section.
 
 ## Progressive disclosure
 
