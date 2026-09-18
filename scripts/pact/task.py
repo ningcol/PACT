@@ -16,10 +16,10 @@ import sys
 from datetime import datetime, timezone
 
 from task_contract import validate as validate_contract
+from runtime_exec import runtime_command
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-RUNTIME = ROOT / "scripts" / "pact"
 TASK_ROOT = ROOT / ".pact" / "tasks"
 COMPLETION_ROOT = ROOT / ".pact" / "completions"
 
@@ -101,9 +101,8 @@ def prepare(args) -> int:
     contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
 
     context_path = task_dir / "context.json"
-    context_cmd = [
-        sys.executable,
-        str(RUNTIME / "context.py"),
+    context_cmd = runtime_command(
+        "context",
         args.task,
         "--success",
         "; ".join(text for _, text in acceptance_items),
@@ -111,7 +110,7 @@ def prepare(args) -> int:
         args.risk,
         "--output",
         str(context_path),
-    ]
+    )
     if args.goal:
         context_cmd.extend(["--goal", args.goal])
     if args.query:
@@ -134,14 +133,13 @@ def prepare(args) -> int:
     impact_cmd = None
     if args.files or args.base:
         impact_path = task_dir / "impact.json"
-        impact_cmd = [
-            sys.executable,
-            str(RUNTIME / "impact.py"),
+        impact_cmd = runtime_command(
+            "impact",
             "--risk",
             args.risk,
             "--output",
             str(impact_path),
-        ]
+        )
         if args.files:
             impact_cmd.extend(["--files", *args.files])
         else:
@@ -240,14 +238,13 @@ def finish(args) -> int:
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
-    command = [
-        sys.executable,
-        str(RUNTIME / "complete.py"),
+    command = runtime_command(
+        "complete",
         str(bundle),
         "--root",
         str(ROOT),
         "--json",
-    ]
+    )
     if args.require_ci:
         command.append("--require-ci")
 

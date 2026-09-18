@@ -3,49 +3,52 @@
 
 from __future__ import annotations
 
+import importlib
 import pathlib
-import subprocess
 import sys
 
 if sys.version_info < (3, 11):
     print("PACT 0.3 requires Python 3.11+.", file=sys.stderr)
     raise SystemExit(2)
 
-HERE = pathlib.Path(__file__).resolve().parent
+RUNTIME_ROOT = pathlib.Path(__file__).resolve().parent
+runtime_path = str(RUNTIME_ROOT)
+if runtime_path not in sys.path:
+    sys.path.insert(0, runtime_path)
 
 COMMANDS = {
     # Recommended agent-facing surface.
-    "status": "status.py",
-    "inspect": "inspect_project.py",
-    "task": "task.py",
+    "status": "status",
+    "inspect": "inspect_project",
+    "task": "task",
 
     # Setup / maintenance.
-    "init": "init.py",
-    "upgrade": "upgrade.py",
-    "version": "version.py",
+    "init": "init",
+    "upgrade": "upgrade",
+    "version": "version",
 
     # Advanced primitives.
-    "check": "check.py",
-    "schema-lint": "schema_lint.py",
-    "workflow-lint": "workflow_lint.py",
-    "doctor": "doctor.py",
-    "readiness": "readiness.py",
-    "audit": "audit.py",
-    "owner": "owner.py",
-    "risk": "risk.py",
-    "fitness": "fitness.py",
-    "map": "map.py",
-    "code-map": "code_map.py",
-    "discover": "discover.py",
-    "explain": "explain.py",
-    "context": "context.py",
-    "impact": "impact.py",
-    "run": "run.py",
-    "converge": "converge.py",
-    "evidence": "evidence.py",
-    "report": "report.py",
-    "complete": "complete.py",
-    "eval": "eval.py",
+    "check": "check",
+    "schema-lint": "schema_lint",
+    "workflow-lint": "workflow_lint",
+    "doctor": "doctor",
+    "readiness": "readiness",
+    "audit": "audit",
+    "owner": "owner",
+    "risk": "risk",
+    "fitness": "fitness",
+    "map": "map",
+    "code-map": "code_map",
+    "discover": "discover",
+    "explain": "explain",
+    "context": "context",
+    "impact": "impact",
+    "run": "run",
+    "converge": "converge",
+    "evidence": "evidence",
+    "report": "report",
+    "complete": "complete",
+    "eval": "eval",
 }
 
 RECOMMENDED = [
@@ -99,16 +102,32 @@ def main() -> int:
         return 0
 
     command = sys.argv[1]
-    script = COMMANDS.get(command)
-    if not script:
+    module_name = COMMANDS.get(command)
+    if not module_name:
         print(f"Unknown PACT command: {command}", file=sys.stderr)
         print(help_text(), file=sys.stderr)
         return 2
 
-    completed = subprocess.run(
-        [sys.executable, str(HERE / script), *sys.argv[2:]]
-    )
-    return completed.returncode
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        print(f"PACT command load failed ({command}): {exc}", file=sys.stderr)
+        return 2
+
+    child_main = getattr(module, "main", None)
+    if not callable(child_main):
+        print(
+            f"PACT command module has no callable main(): {module_name}",
+            file=sys.stderr,
+        )
+        return 2
+
+    previous_argv = sys.argv
+    try:
+        sys.argv = [command, *previous_argv[2:]]
+        return int(child_main())
+    finally:
+        sys.argv = previous_argv
 
 
 if __name__ == "__main__":

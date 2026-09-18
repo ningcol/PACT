@@ -16,19 +16,19 @@ jobs:
           python-version: "3.12"
 
       - name: Validate PACT foundation
-        run: python scripts/pact/pact.py doctor --strict
+        run: python pact.py doctor --strict
 
       - name: Run deterministic PACT checks
-        run: python scripts/pact/pact.py check
+        run: python pact.py check
 
       - name: Run architecture fitness functions
-        run: python scripts/pact/pact.py fitness --strict
+        run: python pact.py fitness --strict
 
       - name: Report PACT readiness
-        run: python scripts/pact/pact.py readiness
+        run: python pact.py readiness
 
       - name: Audit explicit PACT state
-        run: python scripts/pact/pact.py audit
+        run: python pact.py audit
 
       # Project-owned build/test/E2E/visual verification should remain in the
       # project's existing CI. PACT does not guess those commands.

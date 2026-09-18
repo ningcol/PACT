@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from schema_validate import load_schema, validate_instance
+from runtime_exec import runtime_command
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "explanation-packet.schema.json"
@@ -18,13 +19,7 @@ SCHEMA = ROOT / ".pact" / "schema" / "explanation-packet.schema.json"
 
 def build_index(path: pathlib.Path) -> None:
     result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "map.py"),
-            "--output",
-            str(path),
-            "--ensure",
-        ],
+        runtime_command("map", "--output", str(path), "--ensure"),
         capture_output=True,
         text=True,
     )
@@ -34,16 +29,15 @@ def build_index(path: pathlib.Path) -> None:
 
 def run_discovery(query: str, index: pathlib.Path, limit: int) -> dict:
     result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "discover.py"),
+        runtime_command(
+            "discover",
             query,
             "--index",
             str(index),
             "--limit",
             str(limit),
             "--json",
-        ],
+        ),
         capture_output=True,
         text=True,
     )

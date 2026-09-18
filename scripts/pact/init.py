@@ -20,6 +20,7 @@ from distribution import (
     sha256_file,
     source_manifest,
 )
+from runtime_bundle import ensure_runtime_bundle
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 INSTALL_MANIFEST = pathlib.Path(".pact/install.json")
@@ -70,7 +71,7 @@ If `pact readiness` reports pending baseline reviews, treat those areas as poten
 Before owner-facing output, read the validated Owner Profile:
 
 ```bash
-python scripts/pact/pact.py owner --json
+python pact.py owner --json
 ```
 
 Honor its language, technical depth, consequence-first translation, and progressive-disclosure preferences.
@@ -205,7 +206,11 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
 
 def operation_entry(op: dict) -> dict:
     if op["source"]:
-        source = SOURCE_ROOT / op["source"]
+        source = (
+            ensure_runtime_bundle(SOURCE_ROOT)
+            if op["path"] == ".pact/pact.pyz"
+            else SOURCE_ROOT / op["source"]
+        )
         return {
             "source": source,
             "source_path": op["source"],
@@ -272,7 +277,11 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if op["source"]:
-            source = SOURCE_ROOT / op["source"]
+            source = (
+                ensure_runtime_bundle(SOURCE_ROOT)
+                if op["path"] == ".pact/pact.pyz"
+                else SOURCE_ROOT / op["source"]
+            )
             shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
             destination.write_text(TARGET_AGENTS, encoding="utf-8")

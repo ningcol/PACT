@@ -9,6 +9,8 @@ import pathlib
 import subprocess
 import sys
 
+from runtime_exec import runtime_command
+
 from formats import load_legacy_yaml, load_toml
 from schema_validate import load_schema, validate_instance
 
@@ -27,12 +29,7 @@ REVIEW_KEYS = [
 
 def doctor_state(root: pathlib.Path) -> tuple[bool, str]:
     result = subprocess.run(
-        [
-            sys.executable,
-            str(root / "scripts" / "pact" / "doctor.py"),
-            "--strict",
-            "--json",
-        ],
+        runtime_command("doctor", "--strict", "--json", root=root),
         capture_output=True,
         text=True,
     )

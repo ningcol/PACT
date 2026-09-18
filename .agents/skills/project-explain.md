@@ -9,8 +9,8 @@ Explain an existing project feature, behavior, or historical design to the owner
 Load the Owner Profile, then build the explanation evidence packet:
 
 ```bash
-python scripts/pact/pact.py owner --json
-python scripts/pact/pact.py explain "<owner query>" --json
+python pact.py owner --json
+python pact.py explain "<owner query>" --json
 ```
 
 Use the Explanation Packet as the first evidence set.

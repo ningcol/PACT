@@ -9,14 +9,13 @@ import pathlib
 import subprocess
 import sys
 
+from runtime_exec import runtime_command
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-RUNTIME = ROOT / "scripts" / "pact"
-
-
 def run_json(script: str, *args: str) -> tuple[int, dict | None, str]:
     result = subprocess.run(
-        [sys.executable, str(RUNTIME / script), *args, "--json"],
+        runtime_command(script.removesuffix(".py"), *args, "--json"),
         capture_output=True,
         text=True,
     )

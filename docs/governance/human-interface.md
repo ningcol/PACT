@@ -18,7 +18,7 @@ Before owner-facing explanations, decisions, or completion reports, use the conf
 Read the validated profile with:
 
 ```bash
-python scripts/pact/pact.py owner --json
+python pact.py owner --json
 ```
 
 Owner Profile changes communication, not the Agent's internal engineering capability.

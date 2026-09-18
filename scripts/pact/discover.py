@@ -10,6 +10,8 @@ import re
 import subprocess
 import sys
 
+from runtime_exec import runtime_command
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_INDEX = ROOT / ".pact" / "cache" / "project-map.json"
 DEFAULT_CODE_INDEX = ROOT / ".pact" / "cache" / "code-map.json"
@@ -137,13 +139,7 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
 
 def ensure_index(path: pathlib.Path) -> None:
     subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "map.py"),
-            "--output",
-            str(path),
-            "--ensure",
-        ],
+        runtime_command("map", "--output", str(path), "--ensure"),
         check=True,
         stdout=subprocess.DEVNULL,
     )
@@ -151,13 +147,7 @@ def ensure_index(path: pathlib.Path) -> None:
 
 def ensure_code_index(path: pathlib.Path) -> None:
     subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "code_map.py"),
-            "--output",
-            str(path),
-            "--ensure",
-        ],
+        runtime_command("code-map", "--output", str(path), "--ensure"),
         check=True,
         stdout=subprocess.DEVNULL,
     )

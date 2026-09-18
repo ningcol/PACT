@@ -11,7 +11,7 @@ The owner is a product/project decision-maker, not the implementation reviewer.
 First load the project-specific Owner Profile:
 
 ```bash
-python scripts/pact/pact.py owner --json
+python pact.py owner --json
 ```
 
 Then produce the completion report using:

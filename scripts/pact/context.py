@@ -12,6 +12,7 @@ import sys
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
+from runtime_exec import runtime_command
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -25,14 +26,13 @@ def run_discovery(
     code: bool,
     code_limit: int,
 ) -> dict:
-    command = [
-        sys.executable,
-        str(ROOT / "scripts" / "pact" / "discover.py"),
+    command = runtime_command(
+        "discover",
         query,
         "--limit",
         str(knowledge_limit),
         "--json",
-    ]
+    )
     if code:
         command.extend([
             "--code",

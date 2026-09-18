@@ -13,6 +13,7 @@ import sys
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
+from runtime_exec import runtime_command
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "impact-report.schema.json"
@@ -50,13 +51,7 @@ def changed_from_git(base: str, head: str) -> list[str]:
 def build_map() -> dict:
     output = ROOT / ".pact" / "cache" / "project-map.json"
     result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "map.py"),
-            "--output",
-            str(output),
-            "--ensure",
-        ],
+        runtime_command("map", "--output", str(output), "--ensure"),
         capture_output=True,
         text=True,
     )
@@ -68,13 +63,7 @@ def build_map() -> dict:
 def build_code_map() -> dict:
     output = ROOT / ".pact" / "cache" / "code-map.json"
     result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "pact" / "code_map.py"),
-            "--output",
-            str(output),
-            "--ensure",
-        ],
+        runtime_command("code-map", "--output", str(output), "--ensure"),
         capture_output=True,
         text=True,
     )

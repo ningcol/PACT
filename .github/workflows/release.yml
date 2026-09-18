@@ -41,9 +41,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp bootstrap.py dist/pact-bootstrap.py
+          python scripts/pact/runtime_bundle.py --output dist/pact.pyz
           (
             cd dist
-            sha256sum pact-bootstrap.py > SHA256SUMS
+            sha256sum pact-bootstrap.py pact.pyz > SHA256SUMS
           )
           cat dist/SHA256SUMS
 
@@ -53,4 +54,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME"             dist/pact-bootstrap.py             dist/SHA256SUMS             --verify-tag             --title "PACT $GITHUB_REF_NAME"             --generate-notes
+          gh release create "$GITHUB_REF_NAME"             dist/pact-bootstrap.py             dist/pact.pyz             dist/SHA256SUMS             --verify-tag             --title "PACT $GITHUB_REF_NAME"             --generate-notes
