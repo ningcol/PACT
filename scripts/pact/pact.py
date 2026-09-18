@@ -27,6 +27,7 @@ COMMANDS = {
     "converge": "converge.py",
     "evidence": "evidence.py",
     "report": "report.py",
+    "eval": "eval.py",
 }
 
 
