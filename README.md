@@ -109,6 +109,10 @@ python scripts/pact/pact.py init --target ../my-existing-project --apply
 
 # Optional: also create a separate PACT GitHub Actions workflow.
 python scripts/pact/pact.py init --target ../my-existing-project --apply --github-actions
+
+# Later, from a newer PACT checkout:
+python scripts/pact/pact.py upgrade --target ../my-existing-project
+python scripts/pact/pact.py upgrade --target ../my-existing-project --apply
 ```
 
 Safety rules:
@@ -135,6 +139,8 @@ See `docs/initialization.md` and `docs/initialization-checklist.md`.
 
 ```text
 init       safely scaffold PACT into an existing repository
+upgrade    safely update unchanged framework-managed files
+version    show runtime/install version information
 check      deterministic artifact checks
 doctor     PACT foundation health
 readiness  explicit baseline readiness
@@ -159,6 +165,14 @@ These are intentionally separate:
 - **Context** answers: "What does this implementation task need to understand before changing behavior?"
 
 `explain` does not invent a final narrative. If no Decision Record exists, it explicitly reports that the durable reason is missing instead of fabricating one.
+
+## Framework updates do not overwrite project truth
+
+PACT records installation provenance in `.pact/install.json`.
+
+Framework runtime/schema/template files can be upgraded only if they have not been locally modified since the previous install. Project-owned seeds such as Owner config, baseline state, governance, Agent Skills, and AGENTS are never silently overwritten.
+
+If both a framework-managed target file and the newer PACT source changed, automatic upgrade stops before changing anything.
 
 ## Scaffolded is not PACT-ready
 

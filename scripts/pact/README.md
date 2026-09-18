@@ -10,6 +10,8 @@ python scripts/pact/pact.py <command> [args...]
 
 ```text
 init       safely scaffold PACT into an existing repository
+upgrade    safely update unchanged framework-managed PACT files
+version    show source/installed PACT runtime versions
 check      deterministic artifact checks
 doctor     deterministic PACT foundation health
 readiness  explicit brownfield baseline readiness
@@ -31,6 +33,10 @@ Examples:
 python scripts/pact/pact.py init --target ../existing-project
 python scripts/pact/pact.py init --target ../existing-project --apply
 python scripts/pact/pact.py init --target ../existing-project --apply --github-actions
+
+python scripts/pact/pact.py version --target ../existing-project
+python scripts/pact/pact.py upgrade --target ../existing-project
+python scripts/pact/pact.py upgrade --target ../existing-project --apply
 
 python scripts/pact/pact.py doctor
 python scripts/pact/pact.py readiness
@@ -55,6 +61,24 @@ python scripts/pact/pact.py impact --base main --json
 - `context`: build a task-oriented candidate context envelope for implementation work.
 
 `explain` prepares evidence. An Agent still performs the semantic, owner-readable explanation and must inspect code/runtime/Git when the evidence packet says that is necessary.
+
+## Safe upgrades
+
+`init --apply` records `.pact/install.json` with file ownership and SHA256 provenance.
+
+- framework-managed files are auto-updatable only when unchanged since install;
+- project seed files are never overwritten;
+- any true framework conflict blocks the entire automatic apply;
+- obsolete framework files are reported but never auto-deleted.
+
+Run upgrade from the newer PACT source checkout:
+
+```bash
+python scripts/pact/pact.py upgrade --target ../existing-project
+python scripts/pact/pact.py upgrade --target ../existing-project --apply
+```
+
+See `docs/design/distribution-upgrades.md`.
 
 ## Doctor vs Readiness
 

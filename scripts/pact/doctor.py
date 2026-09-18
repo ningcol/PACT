@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 
+from jsonschema import Draft202012Validator
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -24,8 +26,10 @@ REQUIRED = [
     "docs/architecture",
     ".agents/decisions",
     ".agents/skills",
+    ".pact/VERSION",
     ".pact/schema/artifact.schema.json",
     ".pact/schema/config.schema.json",
+    ".pact/schema/install-manifest.schema.json",
 ]
 
 
@@ -33,12 +37,53 @@ def item(name: str, state: str, detail: str) -> dict:
     return {"check": name, "state": state, "detail": detail}
 
 
+def install_provenance_check(strict: bool) -> dict:
+    manifest_path = ROOT / ".pact" / "install.json"
+    if not manifest_path.exists():
+        return item(
+            "install-provenance",
+            "fail" if strict else "warn",
+            "missing .pact/install.json" if strict else "source/untracked checkout; no install manifest",
+        )
+
+    schema_path = ROOT / ".pact" / "schema" / "install-manifest.schema.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(manifest), key=lambda e: list(e.path))
+        if errors:
+            detail = "; ".join(
+                f"{'.'.join(str(p) for p in err.path) or '<root>'}: {err.message}"
+                for err in errors
+            )
+            return item("install-provenance", "fail", detail)
+
+        version_path = ROOT / ".pact" / "VERSION"
+        installed_version = version_path.read_text(encoding="utf-8").strip()
+        manifest_version = manifest.get("runtime_version")
+        if installed_version != manifest_version:
+            return item(
+                "install-provenance",
+                "fail",
+                f"VERSION={installed_version!r} but install manifest runtime_version={manifest_version!r}",
+            )
+
+        return item(
+            "install-provenance",
+            "pass",
+            f"runtime={manifest_version}, tracked_files={len(manifest.get('files', {}))}",
+        )
+    except Exception as exc:
+        return item("install-provenance", "fail", f"cannot validate install manifest: {exc}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check PACT foundation health")
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="require a project-specific .pact/config.yaml",
+        help="require project config and tracked install provenance",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -84,6 +129,8 @@ def main() -> int:
             checks.append(item("owner-profile", state, detail))
         except json.JSONDecodeError:
             checks.append(item("owner-profile", "fail", "owner profile output was not valid JSON"))
+
+    checks.append(install_provenance_check(args.strict))
 
     check_run = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pact" / "check.py")],
