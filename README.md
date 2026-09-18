@@ -151,9 +151,9 @@ After adoption:
 
 ```bash
 cd ../my-existing-project
-python3 scripts/pact/pact.py doctor --strict
-python scripts/pact/pact.py readiness
-python scripts/pact/pact.py audit
+python3 pact.py doctor --strict
+python pact.py readiness
+python pact.py audit
 ```
 
 See `docs/initialization.md` and `docs/initialization-checklist.md`.
