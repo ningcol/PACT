@@ -24,6 +24,27 @@ def terms(query: str) -> list[str]:
     return [p for p in parts if p]
 
 
+def estimate_text_tokens(text: str) -> int:
+    # Deliberately model-agnostic rough materialization estimate.
+    return max(1, (len(text) + 3) // 4)
+
+
+def estimate_code_tokens(relative: str, item: dict) -> int:
+    path = ROOT / relative
+    try:
+        size = path.stat().st_size
+        return max(1, (int(size) + 3) // 4)
+    except OSError:
+        fallback = " ".join(
+            [
+                relative,
+                *item.get("symbols", []),
+                *(entry.get("raw", "") for entry in item.get("imports", [])),
+            ]
+        )
+        return estimate_text_tokens(fallback)
+
+
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
     ts = terms(query)
@@ -177,6 +198,7 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
                 "symbols": item.get("symbols", []),
                 "relation": "direct-match",
                 "confidence": "direct",
+                "estimated_tokens": estimate_code_tokens(item["path"], item),
             })
 
     direct.sort(key=lambda x: (-x["score"], x["path"]))
@@ -232,6 +254,7 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
                 ),
                 "heuristic",
             ),
+            "estimated_tokens": estimate_code_tokens(path, item),
         })
 
     neighbors.sort(key=lambda x: (-x["score"], x["path"]))
@@ -271,6 +294,7 @@ def main() -> int:
                 "domains": doc.get("domains", []),
                 "related": doc.get("related", []),
                 "verification": doc.get("verification", []),
+                "estimated_tokens": estimate_text_tokens(str(doc.get("text") or "")),
             })
 
     ranked.sort(key=lambda x: (-x["score"], x["path"]))
@@ -309,7 +333,8 @@ def main() -> int:
         ident = f" [{item['id']}]" if item.get("id") else ""
         print(
             f"- {item['title']}{ident} — {item['artifact_type']} — "
-            f"{item['path']} (score {item['score']})"
+            f"{item['path']} (score {item['score']}, "
+            f"~{item['estimated_tokens']} tokens)"
         )
         if item["reasons"]:
             print(f"  why: {', '.join(item['reasons'])}")
@@ -318,7 +343,10 @@ def main() -> int:
         print("Code:")
         for item in code_results:
             marker = "test" if item["is_test"] else item["language"]
-            print(f"- {item['path']} — {marker} — {item['relation']} (score {item['score']})")
+            print(
+                f"- {item['path']} — {marker} — {item['relation']} "
+                f"(score {item['score']}, ~{item['estimated_tokens']} tokens)"
+            )
             if item["reasons"]:
                 print(f"  why: {', '.join(item['reasons'])}")
 
