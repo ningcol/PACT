@@ -6,6 +6,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Evaluation / proof of value
+
+- high-level `task finish` persists completion-attempt outcomes for later evaluation;
+- `pact eval --task <TASK-ID>` derives machine-observed task metrics without fabricating human-interaction values;
+- added a real historical brownfield Context-retrieval benchmark using owner-maintained repositories;
+- benchmark compares direct owner-language retrieval with Agent-expanded queries and treats low recall as data, not a CI failure.
+
 ### Owner Trust Loop
 
 - `task prepare` now persists a machine-readable Task Contract;
