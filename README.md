@@ -107,16 +107,27 @@ Recommended bootstrap flow:
 # Pin a tag or exact commit for reproducibility.
 PACT_REF="<tag-or-commit>"
 
-curl -fsSL   "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py"   -o /tmp/pact-bootstrap.py
+curl -fsSL \
+  "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py" \
+  -o /tmp/pact-bootstrap.py
 
 # Preview only — writes nothing.
-python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"
+python3 /tmp/pact-bootstrap.py init \
+  --target ../my-existing-project \
+  --ref "$PACT_REF"
 
 # Apply after reviewing the plan.
-python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"   --apply
+python3 /tmp/pact-bootstrap.py init \
+  --target ../my-existing-project \
+  --ref "$PACT_REF" \
+  --apply
 
 # Optional separate PACT CI workflow.
-python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"   --apply   --github-actions
+python3 /tmp/pact-bootstrap.py init \
+  --target ../my-existing-project \
+  --ref "$PACT_REF" \
+  --apply \
+  --github-actions
 ```
 
 For a quick moving-main trial, use `--ref main`; PACT prints a warning that this is not reproducible.
@@ -125,13 +136,20 @@ Later, upgrade without cloning:
 
 ```bash
 PACT_REF="<new-tag-or-commit>"
-curl -fsSL   "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py"   -o /tmp/pact-bootstrap.py
+curl -fsSL \
+  "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py" \
+  -o /tmp/pact-bootstrap.py
 
 # Preview upgrade.
-python3 /tmp/pact-bootstrap.py upgrade   --target ../my-existing-project   --ref "$PACT_REF"
+python3 /tmp/pact-bootstrap.py upgrade \
+  --target ../my-existing-project \
+  --ref "$PACT_REF"
 
 # Transactional apply.
-python3 /tmp/pact-bootstrap.py upgrade   --target ../my-existing-project   --ref "$PACT_REF"   --apply
+python3 /tmp/pact-bootstrap.py upgrade \
+  --target ../my-existing-project \
+  --ref "$PACT_REF" \
+  --apply
 ```
 
 A local PACT checkout remains supported for development/offline use.
@@ -166,6 +184,7 @@ doctor     PACT foundation health
 readiness  explicit baseline readiness
 audit      repository health inventory
 owner      validate/expose project Owner Profile
+risk       show core low/medium/high rigor policy
 fitness    run project-owned architecture invariants
 map        rebuild disposable discovery index
 code-map   rebuild generated local import/symbol relationships
@@ -173,9 +192,11 @@ discover   locate project knowledge
 explain    prepare evidence for an owner-readable project explanation
 context    build candidate Task Context Envelope
 impact     map changed files to project knowledge
+run        execute a verification command and write a run receipt
 converge   validate semantic Convergence Reports
-evidence   validate Evidence Receipts
+evidence   validate source-backed Evidence Receipts
 report     render evidence-backed Owner Reports
+complete   validate Evidence + Convergence + Owner Report as one gate
 eval       validate/summarize optional pilot task records
 ```
 
@@ -244,7 +265,10 @@ The rule is:
 
 ## Status
 
-PACT v1 currently includes the executable foundation for:
+**Runtime:** 0.3.0  
+**Control-plane protocol:** v1
+
+PACT 0.3 includes the executable foundation for:
 
 - brownfield initialization with explicit readiness state;
 - opt-in project CI integration;
@@ -252,14 +276,19 @@ PACT v1 currently includes the executable foundation for:
 - Truth ownership and artifact lifecycle;
 - Project Discovery with optional generated code relationships;
 - Project Explanation evidence packets;
-- candidate Context Resolution;
-- conservative Impact Analysis;
+- risk-adaptive Context Resolution;
+- freshness-aware Project/Code maps;
+- conservative Impact Analysis with generated relationship confidence;
 - pluggable project-owned architecture fitness functions;
+- source-backed command run receipts;
 - Convergence Reports;
-- Evidence Receipts;
+- source-backed Evidence Receipts;
 - evidence-backed Owner Reports;
+- task-level completion gate;
 - deterministic checks, Doctor, and Audit.
 
 PACT also includes an optional pilot scorecard so future framework changes can be driven by real-task evidence instead of framework size or intuition.
+
+The only intentionally open validation work is the real brownfield pilot and evaluation with observed project data.
 
 The next iterations should be driven primarily by real brownfield pilot results: simplify or remove mechanisms that do not reduce owner cognitive load or improve engineering reliability.
