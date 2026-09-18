@@ -55,17 +55,25 @@ jobs:
               f"- Oracle source files: {summary['oracle_file_count']}",
               f"- Direct weighted recall: {summary['direct_weighted_recall']:.3f}",
               f"- Curated expanded-query weighted recall: {summary['expanded_weighted_recall']:.3f}",
-              f"- Cases improved by query expansion: {summary['cases_improved_by_query_expansion']}",
+              f"- Curated multi-query weighted recall: {summary['multi_query_weighted_recall']:.3f}",
+              f"- Cases improved by single query expansion: {summary['cases_improved_by_query_expansion']}",
+              f"- Cases improved by multi-query: {summary['cases_improved_by_multi_query']}",
+              f"- Cases where multi-query beats single expanded query: {summary['cases_multi_beats_single_expanded']}",
+              f"- Mean code Context files: direct={summary['mean_direct_context_code_files']:.2f}, "
+              f"single-expanded={summary['mean_expanded_context_code_files']:.2f}, "
+              f"multi-query={summary['mean_multi_query_context_code_files']:.2f}",
               "",
-              "| Case | Direct recall | Curated expanded recall | Direct context | Expanded context |",
-              "|---|---:|---:|---:|---:|",
+              "| Case | Direct recall | Single expanded | Multi-query | Direct ctx | Single ctx | Multi ctx |",
+              "|---|---:|---:|---:|---:|---:|---:|",
           ]
           for item in data["results"]:
               lines.append(
                   f"| {item['id']} | {item['direct']['recall']:.3f} | "
                   f"{item['expanded']['recall']:.3f} | "
+                  f"{item['multi_query']['recall']:.3f} | "
                   f"{item['direct']['context_code_files']} | "
-                  f"{item['expanded']['context_code_files']} |"
+                  f"{item['expanded']['context_code_files']} | "
+                  f"{item['multi_query']['context_code_files']} |"
               )
           lines.extend(["", summary["interpretation"]])
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
