@@ -46,11 +46,17 @@ def review(
         )
 
     artifacts = context.get("artifacts", [])
-    required_by_path = {
-        item.get("path"): item
-        for item in artifacts
-        if isinstance(item, dict) and isinstance(item.get("path"), str)
-    }
+    required_by_path: dict[str, dict] = {}
+    context_duplicate_paths: list[str] = []
+    for item in artifacts:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            continue
+        path = item["path"]
+        if path in required_by_path:
+            context_duplicate_paths.append(path)
+            errors.append(f"Task Context contains duplicate artifact path {path!r}")
+            continue
+        required_by_path[path] = item
 
     coverage_by_path: dict[str, dict] = {}
     duplicate_paths: list[str] = []
@@ -90,6 +96,13 @@ def review(
         artifact = required_by_path[path]
         prepared_sha256 = artifact.get("sha256")
         current_path = (root / path).resolve()
+        try:
+            current_path.relative_to(root.resolve())
+        except ValueError:
+            errors.append(
+                f"Task Context artifact escapes repository root: {path!r}"
+            )
+            continue
         current_exists = current_path.is_file()
 
         if disposition == "updated" and prepared_sha256:
@@ -129,7 +142,9 @@ def review(
         ),
         "missing_artifacts": missing_paths,
         "unknown_artifacts": sorted(set(unknown_paths)),
-        "duplicate_artifacts": sorted(set(duplicate_paths)),
+        "duplicate_artifacts": sorted(
+            set(duplicate_paths).union(context_duplicate_paths)
+        ),
         "updated_verified": sorted(updated_verified),
         "stale_artifacts": sorted(stale_paths),
         "owner_decision_artifacts": sorted(owner_decision_paths),
