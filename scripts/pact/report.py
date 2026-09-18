@@ -45,6 +45,7 @@ def cross_validate(
     convergence: dict,
     *,
     root: pathlib.Path = ROOT,
+    validate_provenance: bool = True,
 ) -> list[str]:
     errors: list[str] = []
 
@@ -78,8 +79,11 @@ def cross_validate(
                     f"'{evidence_id}' (status={claim.get('status')!r})"
                 )
 
-    provenance_errors, policy_gaps, _ = provenance_review(evidence, root)
-    errors.extend(f"evidence provenance: {error}" for error in provenance_errors)
+    if validate_provenance:
+        provenance_errors, policy_gaps, _ = provenance_review(evidence, root)
+        errors.extend(f"evidence provenance: {error}" for error in provenance_errors)
+    else:
+        policy_gaps = []
 
     ready = evidence_readiness(evidence, policy_gaps)
     conv = convergence_outcome(convergence)
