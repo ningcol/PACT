@@ -114,7 +114,6 @@ def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
                 "score": score,
                 "is_test": bool(related.get("is_test")),
                 "confidence": confidence,
-                "confidence": confidence,
             }
 
         if edge["to"] in changed_set and edge["from"] not in changed_set:
@@ -129,6 +128,7 @@ def code_impact_candidates(changed: list[str], code_map: dict) -> list[dict]:
                 "relation": "imported-by",
                 "score": score,
                 "is_test": bool(related.get("is_test")),
+                "confidence": confidence,
             }
 
     return sorted(
