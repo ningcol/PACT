@@ -99,22 +99,42 @@ python scripts/pact/pact.py impact --base main --json
 
 ## Adopt PACT in an existing project
 
-From a PACT checkout:
+You do **not** need to clone PACT or install Python packages.
+
+Recommended bootstrap flow:
 
 ```bash
+# Pin a tag or exact commit for reproducibility.
+PACT_REF="<tag-or-commit>"
+
+curl -fsSL   "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py"   -o /tmp/pact-bootstrap.py
+
 # Preview only — writes nothing.
-python scripts/pact/pact.py init --target ../my-existing-project
+python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"
 
-# Create only missing scaffold files.
-python scripts/pact/pact.py init --target ../my-existing-project --apply
+# Apply after reviewing the plan.
+python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"   --apply
 
-# Optional: also create a separate PACT GitHub Actions workflow.
-python scripts/pact/pact.py init --target ../my-existing-project --apply --github-actions
-
-# Later, from a newer PACT checkout:
-python scripts/pact/pact.py upgrade --target ../my-existing-project
-python scripts/pact/pact.py upgrade --target ../my-existing-project --apply
+# Optional separate PACT CI workflow.
+python3 /tmp/pact-bootstrap.py init   --target ../my-existing-project   --ref "$PACT_REF"   --apply   --github-actions
 ```
+
+For a quick moving-main trial, use `--ref main`; PACT prints a warning that this is not reproducible.
+
+Later, upgrade without cloning:
+
+```bash
+PACT_REF="<new-tag-or-commit>"
+curl -fsSL   "https://raw.githubusercontent.com/ningcol/PACT/$PACT_REF/bootstrap.py"   -o /tmp/pact-bootstrap.py
+
+# Preview upgrade.
+python3 /tmp/pact-bootstrap.py upgrade   --target ../my-existing-project   --ref "$PACT_REF"
+
+# Transactional apply.
+python3 /tmp/pact-bootstrap.py upgrade   --target ../my-existing-project   --ref "$PACT_REF"   --apply
+```
+
+A local PACT checkout remains supported for development/offline use.
 
 Safety rules:
 
@@ -176,6 +196,8 @@ PACT records installation provenance in `.pact/install.json`.
 Framework runtime/schema/template files can be upgraded only if they have not been locally modified since the previous install. Project-owned seeds such as Owner config, baseline state, governance, Agent Skills, and AGENTS are never silently overwritten.
 
 If both a framework-managed target file and the newer PACT source changed, automatic upgrade stops before changing anything.
+
+Upgrade apply is transactional: replacement files are staged first, current files and the install manifest are backed up, replacements use atomic file swaps, and any apply/validation failure triggers rollback. Obsolete framework files are reported but never auto-deleted.
 
 ## Scaffolded is not PACT-ready
 
