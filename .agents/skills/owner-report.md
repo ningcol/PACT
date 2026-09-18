@@ -22,14 +22,12 @@ Then produce the completion report using:
 - Evidence Receipt;
 - Convergence Report.
 
-For machine-checked reporting, create an Owner Report conforming to:
+For machine-checked reporting, create an Owner Report and validate/render it through the active PACT runtime. The canonical editable schema lives in the PACT source repository at `.pact/schema/owner-report.schema.json`; adopted compact runtimes embed that protocol internally.
 
-`.pact/schema/owner-report.schema.json`
-
-and validate/render it with:
+Validate/render it with:
 
 ```bash
-python scripts/pact/report.py owner-report.json \
+python pact.py report owner-report.json \
   --evidence evidence-receipt.json \
   --convergence convergence-report.json
 ```
