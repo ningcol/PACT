@@ -91,6 +91,72 @@ class MultiQueryRetrievalTests(unittest.TestCase):
             fused[0]["reasons"],
         )
 
+    def test_identifier_family_expansion_stays_within_anchored_directory(self) -> None:
+        code_index = {
+            "files": [
+                {
+                    "path": "src/sync/dynamic/webhook.ts",
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": ["DynamicWebhook"],
+                    "identifiers": [],
+                    "imports": [],
+                },
+                {
+                    "path": "src/sync/dynamic/facebook.ts",
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": ["DynamicFacebook"],
+                    "identifiers": ["autoPublish"],
+                    "imports": [],
+                },
+                {
+                    "path": "src/other/foo.ts",
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": ["Foo"],
+                    "identifiers": ["autoPublish"],
+                    "imports": [],
+                },
+            ],
+            "edges": [],
+        }
+        query_results = [
+            (
+                "webhook",
+                [
+                    {
+                        "path": "src/sync/dynamic/webhook.ts",
+                        "score": 100,
+                        "reasons": ["path contains query"],
+                        "language": "typescript",
+                        "is_test": False,
+                        "symbols": ["DynamicWebhook"],
+                        "relation": "direct-match",
+                        "confidence": "direct",
+                    }
+                ],
+            ),
+            ("autoPublish", []),
+        ]
+
+        family = discover.ranked_query_family_results(
+            code_index,
+            ["webhook", "autoPublish"],
+            query_results,
+            limit=8,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in family],
+            ["src/sync/dynamic/facebook.ts"],
+        )
+        self.assertEqual(family[0]["relation"], "query-family")
+        self.assertIn(
+            "shared query identifier(s): autopublish",
+            family[0]["reasons"],
+        )
+
     def test_direct_match_wins_relation_when_another_query_finds_neighbor(self) -> None:
         fused = discover.fuse_ranked_results(
             [
