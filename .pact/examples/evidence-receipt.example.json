@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "task": "Example province switch behavior",
+  "risk_level": "medium",
+  "claims": [
+    {
+      "id": "EV-PROVINCE-SWITCH",
+      "claim": "Displayed data follows the newly selected province.",
+      "required": true,
+      "status": "pass",
+      "evidence": [
+        {
+          "kind": "browser",
+          "ref": "example://browser/province-switch",
+          "note": "Example only; real projects should use a concrete test/run/artifact reference."
+        }
+      ]
+    },
+    {
+      "id": "EV-PROVINCE-REFRESH",
+      "claim": "The expected province state remains correct after refresh.",
+      "required": true,
+      "status": "pass",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "example://test/province-refresh"
+        }
+      ]
+    }
+  ],
+  "limitations": []
+}
