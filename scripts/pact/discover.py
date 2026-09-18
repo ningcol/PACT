@@ -116,6 +116,8 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
     path = norm(item.get("path", ""))
     name = norm(pathlib.PurePosixPath(item.get("path", "")).stem)
     symbols = [norm(x) for x in item.get("symbols", [])]
+    contracts = [norm(x) for x in item.get("contracts", [])]
+    imported_names = [norm(x) for x in item.get("imported_names", [])]
     imports = [norm(x.get("raw", "")) for x in item.get("imports", [])]
 
     score = 0
@@ -139,6 +141,20 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
         score += 45
         reasons.append("import text contains query")
 
+    if q and q in contracts:
+        score += 115
+        reasons.append("exact contract declaration")
+    elif q and any(q in value for value in contracts):
+        score += 75
+        reasons.append("contract declaration contains query")
+
+    if q and q in imported_names:
+        score += 100
+        reasons.append("exact imported symbol")
+    elif q and any(q in value for value in imported_names):
+        score += 65
+        reasons.append("imported symbol contains query")
+
     matched = 0
     for term in ts:
         term_score = 0
@@ -148,6 +164,14 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
             term_score = max(term_score, 25)
         if any(term in raw for raw in imports):
             term_score = max(term_score, 10)
+        if term in contracts:
+            term_score = max(term_score, 22)
+        elif any(term in value for value in contracts):
+            term_score = max(term_score, 16)
+        if term in imported_names:
+            term_score = max(term_score, 20)
+        elif any(term in value for value in imported_names):
+            term_score = max(term_score, 14)
         if term_score:
             matched += 1
             score += term_score
@@ -253,10 +277,32 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
 
     by_path = {item["path"]: item for item in code_index.get("files", [])}
     neighbors = []
+    query_terms = set(terms(query))
     for path, score in neighbor_scores.items():
         item = by_path.get(path)
         if not item:
             continue
+        identifier_hits = sorted(
+            query_terms.intersection(
+                norm(value) for value in item.get("identifiers", [])
+            )
+        )
+        imported_name_hits = sorted(
+            query_terms.intersection(
+                norm(value) for value in item.get("imported_names", [])
+            )
+        )
+        if identifier_hits:
+            score += 24 + 8 * min(len(identifier_hits), 3)
+            neighbor_reasons.setdefault(path, set()).add(
+                "dependent use-site matches: " + ", ".join(identifier_hits[:6])
+            )
+        if imported_name_hits:
+            score += 18 + 6 * min(len(imported_name_hits), 3)
+            neighbor_reasons.setdefault(path, set()).add(
+                "dependent imported contract(s): "
+                + ", ".join(imported_name_hits[:6])
+            )
         if item.get("is_test"):
             score += 10
         neighbors.append({
@@ -282,76 +328,6 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
 
     neighbors.sort(key=lambda x: (-x["score"], x["path"]))
     return direct + neighbors[: max(limit, 1)]
-
-
-def ranked_query_family_results(
-    code_index: dict,
-    queries: list[str],
-    query_results: list[tuple[str, list[dict]]],
-    limit: int,
-) -> list[dict]:
-    """Expand parallel implementations only inside directories already anchored."""
-    direct_paths = {
-        item["path"]
-        for _query, results in query_results
-        for item in results
-        if item.get("relation") == "direct-match"
-    }
-    if not direct_paths:
-        return []
-
-    anchors_by_parent: dict[str, list[str]] = {}
-    for path in sorted(direct_paths):
-        parent = pathlib.PurePosixPath(path).parent.as_posix()
-        if parent in {"", "."}:
-            continue
-        anchors_by_parent.setdefault(parent, []).append(path)
-
-    query_terms = {
-        term
-        for query in queries
-        for term in terms(query)
-        if len(term) >= 3
-    }
-    if not query_terms:
-        return []
-
-    family = []
-    for item in code_index.get("files", []):
-        path = item.get("path", "")
-        if not path or path in direct_paths:
-            continue
-
-        parent = pathlib.PurePosixPath(path).parent.as_posix()
-        anchors = anchors_by_parent.get(parent)
-        if not anchors:
-            continue
-
-        identifiers = {norm(value) for value in item.get("identifiers", [])}
-        matched = sorted(query_terms.intersection(identifiers))
-        if not matched:
-            continue
-
-        score = 55 + 18 * len(matched) + 5 * min(len(anchors), 3)
-        family.append({
-            "score": score,
-            "reasons": [
-                (
-                    "same directory as query anchor(s): "
-                    + ", ".join(anchors[:3])
-                ),
-                "shared query identifier(s): " + ", ".join(matched[:6]),
-            ],
-            "path": path,
-            "language": item["language"],
-            "is_test": item["is_test"],
-            "symbols": item.get("symbols", []),
-            "relation": "query-family",
-            "confidence": "heuristic",
-        })
-
-    family.sort(key=lambda item: (-item["score"], item["path"]))
-    return family[: max(limit, 1)]
 
 
 def fuse_ranked_results(
@@ -481,17 +457,8 @@ def main() -> int:
         if len(queries) == 1:
             code_results = code_lists[0][1]
         else:
-            family_results = ranked_query_family_results(
-                code_index,
-                queries,
-                code_lists,
-                args.code_limit,
-            )
-            fused_lists = list(code_lists)
-            if family_results:
-                fused_lists.append(("cross-query code family", family_results))
             code_results = fuse_ranked_results(
-                fused_lists,
+                code_lists,
                 args.code_limit,
             )
 
