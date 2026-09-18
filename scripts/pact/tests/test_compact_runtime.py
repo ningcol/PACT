@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+import zipfile
+
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+BUNDLE_MODULE = PROJECT_ROOT / "scripts" / "pact" / "runtime_bundle.py"
+INIT = PROJECT_ROOT / "scripts" / "pact" / "init.py"
+
+spec = importlib.util.spec_from_file_location("pact_runtime_bundle", BUNDLE_MODULE)
+runtime_bundle = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(runtime_bundle)
+
+
+class CompactRuntimeTests(unittest.TestCase):
+    def test_bundle_is_deterministic_and_has_runtime_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-pyz-") as tmp:
+            root = pathlib.Path(tmp)
+            first = root / "first.pyz"
+            second = root / "second.pyz"
+
+            runtime_bundle.build_runtime_bundle(PROJECT_ROOT, first)
+            runtime_bundle.build_runtime_bundle(PROJECT_ROOT, second)
+
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            self.assertEqual(
+                hashlib.sha256(first.read_bytes()).hexdigest(),
+                hashlib.sha256(second.read_bytes()).hexdigest(),
+            )
+
+            with zipfile.ZipFile(first) as archive:
+                names = set(archive.namelist())
+
+            self.assertIn("__main__.py", names)
+            self.assertIn("pact.py", names)
+            self.assertIn("runtime_exec.py", names)
+            self.assertIn("task.py", names)
+            self.assertNotIn("tests/test_task_surface.py", names)
+
+    def test_fresh_init_installs_one_runtime_bundle_and_executes_it(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-compact-init-") as tmp:
+            target = pathlib.Path(tmp) / "target"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(INIT),
+                    "--target",
+                    str(target),
+                    "--apply",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            bundle = target / ".pact" / "pact.pyz"
+            self.assertTrue(bundle.is_file())
+            self.assertFalse((target / "scripts" / "pact").exists())
+
+            manifest = json.loads(
+                (target / ".pact" / "install.json").read_text(encoding="utf-8")
+            )
+            runtime_entries = [
+                path
+                for path, record in manifest["files"].items()
+                if record.get("management") == "framework"
+                and (
+                    path == ".pact/pact.pyz"
+                    or path.startswith("scripts/pact/")
+                )
+            ]
+            self.assertEqual(runtime_entries, [".pact/pact.pyz"])
+
+            help_result = subprocess.run(
+                [sys.executable, str(target / "pact.py"), "--help"],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                help_result.returncode,
+                0,
+                help_result.stdout + help_result.stderr,
+            )
+            self.assertIn("PACT Project AI Control Plane", help_result.stdout)
+
+            status = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "pact.py"),
+                    "status",
+                    "--json",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+            data = json.loads(status.stdout)
+            self.assertIn(data["overall"], {"pass", "warn"})
+
+
+if __name__ == "__main__":
+    unittest.main()
