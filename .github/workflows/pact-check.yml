@@ -16,6 +16,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Assert zero third-party runtime dependencies
+        run: |
+          test ! -e scripts/pact/requirements.txt
+          if grep -R -n -E '^(from|import) (yaml|jsonschema)([ .]|$)' scripts/pact --include='*.py'; then
+            echo "PACT core must remain stdlib-only"
+            exit 1
+          fi
+
       - name: PACT doctor
         run: python scripts/pact/pact.py doctor
 
