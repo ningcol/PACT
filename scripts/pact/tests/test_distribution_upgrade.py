@@ -95,7 +95,16 @@ class DistributionUpgradeTests(unittest.TestCase):
             "framework",
         )
         self.assertTrue((self.target / ".pact" / "pact.pyz").is_file())
-        self.assertFalse((self.target / "scripts" / "pact").exists())
+        legacy_entry = self.target / "scripts" / "pact" / "pact.py"
+        self.assertTrue(legacy_entry.is_file())
+        self.assertEqual(
+            sorted(
+                path.name
+                for path in legacy_entry.parent.iterdir()
+                if path.is_file()
+            ),
+            ["pact.py"],
+        )
 
         version = self.run_target("version", "--json")
         self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
