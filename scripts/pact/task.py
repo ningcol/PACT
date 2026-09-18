@@ -193,7 +193,11 @@ def finish(args) -> int:
     if completed.returncode == 0 and manifest is not None:
         manifest["status"] = "completed"
         manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
-        manifest["completion_bundle"] = bundle.relative_to(ROOT).as_posix()
+        try:
+            bundle_display = bundle.relative_to(ROOT).as_posix()
+        except ValueError:
+            bundle_display = str(bundle)
+        manifest["completion_bundle"] = bundle_display
         write_json(manifest_path, manifest)
 
     if args.json and output is not None:
