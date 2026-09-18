@@ -37,10 +37,20 @@ FRAMEWORK_DOCS = [
 ]
 
 SEED_SOURCE_MAPPINGS = [
-    (".pact/config.example.yaml", ".pact/config.yaml"),
-    (".pact/baseline.example.yaml", ".pact/baseline.yaml"),
-    (".pact/fitness.example.yaml", ".pact/fitness.yaml"),
+    (".pact/config.example.toml", ".pact/config.toml"),
+    (".pact/baseline.example.toml", ".pact/baseline.toml"),
+    (".pact/fitness.example.toml", ".pact/fitness.toml"),
 ]
+
+LEGACY_SEED_TARGETS = {
+    ".pact/config.toml": ".pact/config.yaml",
+    ".pact/baseline.toml": ".pact/baseline.yaml",
+    ".pact/fitness.toml": ".pact/fitness.yaml",
+}
+
+
+def legacy_seed_target(target_rel: str) -> str | None:
+    return LEGACY_SEED_TARGETS.get(target_rel)
 
 
 def sha256_file(path: pathlib.Path) -> str:
