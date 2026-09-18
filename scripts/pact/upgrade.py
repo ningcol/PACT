@@ -64,6 +64,27 @@ def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: d
     return entries
 
 
+def project_seed_references(
+    target: pathlib.Path,
+    tracked: dict,
+    relative: str,
+) -> list[str]:
+    references: list[str] = []
+    for seed_path, record in tracked.items():
+        if record.get("management") != "seed":
+            continue
+        path = target / seed_path
+        if not path.is_file():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if relative in content:
+            references.append(seed_path)
+    return sorted(references)
+
+
 def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict) -> dict:
     tracked = manifest.get("files", {})
     entries = desired_entries(source_root, target, manifest)
@@ -248,7 +269,35 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
 
         current_sha = sha256_file(destination)
         installed_sha = record.get("installed_sha256")
-        if isinstance(installed_sha, str) and current_sha == installed_sha:
+        seed_refs = (
+            project_seed_references(target, tracked, path)
+            if path.startswith(".pact/schema/")
+            else []
+        )
+        if (
+            seed_refs
+            and isinstance(installed_sha, str)
+            and current_sha == installed_sha
+        ):
+            operations.append({
+                "action": "reclassify-seed",
+                "path": path,
+                "reason": (
+                    "obsolete framework schema is still referenced by "
+                    "project-owned guidance; preserve it as compatibility seed"
+                ),
+                "referenced_by": seed_refs,
+            })
+            notices.append({
+                "kind": "obsolete-schema-referenced-by-project-seed",
+                "path": path,
+                "reason": (
+                    "preserved as project-owned compatibility copy because "
+                    "existing seed guidance still references this path"
+                ),
+                "referenced_by": seed_refs,
+            })
+        elif isinstance(installed_sha, str) and current_sha == installed_sha:
             operations.append({
                 "action": "remove-framework",
                 "path": path,
@@ -458,6 +507,10 @@ def apply_upgrade(
             for op in plan["operations"]:
                 if op["action"] == "detach-framework":
                     files.pop(op["path"], None)
+                elif op["action"] == "reclassify-seed":
+                    record = dict(files.get(op["path"], {}))
+                    record["management"] = "seed"
+                    files[op["path"]] = record
 
             touched = []
             for op in [
