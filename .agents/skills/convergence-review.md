@@ -34,6 +34,24 @@ Do not expand to the entire repository unless risk or uncertainty requires it.
 - `unrequested` — behavior was added without supported intent.
 - `owner-decision` — ambiguity is genuinely product/risk-level.
 
+## Task Context coverage
+
+When the task was prepared through `pact task prepare`, the Convergence Report must bind to that exact Task Context and explicitly dispose every selected knowledge artifact.
+
+For each entry in `context.artifacts`, emit one `coverage` item:
+
+- `aligned` — reviewed and still correct;
+- `updated` — changed during this task so current project knowledge matches the implementation;
+- `stale` — known current-state drift remains and must be visible;
+- `owner-decision` — the artifact cannot converge without a genuine product/risk decision;
+- `not-applicable` — the artifact was retrieved but is not affected by this change.
+
+Every item requires a concrete rationale. Do not omit an artifact merely because no finding was discovered.
+
+`updated` is mechanically checked when the prepared Context captured an artifact SHA: the current artifact must actually differ (or have been removed). This does not prove semantic correctness, but prevents a no-op file from being reported as updated.
+
+An `owner-decision` coverage item must be accompanied by an `owner-decision` finding containing the owner-facing question.
+
 ## Output contract
 
 For a durable or machine-consumed review, emit a JSON report conforming to:
