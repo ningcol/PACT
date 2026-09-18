@@ -26,7 +26,7 @@ Those belong in durable decisions.
 
 Architecture docs may describe current facts that can become stale. Where important constraints are mechanically checkable, prefer converting them into architecture fitness functions/CI gates over relying on prose alone.
 
-Project-owned executable invariants are registered in `.pact/fitness.yaml` and run with:
+Project-owned executable invariants are registered in `.pact/fitness.toml` and run with:
 
 ```bash
 python scripts/pact/pact.py fitness
