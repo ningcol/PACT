@@ -41,6 +41,11 @@ def main() -> int:
         "--root",
         help="repository root used to resolve Evidence provenance refs",
     )
+    parser.add_argument(
+        "--require-ci",
+        action="store_true",
+        help="require at least one CI-backed Evidence claim for completion",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -78,13 +83,29 @@ def main() -> int:
     errors.extend(validate_report_part(owner, OWNER_SCHEMA, "owner"))
 
     policy_gaps: list[str] = []
+    provenance_stats = {
+        "machine_backed_claims": 0,
+        "workspace_bound_claims": 0,
+        "ci_backed_claims": 0,
+        "current_workspace": None,
+    }
     if not errors:
-        provenance_errors, policy_gaps, _ = provenance_review(evidence, root)
+        provenance_errors, policy_gaps, provenance_stats = provenance_review(
+            evidence, root
+        )
         errors.extend(
             f"evidence provenance: {error}"
             for error in provenance_errors
         )
-        errors.extend(cross_validate(owner, evidence, convergence, root=root))
+        errors.extend(
+            cross_validate(
+                owner,
+                evidence,
+                convergence,
+                root=root,
+                validate_provenance=False,
+            )
+        )
 
     risk = evidence.get("risk_level")
     evidence_state = (
@@ -114,6 +135,16 @@ def main() -> int:
             f"completion bundle Convergence is blocking ({convergence_state})"
         )
 
+    if (
+        not errors
+        and args.require_ci
+        and provenance_stats.get("ci_backed_claims", 0) == 0
+    ):
+        errors.append(
+            "completion requires CI-backed Evidence but no claim is backed by "
+            "a GitHub Actions pact-run receipt"
+        )
+
     if not errors and risk == "high":
         if evidence.get("limitations"):
             errors.append(
@@ -134,6 +165,10 @@ def main() -> int:
         "complete": not errors,
         "errors": errors,
         "policy_gaps": policy_gaps,
+        "machine_backed_claims": provenance_stats.get("machine_backed_claims", 0),
+        "workspace_bound_claims": provenance_stats.get("workspace_bound_claims", 0),
+        "ci_backed_claims": provenance_stats.get("ci_backed_claims", 0),
+        "current_workspace": provenance_stats.get("current_workspace"),
         "bundle": str(bundle),
     }
 
@@ -146,6 +181,12 @@ def main() -> int:
         print(f"- evidence: {evidence_state}")
         print(f"- convergence: {convergence_state}")
         print(f"- owner status: {owner.get('status')}")
+        print(
+            "- evidence backing: "
+            f"machine={result['machine_backed_claims']}, "
+            f"workspace-bound={result['workspace_bound_claims']}, "
+            f"ci-backed={result['ci_backed_claims']}"
+        )
         if policy_gaps:
             print("Policy gaps:")
             for gap in policy_gaps:
