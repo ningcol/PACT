@@ -134,6 +134,7 @@ class TaskSurfaceTests(unittest.TestCase):
             "task_id": task_id,
             "task": "change password reset behavior",
             "risk_level": "medium",
+            "task_contract_sha256": prep["contract_sha256"],
             "claims": [
                 {
                     "id": "EV-TASK-HAPPY",
@@ -232,12 +233,14 @@ class TaskSurfaceTests(unittest.TestCase):
             "--json",
         )
         self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
 
         evidence = {
             "version": 1,
             "task_id": task_id,
             "task": "change password reset behavior",
             "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
             "claims": [
                 {
                     "id": "EV-ONLY-ONE",
@@ -306,6 +309,99 @@ class TaskSurfaceTests(unittest.TestCase):
             )
         )
 
+
+
+    def test_task_finish_rejects_evidence_for_stale_task_contract(self) -> None:
+        task_id = "TASK-STALE-CONTRACT"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "change password reset behavior",
+            "--success",
+            "Password reset remains correct",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+
+        contract_path = self.root / prep["contract"]
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["acceptance_criteria"][0]["text"] = "Different acceptance after verification"
+        contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+
+        evidence = {
+            "version": 1,
+            "task_id": task_id,
+            "task": "change password reset behavior",
+            "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
+            "claims": [
+                {
+                    "id": "EV-STALE-CONTRACT",
+                    "claim": "Old contract was verified.",
+                    "required": True,
+                    "status": "pass",
+                    "criteria": ["AC-1"],
+                    "evidence": [
+                        {
+                            "kind": "other",
+                            "provenance": "file",
+                            "ref": "README.md",
+                        }
+                    ],
+                }
+            ],
+            "limitations": [],
+        }
+        convergence = {
+            "version": 1,
+            "task_id": task_id,
+            "change": "change password reset behavior",
+            "owner_summary": "No drift found.",
+            "evidence": ["EV-STALE-CONTRACT"],
+            "findings": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "completed",
+            "summary": "Old acceptance verified.",
+            "before": "Before state.",
+            "after": "After state.",
+            "verification": [
+                {
+                    "claim": "Old contract was verified.",
+                    "evidence_ids": ["EV-STALE-CONTRACT"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Different acceptance after verification",
+                    "evidence_ids": ["EV-STALE-CONTRACT"],
+                }
+            ],
+            "consistency": {
+                "status": "aligned",
+                "summary": "No blocking drift.",
+            },
+            "owner_decisions": [],
+        }
+        self.write_json(f".pact/completions/{task_id}/evidence.json", evidence)
+        self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
+        self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertFalse(result["complete"])
+        self.assertTrue(
+            any("task_contract_sha256" in error for error in result["errors"])
+        )
 
     def test_task_finish_requires_prepared_task(self) -> None:
         finished = self.pact(
