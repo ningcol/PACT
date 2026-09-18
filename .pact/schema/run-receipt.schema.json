@@ -15,25 +15,200 @@
     "stdout_sha256",
     "stderr_sha256",
     "git_head",
-    "git_dirty"
+    "git_dirty",
+    "argv_redacted",
+    "redacted_argument_count",
+    "workspace_before",
+    "workspace_after",
+    "workspace_changed",
+    "ci"
   ],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
-    "task_id": { "type": "string", "minLength": 1 },
+    "version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "argv": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
-    "cwd": { "type": "string", "minLength": 1 },
-    "started_at": { "type": "string", "minLength": 1 },
-    "finished_at": { "type": "string", "minLength": 1 },
-    "exit_code": { "type": "integer" },
-    "status": { "enum": ["pass", "fail"] },
-    "stdout_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "stderr_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "git_head": { "type": ["string", "null"] },
-    "git_dirty": { "type": ["boolean", "null"] }
+    "cwd": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "finished_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "stdout_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "stderr_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "git_head": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "git_dirty": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "argv_redacted": {
+      "type": "boolean"
+    },
+    "redacted_argument_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "workspace_before": {
+      "$ref": "#/$defs/workspace"
+    },
+    "workspace_after": {
+      "$ref": "#/$defs/workspace"
+    },
+    "workspace_changed": {
+      "type": "boolean"
+    },
+    "ci": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/ci"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "workspace": {
+      "type": "object",
+      "required": [
+        "kind",
+        "sha256",
+        "git_head",
+        "dirty",
+        "untracked_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "git",
+            "filesystem"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "git_head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "untracked_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "required": [
+        "provider",
+        "repository",
+        "run_id",
+        "run_attempt",
+        "job",
+        "workflow",
+        "sha",
+        "ref",
+        "server_url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "const": "github-actions"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_attempt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "job": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workflow": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
   }
 }
