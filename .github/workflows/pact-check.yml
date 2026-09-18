@@ -1,0 +1,23 @@
+name: PACT Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  pact-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PACT checker dependencies
+        run: python -m pip install -r scripts/pact/requirements.txt
+
+      - name: Run deterministic PACT checks
+        run: python scripts/pact/check.py
