@@ -279,6 +279,8 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertIn(".pact/pact.pyz", manifest["files"])
         self.assertIn("scripts/pact/pact.py", manifest["files"])
+        self.assertIn("scripts/pact/converge.py", manifest["files"])
+        self.assertIn("scripts/pact/report.py", manifest["files"])
 
         legacy_status = subprocess.run(
             [sys.executable, str(legacy_entry), "status", "--json"],
@@ -388,6 +390,54 @@ class DistributionUpgradeTests(unittest.TestCase):
             "LOCAL DISPATCHER CHANGE",
             dispatcher.read_text(encoding="utf-8"),
         )
+
+    def test_referenced_old_schema_becomes_compatibility_seed(self) -> None:
+        manifest = self.scaffold()
+
+        seed_path = self.target / ".agents" / "skills" / "convergence-review.md"
+        seed_path.write_text(
+            seed_path.read_text(encoding="utf-8")
+            + "\nLegacy schema reference: .pact/schema/convergence-report.schema.json\n",
+            encoding="utf-8",
+        )
+
+        relative = ".pact/schema/convergence-report.schema.json"
+        source = PROJECT_ROOT / relative
+        destination = self.target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+        import hashlib
+        installed_sha = hashlib.sha256(destination.read_bytes()).hexdigest()
+        manifest["files"][relative] = {
+            "management": "framework",
+            "source_path": relative,
+            "source_sha256": installed_sha,
+            "installed_sha256": installed_sha,
+        }
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
+        result = self.run_upgrade("--apply", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        kinds = {notice["kind"] for notice in data["notices"]}
+        self.assertIn("obsolete-schema-referenced-by-project-seed", kinds)
+
+        self.assertTrue(destination.is_file())
+        updated_manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            updated_manifest["files"][relative]["management"],
+            "seed",
+        )
+
+        linted = self.run_target("schema-lint")
+        self.assertEqual(linted.returncode, 0, linted.stdout + linted.stderr)
 
     def test_modified_obsolete_schema_is_preserved_but_embedded_protocol_wins(self) -> None:
         manifest = self.scaffold()
