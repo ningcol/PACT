@@ -1,7 +1,8 @@
 {
   "version": 1,
+  "task_id": "example-province-switch",
   "task": "Example province switch behavior",
-  "risk_level": "medium",
+  "risk_level": "low",
   "claims": [
     {
       "id": "EV-PROVINCE-SWITCH",
@@ -10,9 +11,10 @@
       "status": "pass",
       "evidence": [
         {
-          "kind": "browser",
-          "ref": "example://browser/province-switch",
-          "note": "Example only; real projects should use a concrete test/run/artifact reference."
+          "kind": "manual",
+          "provenance": "manual",
+          "ref": "example human confirmation",
+          "note": "Static framework example only; medium/high risk requires machine-backed evidence."
         }
       ]
     },
@@ -23,8 +25,9 @@
       "status": "pass",
       "evidence": [
         {
-          "kind": "test",
-          "ref": "example://test/province-refresh"
+          "kind": "manual",
+          "provenance": "manual",
+          "ref": "example human confirmation"
         }
       ]
     }
