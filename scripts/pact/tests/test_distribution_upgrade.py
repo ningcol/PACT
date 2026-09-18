@@ -11,6 +11,8 @@ import unittest
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 INIT = PROJECT_ROOT / "scripts" / "pact" / "init.py"
 UPGRADE = PROJECT_ROOT / "scripts" / "pact" / "upgrade.py"
+SOURCE_VERSION = (PROJECT_ROOT / ".pact" / "VERSION").read_text(encoding="utf-8").strip()
+NEXT_VERSION = "9.9.9-test"
 
 
 class DistributionUpgradeTests(unittest.TestCase):
@@ -59,7 +61,7 @@ class DistributionUpgradeTests(unittest.TestCase):
 
     def test_init_records_framework_and_seed_ownership(self) -> None:
         manifest = self.scaffold()
-        self.assertEqual(manifest["runtime_version"], "0.1.0")
+        self.assertEqual(manifest["runtime_version"], SOURCE_VERSION)
         self.assertEqual(
             manifest["files"]["scripts/pact/README.md"]["management"],
             "framework",
@@ -72,7 +74,7 @@ class DistributionUpgradeTests(unittest.TestCase):
     def test_clean_framework_upgrade_updates_atomically(self) -> None:
         self.scaffold()
 
-        self.write_source(".pact/VERSION", "0.2.0\n")
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
         self.write_source("scripts/pact/README.md", "# New Runtime Docs\n")
 
         result = self.run_upgrade("--apply", "--json")
@@ -84,13 +86,13 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertEqual(
             (self.target / ".pact" / "VERSION").read_text(encoding="utf-8"),
-            "0.2.0\n",
+            NEXT_VERSION + "\n",
         )
 
         manifest = json.loads(
             (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["runtime_version"], "0.2.0")
+        self.assertEqual(manifest["runtime_version"], NEXT_VERSION)
 
     def test_conflicting_framework_change_blocks_entire_apply(self) -> None:
         manifest = self.scaffold()
@@ -99,7 +101,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         runtime_readme = self.target / "scripts" / "pact" / "README.md"
         runtime_readme.write_text("# Local Project Modification\n", encoding="utf-8")
 
-        self.write_source(".pact/VERSION", "0.2.0\n")
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
         self.write_source("scripts/pact/README.md", "# Upstream Runtime Change\n")
 
         result = self.run_upgrade("--apply", "--json")
@@ -111,7 +113,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertEqual(
             (self.target / ".pact" / "VERSION").read_text(encoding="utf-8"),
-            "0.1.0\n",
+            SOURCE_VERSION + "\n",
         )
 
         after = json.loads(
@@ -125,7 +127,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         config = self.target / ".pact" / "config.yaml"
         config.write_text("# PROJECT OWNED CONFIG\n", encoding="utf-8")
 
-        self.write_source(".pact/VERSION", "0.2.0\n")
+        self.write_source(".pact/VERSION", NEXT_VERSION + "\n")
         (self.new_source / "scripts" / "pact").mkdir(parents=True, exist_ok=True)
         self.write_source(
             ".pact/config.example.yaml",
