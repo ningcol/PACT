@@ -4,7 +4,7 @@ The owner should be able to control the product without becoming the technical r
 
 ## Owner Profile
 
-Project-specific communication preferences live in `.pact/config.yaml`.
+Project-specific communication preferences live in `.pact/config.toml`.
 
 Before owner-facing explanations, decisions, or completion reports, use the configured profile:
 
