@@ -12,6 +12,8 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 MAP = PROJECT_ROOT / "scripts" / "pact" / "map.py"
 CODE_MAP = PROJECT_ROOT / "scripts" / "pact" / "code_map.py"
 CONTEXT = PROJECT_ROOT / "scripts" / "pact" / "context.py"
+IMPACT = PROJECT_ROOT / "scripts" / "pact" / "impact.py"
+RISK = PROJECT_ROOT / "scripts" / "pact" / "risk.py"
 
 
 class FreshnessAndRiskTests(unittest.TestCase):
@@ -153,6 +155,57 @@ class FreshnessAndRiskTests(unittest.TestCase):
         )
         self.assertTrue(
             any("High-risk task" in item for item in high["known_unknowns"])
+        )
+
+    def run_impact(self, risk: str) -> dict:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(IMPACT),
+                "--files",
+                "scripts/pact/upgrade.py",
+                "--risk",
+                risk,
+                "--json",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_risk_profile_changes_impact_code_analysis(self) -> None:
+        low = self.run_impact("low")
+        medium = self.run_impact("medium")
+
+        self.assertFalse(low["code_analysis"])
+        self.assertTrue(medium["code_analysis"])
+        self.assertEqual(low["risk_level"], "low")
+        self.assertEqual(medium["risk_level"], "medium")
+        self.assertTrue(
+            all(
+                item["confidence"] in {
+                    "relative-resolved",
+                    "ast-resolved",
+                    "heuristic",
+                }
+                for item in medium["code_candidate_impacts"]
+            )
+        )
+
+    def test_risk_command_exposes_high_rigor_policy(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(RISK), "high", "--json"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertTrue(data["code_context_default"])
+        self.assertTrue(
+            any("Convergence" in item for item in data["completion"])
         )
 
 
