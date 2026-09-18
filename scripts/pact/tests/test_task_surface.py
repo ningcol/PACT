@@ -99,6 +99,17 @@ class TaskSurfaceTests(unittest.TestCase):
         contract = json.loads(
             (self.root / prep["contract"]).read_text(encoding="utf-8")
         )
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        coverage = [
+            {
+                "path": item["path"],
+                "disposition": "aligned",
+                "rationale": "Reviewed against the completed task.",
+            }
+            for item in context["artifacts"]
+        ]
         self.assertEqual(
             [item["id"] for item in contract["acceptance_criteria"]],
             ["AC-1", "AC-2", "AC-3"],
@@ -159,6 +170,8 @@ class TaskSurfaceTests(unittest.TestCase):
             "change": "change password reset behavior",
             "owner_summary": "Prepared task remains aligned.",
             "evidence": ["EV-TASK-HAPPY"],
+            "context_sha256": prep["context_sha256"],
+            "coverage": coverage,
             "findings": [],
         }
         owner = {
@@ -247,6 +260,17 @@ class TaskSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
         prep = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        coverage = [
+            {
+                "path": item["path"],
+                "disposition": "aligned",
+                "rationale": "Reviewed against the task.",
+            }
+            for item in context["artifacts"]
+        ]
 
         evidence = {
             "version": 1,
@@ -278,6 +302,8 @@ class TaskSurfaceTests(unittest.TestCase):
             "change": "change password reset behavior",
             "owner_summary": "No drift found.",
             "evidence": ["EV-ONLY-ONE"],
+            "context_sha256": prep["context_sha256"],
+            "coverage": coverage,
             "findings": [],
         }
         owner = {
@@ -348,6 +374,17 @@ class TaskSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
         prep = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        coverage = [
+            {
+                "path": item["path"],
+                "disposition": "aligned",
+                "rationale": "Reviewed against the task.",
+            }
+            for item in context["artifacts"]
+        ]
 
         contract_path = self.root / prep["contract"]
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -384,6 +421,8 @@ class TaskSurfaceTests(unittest.TestCase):
             "change": "change password reset behavior",
             "owner_summary": "No drift found.",
             "evidence": ["EV-STALE-CONTRACT"],
+            "context_sha256": prep["context_sha256"],
+            "coverage": coverage,
             "findings": [],
         }
         owner = {
@@ -423,6 +462,409 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertTrue(
             any("task_contract_sha256" in error for error in result["errors"])
         )
+
+    def test_task_finish_rejects_missing_convergence_coverage(self) -> None:
+        task_id = "TASK-CONVERGENCE-GAP"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "change password reset behavior",
+            "--success",
+            "Password reset remains correct",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        self.assertTrue(context["artifacts"])
+
+        evidence = {
+            "version": 1,
+            "task_id": task_id,
+            "task": "change password reset behavior",
+            "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
+            "claims": [
+                {
+                    "id": "EV-CONVERGENCE-GAP",
+                    "claim": "Behavior is verified.",
+                    "required": True,
+                    "status": "pass",
+                    "criteria": ["AC-1"],
+                    "evidence": [
+                        {
+                            "kind": "other",
+                            "provenance": "file",
+                            "ref": "README.md",
+                        }
+                    ],
+                }
+            ],
+            "limitations": [],
+        }
+        convergence = {
+            "version": 1,
+            "task_id": task_id,
+            "change": "change password reset behavior",
+            "owner_summary": "No drift found.",
+            "evidence": ["EV-CONVERGENCE-GAP"],
+            "context_sha256": prep["context_sha256"],
+            "coverage": [],
+            "findings": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "completed",
+            "summary": "Task verified.",
+            "before": "Before.",
+            "after": "After.",
+            "verification": [
+                {
+                    "claim": "Behavior is verified.",
+                    "evidence_ids": ["EV-CONVERGENCE-GAP"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Password reset remains correct",
+                    "evidence_ids": ["EV-CONVERGENCE-GAP"],
+                }
+            ],
+            "consistency": {
+                "status": "aligned",
+                "summary": "No blocking drift.",
+            },
+            "owner_decisions": [],
+        }
+        self.write_json(f".pact/completions/{task_id}/evidence.json", evidence)
+        self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
+        self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertFalse(result["complete"])
+        self.assertTrue(
+            any(
+                "Task Context artifact missing from Convergence coverage" in error
+                for error in result["errors"]
+            )
+        )
+
+    def test_task_finish_rejects_false_updated_convergence_claim(self) -> None:
+        task_id = "TASK-FALSE-UPDATED"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "change password reset behavior",
+            "--success",
+            "Password reset remains correct",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        self.assertTrue(context["artifacts"])
+
+        coverage = []
+        for index, item in enumerate(context["artifacts"]):
+            coverage.append(
+                {
+                    "path": item["path"],
+                    "disposition": "updated" if index == 0 else "aligned",
+                    "rationale": "Claimed review result.",
+                }
+            )
+
+        evidence = {
+            "version": 1,
+            "task_id": task_id,
+            "task": "change password reset behavior",
+            "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
+            "claims": [
+                {
+                    "id": "EV-FALSE-UPDATED",
+                    "claim": "Behavior is verified.",
+                    "required": True,
+                    "status": "pass",
+                    "criteria": ["AC-1"],
+                    "evidence": [
+                        {
+                            "kind": "other",
+                            "provenance": "file",
+                            "ref": "README.md",
+                        }
+                    ],
+                }
+            ],
+            "limitations": [],
+        }
+        convergence = {
+            "version": 1,
+            "task_id": task_id,
+            "change": "change password reset behavior",
+            "owner_summary": "Knowledge was updated.",
+            "evidence": ["EV-FALSE-UPDATED"],
+            "context_sha256": prep["context_sha256"],
+            "coverage": coverage,
+            "findings": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "completed",
+            "summary": "Task verified.",
+            "before": "Before.",
+            "after": "After.",
+            "verification": [
+                {
+                    "claim": "Behavior is verified.",
+                    "evidence_ids": ["EV-FALSE-UPDATED"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Password reset remains correct",
+                    "evidence_ids": ["EV-FALSE-UPDATED"],
+                }
+            ],
+            "consistency": {
+                "status": "aligned",
+                "summary": "Knowledge aligned.",
+            },
+            "owner_decisions": [],
+        }
+        self.write_json(f".pact/completions/{task_id}/evidence.json", evidence)
+        self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
+        self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertFalse(result["complete"])
+        self.assertTrue(
+            any(
+                "updated but artifact content matches" in error
+                for error in result["errors"]
+            )
+        )
+
+    def test_task_finish_rejects_changed_prepared_context(self) -> None:
+        task_id = "TASK-STALE-CONTEXT"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "change password reset behavior",
+            "--success",
+            "Password reset remains correct",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+
+        context_path = self.root / prep["context"]
+        context = json.loads(context_path.read_text(encoding="utf-8"))
+        context["known_unknowns"].append("Changed after preparation.")
+        context_path.write_text(
+            json.dumps(context, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        import hashlib
+        current_context_sha = hashlib.sha256(context_path.read_bytes()).hexdigest()
+        coverage = [
+            {
+                "path": item["path"],
+                "disposition": "aligned",
+                "rationale": "Reviewed.",
+            }
+            for item in context["artifacts"]
+        ]
+
+        evidence = {
+            "version": 1,
+            "task_id": task_id,
+            "task": "change password reset behavior",
+            "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
+            "claims": [
+                {
+                    "id": "EV-STALE-CONTEXT",
+                    "claim": "Behavior is verified.",
+                    "required": True,
+                    "status": "pass",
+                    "criteria": ["AC-1"],
+                    "evidence": [
+                        {
+                            "kind": "other",
+                            "provenance": "file",
+                            "ref": "README.md",
+                        }
+                    ],
+                }
+            ],
+            "limitations": [],
+        }
+        convergence = {
+            "version": 1,
+            "task_id": task_id,
+            "change": "change password reset behavior",
+            "owner_summary": "No drift found.",
+            "evidence": ["EV-STALE-CONTEXT"],
+            "context_sha256": current_context_sha,
+            "coverage": coverage,
+            "findings": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "completed",
+            "summary": "Task verified.",
+            "before": "Before.",
+            "after": "After.",
+            "verification": [
+                {
+                    "claim": "Behavior is verified.",
+                    "evidence_ids": ["EV-STALE-CONTEXT"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Password reset remains correct",
+                    "evidence_ids": ["EV-STALE-CONTEXT"],
+                }
+            ],
+            "consistency": {
+                "status": "aligned",
+                "summary": "No blocking drift.",
+            },
+            "owner_decisions": [],
+        }
+        self.write_json(f".pact/completions/{task_id}/evidence.json", evidence)
+        self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
+        self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertFalse(result["complete"])
+        self.assertTrue(
+            any(
+                "current Task Context does not match prepared context" in error
+                for error in result["errors"]
+            )
+        )
+
+    def test_precoverage_prepared_task_can_finish_after_upgrade(self) -> None:
+        task_id = "TASK-LEGACY-PREPARED"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "change password reset behavior",
+            "--success",
+            "Password reset remains correct",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.pop("context_sha256", None)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        evidence = {
+            "version": 1,
+            "task_id": task_id,
+            "task": "change password reset behavior",
+            "risk_level": "low",
+            "task_contract_sha256": prep["contract_sha256"],
+            "claims": [
+                {
+                    "id": "EV-LEGACY-PREPARED",
+                    "claim": "Behavior is verified.",
+                    "required": True,
+                    "status": "pass",
+                    "criteria": ["AC-1"],
+                    "evidence": [
+                        {
+                            "kind": "other",
+                            "provenance": "file",
+                            "ref": "README.md",
+                        }
+                    ],
+                }
+            ],
+            "limitations": [],
+        }
+        convergence = {
+            "version": 1,
+            "task_id": task_id,
+            "change": "change password reset behavior",
+            "owner_summary": "Legacy prepared task remains compatible.",
+            "evidence": ["EV-LEGACY-PREPARED"],
+            "findings": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "completed",
+            "summary": "Legacy task verified.",
+            "before": "Before.",
+            "after": "After.",
+            "verification": [
+                {
+                    "claim": "Behavior is verified.",
+                    "evidence_ids": ["EV-LEGACY-PREPARED"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Password reset remains correct",
+                    "evidence_ids": ["EV-LEGACY-PREPARED"],
+                }
+            ],
+            "consistency": {
+                "status": "aligned",
+                "summary": "No blocking drift.",
+            },
+            "owner_decisions": [],
+        }
+        self.write_json(f".pact/completions/{task_id}/evidence.json", evidence)
+        self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
+        self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.assertTrue(json.loads(finished.stdout)["complete"])
 
     def test_task_finish_requires_prepared_task(self) -> None:
         finished = self.pact(

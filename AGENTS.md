@@ -61,6 +61,7 @@ Done requires, as applicable:
 - implementation complete;
 - every Task Contract acceptance criterion verified and owner-visible;
 - observable behavior verified;
+- every prepared Task Context knowledge artifact explicitly reviewed for convergence;
 - relevant truth converged;
 - no unresolved blocking ambiguity;
 - evidence exists for completion claims.
