@@ -93,7 +93,7 @@ def classify(doc: dict) -> str:
     typ = doc.get("artifact_type")
     path = doc.get("path", "")
 
-    if typ in {"domain", "rule"}:
+    if typ in {"domain", "rule"} and doc.get("status") == "confirmed":
         return "product_truth"
     if typ == "architecture" or path.startswith("docs/architecture/"):
         return "architecture"
@@ -225,9 +225,13 @@ def main() -> int:
         )
         packet["followup"].append("inspect-code")
 
-    if not packet["decisions"]:
+    implemented_decisions = [
+        item for item in packet["decisions"]
+        if item.get("status") == "implemented"
+    ]
+    if not implemented_decisions:
         packet["gaps"].append(
-            "No durable Decision Record was found for the query; do not invent why the design exists."
+            "No implemented Decision Record was found for the current rationale; proposed, rejected, or superseded decisions must not be presented as the reason the current design exists."
         )
         packet["followup"].append("inspect-git-history")
 
