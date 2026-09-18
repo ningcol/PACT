@@ -13,8 +13,8 @@ Each case records:
 - a real repository;
 - a pre-change `base_commit`;
 - the later real `target_commit`;
-- the historical task in owner-facing language;
-- an optional Agent-expanded search query.
+- a historical task proxy reconstructed from the commit message unless another source is explicitly recorded;
+- an optional curated expanded search query used as a post-hoc diagnostic.
 
 The harness computes the oracle mechanically from:
 
@@ -30,17 +30,23 @@ Every case is replayed twice.
 
 ### Direct
 
-PACT receives the owner-facing task text as the discovery query.
+PACT receives the task proxy as the discovery query.
 
-This measures how well the current high-level surface works without semantic expansion.
+This measures the current high-level surface against a repeatable historical description, but it is **not** a reconstruction of the exact original owner prompt unless a case explicitly provides one.
 
-### Expanded
+### Curated expanded diagnostic
 
-The task remains unchanged, but the query is expanded with likely code/business vocabulary.
+The task remains unchanged, but the query is manually expanded with likely code/business vocabulary.
 
-This tests the hypothesis that lightweight Agent query expansion may improve recall before PACT adds embeddings or a vector database.
+The initial expanded queries are curated with hindsight from the historical change. They are therefore an **upper-bound diagnostic**, not an unbiased measurement of what an Agent would have generated before implementation.
 
-The expanded query is stored with each benchmark case so the benchmark remains repeatable.
+This diagnostic answers a narrower question:
+
+> If the Agent can supply better vocabulary, is lexical + graph retrieval already sufficient enough to improve recall?
+
+If curated expansion materially improves recall, that is evidence to test automatic query expansion before adding embeddings or a vector database. If it does not, query expansion alone is unlikely to solve the retrieval gap.
+
+The expanded query and its provenance are stored with each benchmark case so the benchmark remains repeatable.
 
 ## Metrics
 
@@ -56,7 +62,7 @@ Per case:
 
 The precision value is intentionally called a **proxy**. Files outside the historical diff can still be valid Context, so `matched / context-size` is not semantic precision.
 
-Aggregate output includes weighted direct/expanded recall and the number of cases improved by query expansion.
+Aggregate output includes weighted direct/curated-expanded recall and the number of cases improved by the curated diagnostic.
 
 ## Failure semantics
 
