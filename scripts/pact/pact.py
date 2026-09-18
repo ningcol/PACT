@@ -11,6 +11,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 COMMANDS = {
     "init": "init.py",
+    "upgrade": "upgrade.py",
+    "version": "version.py",
     "check": "check.py",
     "doctor": "doctor.py",
     "readiness": "readiness.py",
