@@ -71,7 +71,7 @@ If `pact readiness` reports pending baseline reviews, treat those areas as poten
 Before owner-facing output, read the validated Owner Profile:
 
 ```bash
-python scripts/pact/pact.py owner --json
+python pact.py owner --json
 ```
 
 Honor its language, technical depth, consequence-first translation, and progressive-disclosure preferences.
