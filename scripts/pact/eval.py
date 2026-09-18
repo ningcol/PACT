@@ -210,7 +210,12 @@ def derive_task(task_id: str) -> dict:
         "owner_report_missing": [],
     }
     if contract and evidence and owner:
-        _, acceptance = acceptance_review(contract, evidence, owner)
+        _, coverage = acceptance_review(contract, evidence, owner)
+        acceptance = {
+            **coverage,
+            "outcomes": sum(item.get("kind") == "outcome" for item in criteria),
+            "constraints": sum(item.get("kind") == "constraint" for item in criteria),
+        }
 
     attempts = read_jsonl(task_dir / "completion-attempts.jsonl")
     receipts = run_receipts(task_id)
