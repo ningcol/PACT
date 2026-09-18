@@ -24,6 +24,19 @@ PACT is the project-level AI control plane for this repository.
 - Adoption baseline/readiness: `.pact/baseline.toml`
 - System design: `docs/design/system-overview.md`
 
+## Default Agent Surface
+
+Prefer the small task-oriented interface when it is sufficient:
+
+```bash
+python3 pact.py status
+python3 pact.py inspect "<remembered feature/business behavior>"
+python3 pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>
+python3 pact.py task finish <TASK-ID>
+```
+
+These are default orchestration helpers, not mandatory workflow steps. Use lower-level `discover/context/impact/run/evidence/converge/report/complete` primitives directly when that is more efficient or precise. Never bypass truth/evidence requirements merely to reduce steps.
+
 ## Before changing behavior
 
 Determine the affected product/domain scope and retrieve only the relevant rules, architecture, decisions, code, tests, and history needed for high confidence.

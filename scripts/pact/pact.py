@@ -14,9 +14,17 @@ if sys.version_info < (3, 11):
 HERE = pathlib.Path(__file__).resolve().parent
 
 COMMANDS = {
+    # Recommended agent-facing surface.
+    "status": "status.py",
+    "inspect": "inspect_project.py",
+    "task": "task.py",
+
+    # Setup / maintenance.
     "init": "init.py",
     "upgrade": "upgrade.py",
     "version": "version.py",
+
+    # Advanced primitives.
     "check": "check.py",
     "doctor": "doctor.py",
     "readiness": "readiness.py",
@@ -38,18 +46,48 @@ COMMANDS = {
     "eval": "eval.py",
 }
 
+RECOMMENDED = [
+    ("status", "project foundation/readiness/health summary"),
+    ("inspect", "inspect a remembered feature/business behavior"),
+    ("task prepare", "prepare risk-adaptive context for a task"),
+    ("task finish", "validate an existing completion bundle"),
+    ("task status", "show one prepared task"),
+]
+
+SETUP = [
+    ("init", "safely adopt PACT"),
+    ("upgrade", "transactionally upgrade PACT runtime"),
+    ("version", "show runtime/install version"),
+]
+
 
 def help_text() -> str:
-    commands = "\n".join(f"  {name}" for name in COMMANDS)
+    recommended = "\n".join(f"  {name:<14} {desc}" for name, desc in RECOMMENDED)
+    setup = "\n".join(f"  {name:<14} {desc}" for name, desc in SETUP)
+    advanced_names = [
+        name
+        for name in COMMANDS
+        if name not in {"status", "inspect", "task", "init", "upgrade", "version"}
+    ]
+    advanced = "  " + "  ".join(advanced_names)
+
     return f"""PACT Project AI Control Plane
 
 Usage:
-  python scripts/pact/pact.py <command> [args...]
+  python3 pact.py <command> [args...]
 
-Commands:
-{commands}
+Recommended agent surface:
+{recommended}
 
-PACT keeps this dispatcher stable while individual implementations remain replaceable.
+Setup / maintenance:
+{setup}
+
+Advanced primitives:
+{advanced}
+
+Use low-level primitives when the default task surface is insufficient.
+PACT keeps the primitives stable so stronger agents can bypass unnecessary
+orchestration without weakening truth/evidence requirements.
 """
 
 

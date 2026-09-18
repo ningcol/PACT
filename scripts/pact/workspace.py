@@ -14,6 +14,7 @@ GENERATED_PREFIXES = (
     ".pact/cache/",
     ".pact/runs/",
     ".pact/completions/",
+    ".pact/tasks/",
     ".pact/tmp/",
 )
 
