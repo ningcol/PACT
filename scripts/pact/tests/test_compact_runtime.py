@@ -123,13 +123,15 @@ class CompactRuntimeTests(unittest.TestCase):
                 )
             ]
             self.assertEqual(
-                runtime_entries,
-                [
-                    ".pact/pact.pyz",
-                    "scripts/pact/converge.py",
-                    "scripts/pact/pact.py",
-                    "scripts/pact/report.py",
-                ],
+                sorted(runtime_entries),
+                sorted(
+                    [
+                        ".pact/pact.pyz",
+                        "scripts/pact/converge.py",
+                        "scripts/pact/pact.py",
+                        "scripts/pact/report.py",
+                    ]
+                ),
             )
 
             help_result = subprocess.run(
