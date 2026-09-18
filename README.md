@@ -54,48 +54,31 @@ Owner-readable Result
 
 ## Quick start
 
-PACT 0.3 core uses only the Python 3.11+ standard library. No pip install, virtualenv, PyYAML, or jsonschema package is required.
+PACT core uses only the Python 3.11+ standard library. No pip install or virtualenv is required.
 
-Inspect this repository:
+### Recommended Agent surface
 
-```bash
-python scripts/pact/pact.py doctor
-python scripts/pact/pact.py audit
-python scripts/pact/pact.py owner --json
-python scripts/pact/pact.py fitness
-```
-
-Discover project knowledge:
+Start with the small task-oriented surface:
 
 ```bash
-python scripts/pact/pact.py discover "product truth"
+# Is the project/Pact baseline healthy?
+python3 pact.py status
 
-# Opt-in code-aware expansion:
-python scripts/pact/pact.py discover "BatchService" --code
-```
+# I remember the feature/business behavior, but not where or why it exists.
+python3 pact.py inspect "password reset"
 
-Prepare an explanation packet when you remember the feature but not the implementation/history:
-
-```bash
-python scripts/pact/pact.py explain "why does the workspace follow the current batch?" --json
-```
-
-The packet separates Product Truth, Architecture, Decisions, Changes, and Drift. An AI agent then turns that evidence into an owner-readable explanation and expands into code/runtime/Git only when needed.
-
-Build a candidate task context:
-
-```bash
-python scripts/pact/pact.py context "fix province switching" \
+# Prepare risk-adaptive context for implementation.
+python3 pact.py task prepare "fix province switching" \
   --success "Displayed data follows the selected province" \
-  --risk medium \
-  --code
+  --risk medium
+
+# After the Agent has created Evidence + Convergence + Owner Report:
+python3 pact.py task finish <TASK-ID>
 ```
 
-Analyze changed-file impact:
+These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.
 
-```bash
-python scripts/pact/pact.py impact --base main --json
-```
+`task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent.
 
 ## Adopt PACT in an existing project
 
@@ -175,6 +158,18 @@ See `docs/initialization.md` and `docs/initialization-checklist.md`.
 
 ## Runtime commands
 
+Recommended:
+
+```text
+status             project foundation/readiness/health summary
+inspect            inspect a remembered feature/business behavior
+task prepare       prepare risk-adaptive task context
+task finish        validate an existing completion bundle
+task status        show one prepared task
+```
+
+Setup / maintenance:
+
 ```text
 init       safely scaffold PACT into an existing repository
 upgrade    safely update unchanged framework-managed files
@@ -199,6 +194,8 @@ report     render evidence-backed Owner Reports
 complete   validate Evidence + Convergence + Owner Report as one gate
 eval       validate/summarize optional pilot task records
 ```
+
+The long list above is the advanced primitive layer, not the expected everyday interface.
 
 ## Discovery, Explain, and Context
 
