@@ -228,12 +228,20 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
             continue
 
         if not destination.is_file():
+            operations.append({
+                "action": "detach-framework",
+                "path": path,
+                "reason": (
+                    "obsolete tracked framework path is no longer a regular file; "
+                    "preserve it but stop framework management"
+                ),
+            })
             notices.append({
                 "kind": "obsolete-framework-nonfile",
                 "path": path,
                 "reason": (
                     "obsolete tracked framework path is no longer a regular file; "
-                    "preserved for manual review"
+                    "preserved and detached from framework management"
                 ),
             })
             continue
@@ -252,12 +260,20 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
                 "installed_sha256": installed_sha,
             })
         else:
+            operations.append({
+                "action": "detach-framework",
+                "path": path,
+                "reason": (
+                    "obsolete framework file has local modifications; "
+                    "preserve it but stop framework management"
+                ),
+            })
             notices.append({
                 "kind": "obsolete-framework-local-modification",
                 "path": path,
                 "reason": (
                     "obsolete framework file was modified after install; "
-                    "preserved instead of deleting automatically"
+                    "preserved and detached from framework management"
                 ),
             })
 
@@ -439,6 +455,9 @@ def apply_upgrade(
 
             for path in removed:
                 files.pop(path, None)
+            for op in plan["operations"]:
+                if op["action"] == "detach-framework":
+                    files.pop(op["path"], None)
 
             touched = []
             for op in [
@@ -601,7 +620,8 @@ def main() -> int:
     if args.apply:
         print(
             f"Transactional apply complete: replaced={result.get('replaced_files', 0)}, "
-            f"created={result.get('created_files', 0)}"
+            f"created={result.get('created_files', 0)}, "
+            f"removed={result.get('removed_files', 0)}"
         )
     else:
         print("No files were changed. Re-run with --apply after reviewing the plan.")
