@@ -1,0 +1,21 @@
+version: 1
+
+# PACT init scaffolds this as .pact/baseline.yaml.
+#
+# "reviewed" means the current baseline area was deliberately inspected
+# and is trustworthy enough for forward work.
+#
+# "not_applicable" is an explicit decision, not an automatic inference.
+#
+# Do not mark an area reviewed merely because AI generated documents for it.
+
+reviews:
+  vocabulary: pending
+  product_truth: pending
+  architecture: pending
+  truth_ownership: pending
+  owner_profile: pending
+  verification: pending
+  known_drift: pending
+
+notes: {}
