@@ -9,6 +9,7 @@
     "impacted_domains",
     "deterministic_impacts",
     "candidate_impacts",
+    "code_candidate_impacts",
     "unmapped_files"
   ],
   "additionalProperties": false,
@@ -31,6 +32,10 @@
     "candidate_impacts": {
       "type": "array",
       "items": { "$ref": "#/$defs/candidate" }
+    },
+    "code_candidate_impacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/codeCandidate" }
     },
     "unmapped_files": {
       "type": "array",
@@ -81,6 +86,18 @@
           "uniqueItems": true
         },
         "target": { "$ref": "#/$defs/target" }
+      }
+    },
+    "codeCandidate": {
+      "type": "object",
+      "required": ["changed_file", "related_file", "relation", "score", "is_test"],
+      "additionalProperties": false,
+      "properties": {
+        "changed_file": { "type": "string", "minLength": 1 },
+        "related_file": { "type": "string", "minLength": 1 },
+        "relation": { "enum": ["imports", "imported-by"] },
+        "score": { "type": "integer", "minimum": 1 },
+        "is_test": { "type": "boolean" }
       }
     }
   }

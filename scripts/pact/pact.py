@@ -19,6 +19,7 @@ COMMANDS = {
     "audit": "audit.py",
     "owner": "owner.py",
     "map": "map.py",
+    "code-map": "code_map.py",
     "discover": "discover.py",
     "explain": "explain.py",
     "context": "context.py",

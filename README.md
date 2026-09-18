@@ -72,6 +72,9 @@ Discover project knowledge:
 
 ```bash
 python scripts/pact/pact.py discover "product truth"
+
+# Opt-in code-aware expansion:
+python scripts/pact/pact.py discover "BatchService" --code
 ```
 
 Prepare an explanation packet when you remember the feature but not the implementation/history:
@@ -87,7 +90,8 @@ Build a candidate task context:
 ```bash
 python scripts/pact/pact.py context "fix province switching" \
   --success "Displayed data follows the selected province" \
-  --risk medium
+  --risk medium \
+  --code
 ```
 
 Analyze changed-file impact:
@@ -147,6 +151,7 @@ readiness  explicit baseline readiness
 audit      repository health inventory
 owner      validate/expose project Owner Profile
 map        rebuild disposable discovery index
+code-map   rebuild generated local import/symbol relationships
 discover   locate project knowledge
 explain    prepare evidence for an owner-readable project explanation
 context    build candidate Task Context Envelope
@@ -225,7 +230,7 @@ PACT v1 currently includes the executable foundation for:
 - opt-in project CI integration;
 - validated project Owner Profiles for language/technical-depth communication;
 - Truth ownership and artifact lifecycle;
-- Project Discovery;
+- Project Discovery with optional generated code relationships;
 - Project Explanation evidence packets;
 - candidate Context Resolution;
 - conservative Impact Analysis;
