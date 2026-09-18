@@ -59,10 +59,12 @@ class CodeMapTests(unittest.TestCase):
 
         self.assertIn("Service", by_path["pkg/a.py"]["symbols"])
         self.assertIn("run", by_path["pkg/a.py"]["symbols"])
-        self.assertIn(
-            {"from": "pkg/a.py", "to": "pkg/b.py", "kind": "import"},
-            data["edges"],
+        edge = next(
+            edge for edge in data["edges"]
+            if edge["from"] == "pkg/a.py" and edge["to"] == "pkg/b.py"
         )
+        self.assertEqual(edge["kind"], "import")
+        self.assertEqual(edge["confidence"], "heuristic")
 
     def test_typescript_relative_import_and_test_detection(self) -> None:
         self.write("src/b.ts", "export const value = 1;\n")
@@ -78,14 +80,16 @@ class CodeMapTests(unittest.TestCase):
         data = self.build()
         by_path = {item["path"]: item for item in data["files"]}
 
-        self.assertIn(
-            {"from": "src/a.ts", "to": "src/b.ts", "kind": "import"},
-            data["edges"],
+        edge = next(
+            edge for edge in data["edges"]
+            if edge["from"] == "src/a.ts" and edge["to"] == "src/b.ts"
         )
-        self.assertIn(
-            {"from": "src/a.test.ts", "to": "src/a.ts", "kind": "import"},
-            data["edges"],
+        self.assertEqual(edge["confidence"], "relative-resolved")
+        test_edge = next(
+            edge for edge in data["edges"]
+            if edge["from"] == "src/a.test.ts" and edge["to"] == "src/a.ts"
         )
+        self.assertEqual(test_edge["confidence"], "relative-resolved")
         self.assertTrue(by_path["src/a.test.ts"]["is_test"])
         self.assertIn("read", by_path["src/a.ts"]["symbols"])
 
@@ -97,10 +101,11 @@ class CodeMapTests(unittest.TestCase):
         )
 
         data = self.build()
-        self.assertIn(
-            {"from": "src/View.vue", "to": "src/widget.ts", "kind": "import"},
-            data["edges"],
+        edge = next(
+            edge for edge in data["edges"]
+            if edge["from"] == "src/View.vue" and edge["to"] == "src/widget.ts"
         )
+        self.assertEqual(edge["confidence"], "relative-resolved")
 
     def test_excluded_directories_are_not_indexed(self) -> None:
         self.write("node_modules/pkg/index.js", "export const hidden = true;\n")
