@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import sys
@@ -20,6 +21,7 @@ from report import (
     cross_validate,
     validate as validate_report_part,
 )
+from task_contract import acceptance_review, validate as validate_contract
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -45,6 +47,10 @@ def main() -> int:
         "--require-ci",
         action="store_true",
         help="require at least one CI-backed Evidence claim for completion",
+    )
+    parser.add_argument(
+        "--contract",
+        help="optional Task Contract; when present every acceptance criterion must be verified and owner-visible",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -77,10 +83,37 @@ def main() -> int:
         print(f"PACT complete: cannot read bundle: {exc}", file=sys.stderr)
         return 2
 
+    contract = None
+    contract_path = None
+    if args.contract:
+        contract_path = pathlib.Path(args.contract).expanduser()
+        if not contract_path.is_absolute():
+            contract_path = root / contract_path
+        try:
+            contract = load(contract_path.resolve())
+        except Exception as exc:
+            print(f"PACT complete: cannot read Task Contract: {exc}", file=sys.stderr)
+            return 2
+
     errors: list[str] = []
     errors.extend(f"evidence.{error}" for error in validate_evidence(evidence))
     errors.extend(validate_report_part(convergence, CONVERGENCE_SCHEMA, "convergence"))
     errors.extend(validate_report_part(owner, OWNER_SCHEMA, "owner"))
+    contract_sha256 = None
+    if contract is not None:
+        errors.extend(
+            f"contract.{error}" for error in validate_contract(contract)
+        )
+        if contract_path is not None:
+            contract_sha256 = hashlib.sha256(
+                contract_path.resolve().read_bytes()
+            ).hexdigest()
+        recorded_contract_sha = evidence.get("task_contract_sha256")
+        if recorded_contract_sha != contract_sha256:
+            errors.append(
+                "evidence.task_contract_sha256 does not match current Task Contract "
+                f"({recorded_contract_sha!r} != {contract_sha256!r})"
+            )
 
     policy_gaps: list[str] = []
     provenance_stats = {
@@ -89,6 +122,7 @@ def main() -> int:
         "ci_backed_claims": 0,
         "current_workspace": None,
     }
+    acceptance_stats = None
     if not errors:
         provenance_errors, policy_gaps, provenance_stats = provenance_review(
             evidence, root
@@ -106,6 +140,15 @@ def main() -> int:
                 validate_provenance=False,
             )
         )
+        if contract is not None:
+            acceptance_errors, acceptance_stats = acceptance_review(
+                contract,
+                evidence,
+                owner,
+            )
+            errors.extend(
+                f"acceptance: {error}" for error in acceptance_errors
+            )
 
     risk = evidence.get("risk_level")
     evidence_state = (
@@ -169,6 +212,9 @@ def main() -> int:
         "workspace_bound_claims": provenance_stats.get("workspace_bound_claims", 0),
         "ci_backed_claims": provenance_stats.get("ci_backed_claims", 0),
         "current_workspace": provenance_stats.get("current_workspace"),
+        "acceptance": acceptance_stats,
+        "contract": str(contract_path.resolve()) if contract_path else None,
+        "contract_sha256": contract_sha256,
         "bundle": str(bundle),
     }
 
@@ -187,6 +233,12 @@ def main() -> int:
             f"workspace-bound={result['workspace_bound_claims']}, "
             f"ci-backed={result['ci_backed_claims']}"
         )
+        if acceptance_stats is not None:
+            print(
+                "- acceptance: "
+                f"{acceptance_stats['owner_report_covered']}/"
+                f"{acceptance_stats['total']} owner-visible and verified"
+            )
         if policy_gaps:
             print("Policy gaps:")
             for gap in policy_gaps:

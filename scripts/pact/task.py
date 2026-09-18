@@ -15,6 +15,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+from task_contract import validate as validate_contract
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "scripts" / "pact"
@@ -49,13 +51,40 @@ def prepare(args) -> int:
         return 2
     task_dir.mkdir(parents=True, exist_ok=True)
 
+    acceptance_items = [
+        ("outcome", text)
+        for text in [args.success, *args.acceptance]
+    ] + [
+        ("constraint", text)
+        for text in args.constraint
+    ]
+    contract = {
+        "version": 1,
+        "task_id": task_id,
+        "intent": args.goal or args.task,
+        "acceptance_criteria": [
+            {"id": f"AC-{index}", "kind": kind, "text": text}
+            for index, (kind, text) in enumerate(acceptance_items, start=1)
+        ],
+    }
+    contract_errors = validate_contract(contract)
+    if contract_errors:
+        print("PACT task prepare: generated invalid Task Contract", file=sys.stderr)
+        for error in contract_errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
+    contract_path = task_dir / "contract.json"
+    write_json(contract_path, contract)
+    contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+
     context_path = task_dir / "context.json"
     context_cmd = [
         sys.executable,
         str(RUNTIME / "context.py"),
         args.task,
         "--success",
-        args.success,
+        "; ".join(text for _, text in acceptance_items),
         "--risk",
         args.risk,
         "--output",
@@ -114,6 +143,9 @@ def prepare(args) -> int:
         "observable_success": args.success,
         "risk_level": args.risk,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "contract": contract_path.relative_to(ROOT).as_posix(),
+        "contract_sha256": contract_sha256,
+        "acceptance_criteria_count": len(contract["acceptance_criteria"]),
         "context": context_path.relative_to(ROOT).as_posix(),
         "impact": (
             impact_path.relative_to(ROOT).as_posix()
@@ -132,7 +164,9 @@ def prepare(args) -> int:
         **manifest,
         "task_dir": task_dir.relative_to(ROOT).as_posix(),
         "next": (
-            "Implement and verify. Create evidence.json, convergence.json, and "
+            "Implement and verify every Task Contract acceptance criterion. "
+            "Evidence claims that prove acceptance must list the relevant "
+            "criteria IDs. Create evidence.json, convergence.json, and "
             "owner-report.json in the completion bundle, then run "
             f"'pact task finish {task_id}'."
         ),
@@ -143,6 +177,7 @@ def prepare(args) -> int:
     else:
         print(f"PACT task prepared: {task_id}")
         print(f"- risk: {args.risk}")
+        print(f"- contract: {manifest['contract']} ({manifest['acceptance_criteria_count']} acceptance criteria)")
         print(f"- context: {manifest['context']}")
         print(f"- impact: {impact_state}")
         if impact_state == "deferred":
@@ -159,13 +194,20 @@ def prepare(args) -> int:
 def finish(args) -> int:
     task_dir = TASK_ROOT / args.task_id
     manifest_path = task_dir / "task.json"
-    manifest = None
-    if manifest_path.is_file():
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
-            return 2
+    if not manifest_path.is_file():
+        print(
+            f"PACT task finish: task was not prepared: {args.task_id}. "
+            "Use 'pact task prepare' first, or use the low-level 'pact complete' "
+            "primitive for a legacy/unmanaged completion bundle.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
+        return 2
 
     bundle = pathlib.Path(args.bundle) if args.bundle else COMPLETION_ROOT / args.task_id
     if not bundle.is_absolute():
@@ -181,6 +223,9 @@ def finish(args) -> int:
     ]
     if args.require_ci:
         command.append("--require-ci")
+
+    if manifest is not None and manifest.get("contract"):
+        command.extend(["--contract", str(ROOT / manifest["contract"])])
 
     completed = run(command)
     output = None
@@ -234,8 +279,21 @@ def task_status(args) -> int:
         }.items()
     }
 
+    contract = None
+    contract_path = manifest.get("contract")
+    if contract_path:
+        path = ROOT / contract_path
+        if path.is_file():
+            try:
+                contract = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                contract = None
+
     result = {
         **manifest,
+        "acceptance_criteria": (
+            contract.get("acceptance_criteria", []) if contract else []
+        ),
         "completion_files": completion_files,
     }
     if args.json:
@@ -243,6 +301,7 @@ def task_status(args) -> int:
     else:
         print(f"PACT task {args.task_id}: {manifest.get('status')}")
         print(f"- risk: {manifest.get('risk_level')}")
+        print(f"- acceptance criteria: {len(result['acceptance_criteria'])}")
         print(f"- context: {manifest.get('context')}")
         print(f"- impact: {manifest.get('impact_state')}")
         print(
@@ -262,6 +321,19 @@ def main() -> int:
     prep = sub.add_parser("prepare", help="prepare risk-adaptive task context")
     prep.add_argument("task")
     prep.add_argument("--success", required=True)
+    prep.add_argument(
+        "--accept",
+        dest="acceptance",
+        action="append",
+        default=[],
+        help="additional observable acceptance criterion (repeatable)",
+    )
+    prep.add_argument(
+        "--constraint",
+        action="append",
+        default=[],
+        help="task constraint that must be preserved (repeatable)",
+    )
     prep.add_argument("--goal")
     prep.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
     prep.add_argument("--query")

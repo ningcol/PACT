@@ -76,6 +76,8 @@ python3 pact.py task prepare "fix province switching" \
 python3 pact.py task finish <TASK-ID>
 ```
 
+`task prepare` also writes a machine-readable Task Contract. The required `--success` becomes the first acceptance criterion; use repeatable `--accept` for additional observable criteria and repeatable `--constraint` for conditions that must remain true. Evidence claims that prove acceptance list the relevant `AC-*` IDs. `task finish` rejects completion when any criterion lacks passing Evidence or when verified acceptance is omitted from the Owner Report.
+
 These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.
 
 `task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent.

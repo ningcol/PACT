@@ -13,8 +13,8 @@ python scripts/pact/pact.py <command> [args...]
 ```text
 status             project foundation/readiness/health summary
 inspect            combined explanation + code evidence packet
-task prepare       risk-adaptive context preparation
-task finish        completion-bundle gate
+task prepare       Task Contract + risk-adaptive context preparation
+task finish        acceptance-aware completion-bundle gate
 task status        one-task state
 ```
 
@@ -190,3 +190,16 @@ The runtime is deliberately hybrid:
 - the CLI never promotes heuristic guesses into authority.
 
 Semantic uncertainty should remain a warning, Context unknown, candidate impact, Explanation gap, or Convergence finding.
+
+## Task Contract / acceptance coverage
+
+High-level task preparation persists `.pact/tasks/<TASK-ID>/contract.json`.
+
+- `--success` creates `AC-1`;
+- repeatable `--accept` adds `AC-2`, `AC-3`, ...;
+- repeatable `--constraint` adds acceptance-bound criteria with `kind=constraint`;
+- Evidence claims bind to acceptance criteria through optional `criteria: ["AC-1"]`;
+- prepared tasks expose `contract_sha256`; Evidence for a Task Contract records it as `task_contract_sha256`;
+- `task finish` automatically supplies the contract to the completion gate.
+
+When a Task Contract is supplied, completion requires every acceptance criterion to have passing Evidence and requires that passing Evidence to be surfaced in Owner Report verification.

@@ -10,6 +10,10 @@
     "task_id": { "type": "string", "minLength": 1 },
     "task": { "type": "string", "minLength": 1 },
     "risk_level": { "enum": ["low", "medium", "high"] },
+    "task_contract_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
     "claims": {
       "type": "array",
       "items": { "$ref": "#/$defs/claim" }
@@ -32,6 +36,14 @@
         "claim": { "type": "string", "minLength": 1 },
         "required": { "type": "boolean" },
         "status": { "enum": ["pass", "fail", "unverified"] },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^AC-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
         "evidence": {
           "type": "array",
           "items": { "$ref": "#/$defs/evidence" }

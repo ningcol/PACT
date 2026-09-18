@@ -2,6 +2,18 @@
 
 PACT treats "done" as an evidence-backed claim.
 
+## Task Contract
+
+A prepared task has a machine-readable Task Contract containing:
+
+- the task intent;
+- observable acceptance criteria with stable `AC-*` IDs;
+- explicit constraints that must remain true.
+
+Evidence claims may bind to one or more acceptance IDs. Prepared Task Contracts are fingerprinted, and completion requires Evidence to carry the SHA256 of the exact contract it verified. When a Task Contract is present, completion fails if the contract changed after verification, if any acceptance criterion lacks passing Evidence, or if that Evidence is not represented in the Owner Report.
+
+Task Contract intent is task-scoped authority. It does not silently override confirmed durable Product Truth; conflicts require reconciliation or an owner-level product decision.
+
 ## Default definition
 
 A task is complete when, to a degree appropriate for its risk:

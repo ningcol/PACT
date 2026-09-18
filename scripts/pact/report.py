@@ -143,6 +143,12 @@ def render(owner: dict) -> None:
         for item in owner["verification"]:
             print(f"- {item['claim']}")
 
+    if owner.get("acceptance"):
+        print()
+        print("Acceptance:")
+        for item in owner["acceptance"]:
+            print(f"- {item['criterion_id']}: {item['summary']}")
+
     print()
     print("Project consistency:")
     print(owner["consistency"]["summary"])

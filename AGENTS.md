@@ -32,6 +32,7 @@ Prefer the small task-oriented interface when it is sufficient:
 python3 pact.py status
 python3 pact.py inspect "<remembered feature/business behavior>"
 python3 pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>
+# Add repeatable --accept / --constraint when the task has multiple explicit conditions.
 python3 pact.py task finish <TASK-ID>
 ```
 
@@ -58,6 +59,7 @@ A task is not done merely because code was written or tests are green.
 Done requires, as applicable:
 
 - implementation complete;
+- every Task Contract acceptance criterion verified and owner-visible;
 - observable behavior verified;
 - relevant truth converged;
 - no unresolved blocking ambiguity;
