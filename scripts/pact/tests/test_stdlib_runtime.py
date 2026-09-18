@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 PACT_RUNTIME = PROJECT_ROOT / "scripts" / "pact"
+SCHEMA_LINT = PACT_RUNTIME / "schema_lint.py"
 sys.path.insert(0, str(PACT_RUNTIME))
 
 from formats import parse_legacy_yaml, parse_markdown_metadata  # noqa: E402
@@ -71,6 +74,29 @@ class StdlibRuntimeTests(unittest.TestCase):
         report["findings"][0]["classification"] = "owner-decision"
         errors = validate_instance(report, schema)
         self.assertTrue(any("owner_question" in error for error in errors), errors)
+
+    def test_schema_lint_accepts_current_pact_schemas(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCHEMA_LINT)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_schema_lint_rejects_unsupported_keyword(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-schema-lint-") as tmp:
+            path = pathlib.Path(tmp) / "unsupported.schema.json"
+            path.write_text(
+                '{"type":"string","anyOf":[{"const":"x"}]}\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(SCHEMA_LINT), str(path)],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unsupported schema keyword 'anyOf'", result.stderr)
 
     def test_current_example_contracts_validate(self) -> None:
         pairs = [

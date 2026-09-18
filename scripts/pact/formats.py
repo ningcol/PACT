@@ -93,10 +93,12 @@ def parse_legacy_yaml(text: str) -> dict:
             if not isinstance(parent, list):
                 raise FormatError("legacy YAML list item without list parent")
             item_text = content[2:].strip()
-            if ":" in item_text:
-                key, raw_value = item_text.split(":", 1)
+            mapping = re.match(r"^([^:]+):(?:\s+|$)(.*)$", item_text)
+            if mapping:
+                key = mapping.group(1).strip()
+                raw_value = mapping.group(2).strip()
                 item: dict[str, Any] = {}
-                item[key.strip()] = _scalar(raw_value.strip())
+                item[key] = _scalar(raw_value)
                 parent.append(item)
                 stack.append((indent, item))
             else:
