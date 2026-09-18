@@ -91,7 +91,16 @@ class CompactRuntimeTests(unittest.TestCase):
 
             bundle = target / ".pact" / "pact.pyz"
             self.assertTrue(bundle.is_file())
-            self.assertFalse((target / "scripts" / "pact").exists())
+            legacy_entry = target / "scripts" / "pact" / "pact.py"
+            self.assertTrue(legacy_entry.is_file())
+            self.assertEqual(
+                sorted(
+                    path.name
+                    for path in legacy_entry.parent.iterdir()
+                    if path.is_file()
+                ),
+                ["pact.py"],
+            )
 
             manifest = json.loads(
                 (target / ".pact" / "install.json").read_text(encoding="utf-8")
@@ -105,7 +114,10 @@ class CompactRuntimeTests(unittest.TestCase):
                     or path.startswith("scripts/pact/")
                 )
             ]
-            self.assertEqual(runtime_entries, [".pact/pact.pyz"])
+            self.assertEqual(
+                runtime_entries,
+                [".pact/pact.pyz", "scripts/pact/pact.py"],
+            )
 
             help_result = subprocess.run(
                 [sys.executable, str(target / "pact.py"), "--help"],
@@ -119,6 +131,19 @@ class CompactRuntimeTests(unittest.TestCase):
                 help_result.stdout + help_result.stderr,
             )
             self.assertIn("PACT Project AI Control Plane", help_result.stdout)
+
+            legacy_help = subprocess.run(
+                [sys.executable, str(legacy_entry), "--help"],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                legacy_help.returncode,
+                0,
+                legacy_help.stdout + legacy_help.stderr,
+            )
+            self.assertIn("PACT Project AI Control Plane", legacy_help.stdout)
 
             status = subprocess.run(
                 [
