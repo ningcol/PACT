@@ -254,7 +254,8 @@
         "dropped_candidates",
         "truncated",
         "authority_overage_tokens",
-        "selection_strategy"
+        "selection_strategy",
+        "authority_candidates_dropped"
       ],
       "additionalProperties": false,
       "properties": {
@@ -291,6 +292,10 @@
         },
         "selection_strategy": {
           "const": "authority-aware-soft-budget-v1"
+        },
+        "authority_candidates_dropped": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }
