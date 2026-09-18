@@ -44,7 +44,7 @@ impact     map changed files to deterministic/candidate project impacts
 converge   validate/summarize semantic Convergence Report
 evidence   validate completion Evidence Receipt
 report     validate and render evidence-backed Owner Report
-eval       validate/summarize optional real-task pilot records
+eval       validate/summarize pilot records or derive machine task observations
 ```
 
 Examples:
@@ -203,3 +203,16 @@ High-level task preparation persists `.pact/tasks/<TASK-ID>/contract.json`.
 - `task finish` automatically supplies the contract to the completion gate.
 
 When a Task Contract is supplied, completion requires every acceptance criterion to have passing Evidence and requires that passing Evidence to be surfaced in Owner Report verification.
+
+
+## Machine-observed task evaluation
+
+After a task has been prepared, PACT can derive the task facts it already owns:
+
+```bash
+python scripts/pact/pact.py eval --task <TASK-ID> --json
+```
+
+The output includes acceptance coverage, Context artifact counts, run outcomes, completion-attempt blockers, Evidence state, and Convergence counts.
+
+Human interaction fields are intentionally listed in `human_required` rather than guessed.
