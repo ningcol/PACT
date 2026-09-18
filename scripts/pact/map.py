@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a disposable PACT project discovery index."""
+"""Build or refresh the disposable PACT project discovery index."""
 
 from __future__ import annotations
 
@@ -9,10 +9,13 @@ import pathlib
 import re
 from datetime import datetime, timezone
 
+from cache import cache_is_fresh, fingerprint_files, git_head
 from formats import parse_markdown_metadata
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = ROOT / ".pact" / "cache" / "project-map.json"
+FORMAT_VERSION = 3
 TITLE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -23,6 +26,27 @@ def rel(path: pathlib.Path) -> str:
 
 def as_list(value) -> list:
     return value if isinstance(value, list) else []
+
+
+def should_index(path: pathlib.Path) -> bool:
+    r = rel(path)
+    if r.startswith(".pact/cache/"):
+        return False
+    if "/TEMPLATE.md" in r or r.endswith("/TEMPLATE.md"):
+        return False
+    return (
+        r in {"README.md", "AGENTS.md"}
+        or r.startswith("docs/")
+        or r.startswith(".agents/")
+    )
+
+
+def source_paths() -> list[pathlib.Path]:
+    return [
+        path
+        for path in ROOT.rglob("*.md")
+        if path.is_file() and should_index(path)
+    ]
 
 
 def parse_document(path: pathlib.Path) -> dict:
@@ -57,24 +81,10 @@ def parse_document(path: pathlib.Path) -> dict:
     }
 
 
-def should_index(path: pathlib.Path) -> bool:
-    r = rel(path)
-    if r.startswith(".pact/cache/"):
-        return False
-    if "/TEMPLATE.md" in r or r.endswith("/TEMPLATE.md"):
-        return False
-    return (
-        r in {"README.md", "AGENTS.md"}
-        or r.startswith("docs/")
-        or r.startswith(".agents/")
-    )
-
-
-def build_index() -> dict:
+def build_index(paths: list[pathlib.Path], source_fingerprint: str) -> dict:
     documents = [
         parse_document(path)
-        for path in sorted(ROOT.rglob("*.md"))
-        if should_index(path)
+        for path in sorted(paths)
     ]
 
     ids = {
@@ -84,9 +94,11 @@ def build_index() -> dict:
     }
 
     return {
-        "format_version": 2,
+        "format_version": FORMAT_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository_root": ".",
+        "source_fingerprint": source_fingerprint,
+        "git_head": git_head(ROOT),
         "documents": documents,
         "id_to_path": ids,
     }
@@ -95,17 +107,38 @@ def build_index() -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build PACT project discovery map")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument(
+        "--ensure",
+        action="store_true",
+        help="reuse the existing index when its source fingerprint is current",
+    )
     args = parser.parse_args()
 
     output = pathlib.Path(args.output)
     if not output.is_absolute():
         output = ROOT / output
 
-    index = build_index()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    paths = source_paths()
+    source_fingerprint = fingerprint_files(ROOT, paths)
 
-    print(f"PACT map: indexed {len(index['documents'])} document(s) -> {output}")
+    if args.ensure and cache_is_fresh(
+        output,
+        format_version=FORMAT_VERSION,
+        source_fingerprint=source_fingerprint,
+    ):
+        print(f"PACT map: fresh -> {output}")
+        return 0
+
+    index = build_index(paths, source_fingerprint)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(index, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    print(
+        f"PACT map: indexed {len(index['documents'])} document(s) -> {output}"
+    )
     return 0
 
 
