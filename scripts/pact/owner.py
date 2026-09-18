@@ -8,25 +8,28 @@ import json
 import pathlib
 import sys
 
-import yaml
-from jsonschema import Draft202012Validator
+from formats import load_legacy_yaml, load_toml
+from schema_validate import load_schema, validate_instance
 
 
-def load_yaml(path: pathlib.Path) -> dict:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("configuration root must be an object")
-    return data
+def load_config(root: pathlib.Path, strict: bool) -> tuple[dict, pathlib.Path, str, bool]:
+    candidates = [
+        (root / ".pact" / "config.toml", "toml", True),
+        (root / ".pact" / "config.yaml", "legacy-yaml", True),
+    ]
+    if not strict:
+        candidates.extend([
+            (root / ".pact" / "config.example.toml", "toml", False),
+            (root / ".pact" / "config.example.yaml", "legacy-yaml", False),
+        ])
 
+    for path, kind, configured in candidates:
+        if not path.exists():
+            continue
+        data = load_toml(path) if kind == "toml" else load_legacy_yaml(path)
+        return data, path, kind, configured
 
-def validate(config: dict, schema_path: pathlib.Path) -> list[str]:
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(config), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    raise FileNotFoundError(".pact/config.toml is missing")
 
 
 def main() -> int:
@@ -35,7 +38,7 @@ def main() -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="require .pact/config.yaml rather than falling back to config.example.yaml",
+        help="require project config.toml (legacy config.yaml remains readable)",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -44,29 +47,17 @@ def main() -> int:
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
     schema_path = root / ".pact" / "schema" / "config.schema.json"
-    config_path = root / ".pact" / "config.yaml"
-    example_path = root / ".pact" / "config.example.yaml"
-
     if not schema_path.exists():
         print(f"PACT owner: missing config schema at {schema_path}", file=sys.stderr)
         return 2
 
-    configured = config_path.exists()
-    if configured:
-        source = config_path
-    elif not args.strict and example_path.exists():
-        source = example_path
-    else:
-        print("PACT owner: .pact/config.yaml is missing", file=sys.stderr)
-        return 2
-
     try:
-        config = load_yaml(source)
+        config, source, source_format, configured = load_config(root, args.strict)
     except Exception as exc:
-        print(f"PACT owner: cannot parse {source}: {exc}", file=sys.stderr)
+        print(f"PACT owner: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate(config, schema_path)
+    errors = validate_instance(config, load_schema(schema_path))
     if errors:
         print(f"PACT owner: invalid configuration in {source}", file=sys.stderr)
         for error in errors:
@@ -77,6 +68,7 @@ def main() -> int:
     result = {
         "configured": configured,
         "source": source.relative_to(root).as_posix(),
+        "source_format": source_format,
         "role": owner["role"],
         "language": owner["language"],
         "technical_depth": owner["technical_depth"],
@@ -88,6 +80,7 @@ def main() -> int:
     else:
         state = "project config" if configured else "example fallback"
         print(f"PACT owner profile: {state}")
+        print(f"- source: {result['source']} ({source_format})")
         print(f"- role: {result['role']}")
         print(f"- language: {result['language']}")
         print(f"- technical depth: {result['technical_depth']}")
