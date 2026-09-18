@@ -105,6 +105,7 @@ def main() -> int:
         sys.executable,
         str(ROOT / "scripts" / "pact" / "owner.py"),
         "--json",
+        "--validate-only",
     ]
     if args.strict:
         owner_cmd.append("--strict")
