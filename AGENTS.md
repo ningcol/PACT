@@ -46,6 +46,29 @@ Do not infer product truth from code alone.
 
 If `pact readiness` reports a baseline area as pending, treat that area as incomplete/unknown rather than manufacturing missing truth.
 
+## Retrieval query expansion
+
+When owner/business wording may not match repository code vocabulary, generate a small set of search hypotheses before concluding that context is missing.
+
+Prefer 2–4 distinct queries covering views such as:
+
+- the owner's/business wording;
+- canonical project vocabulary or aliases already discovered;
+- likely code/symbol terminology;
+- relevant state/contract terminology.
+
+Pass them through repeatable `--query` arguments on `pact task prepare`.
+
+```bash
+python3 pact.py task prepare "修复省份切换后数据不同步" \
+  --success "切换省份后列表和统计同步变化" \
+  --query "省份切换 数据同步" \
+  --query "province selectedProvince" \
+  --query "region context statistics"
+```
+
+Queries are retrieval hypotheses, not project truth. Guessed technical vocabulary must not be promoted to confirmed architecture or product meaning.
+
 ## Decision policy
 
 Do not ask the owner to choose implementation patterns, classes, state mechanisms, cache strategies, or other internal engineering choices.
@@ -71,7 +94,7 @@ Done requires, as applicable:
 Before owner-facing explanations, decisions, or completion reports, load the validated Owner Profile:
 
 ```bash
-python scripts/pact/pact.py owner --json
+python pact.py owner --json
 ```
 
 Honor its language, technical depth, consequence-first decision translation, and progressive-disclosure preferences. These preferences affect communication, not internal engineering capability.
