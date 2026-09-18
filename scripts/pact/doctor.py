@@ -105,7 +105,6 @@ def main() -> int:
         sys.executable,
         str(ROOT / "scripts" / "pact" / "owner.py"),
         "--json",
-        "--validate-only",
     ]
     if args.strict:
         owner_cmd.append("--strict")
@@ -138,6 +137,7 @@ def main() -> int:
         sys.executable,
         str(ROOT / "scripts" / "pact" / "fitness.py"),
         "--json",
+        "--validate-only",
     ]
     if args.strict:
         fitness_cmd.append("--strict")
