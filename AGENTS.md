@@ -49,6 +49,14 @@ Done requires, as applicable:
 
 ## Communication
 
+Before owner-facing explanations, decisions, or completion reports, load the validated Owner Profile:
+
+```bash
+python scripts/pact/pact.py owner --json
+```
+
+Honor its language, technical depth, consequence-first decision translation, and progressive-disclosure preferences. These preferences affect communication, not internal engineering capability.
+
 Owner-facing output should answer:
 
 - What changed for the user/business?
