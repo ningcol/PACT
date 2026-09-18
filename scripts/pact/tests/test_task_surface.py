@@ -101,11 +101,11 @@ class TaskSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["id"] for item in contract["acceptance_criteria"]],
-            ["AC-1", "AC-2"],
+            ["AC-1", "AC-2", "AC-3"],
         )
         self.assertEqual(
-            contract["constraints"],
-            ["Do not weaken credential security"],
+            [item["kind"] for item in contract["acceptance_criteria"]],
+            ["outcome", "outcome", "constraint"],
         )
         self.assertEqual(prep["impact_state"], "deferred")
 
@@ -140,7 +140,7 @@ class TaskSurfaceTests(unittest.TestCase):
                     "claim": "Verification command passed.",
                     "required": True,
                     "status": "pass",
-                    "criteria": ["AC-1", "AC-2"],
+                    "criteria": ["AC-1", "AC-2", "AC-3"],
                     "evidence": [
                         {
                             "kind": "test",
@@ -173,6 +173,17 @@ class TaskSurfaceTests(unittest.TestCase):
                     "evidence_ids": ["EV-TASK-HAPPY"],
                 }
             ],
+            "acceptance": [
+                {
+                    "criterion_id": criterion_id,
+                    "summary": criterion["text"],
+                    "evidence_ids": ["EV-TASK-HAPPY"],
+                }
+                for criterion_id, criterion in [
+                    (item["id"], item)
+                    for item in contract["acceptance_criteria"]
+                ]
+            ],
             "consistency": {
                 "status": "aligned",
                 "summary": "No blocking drift.",
@@ -196,8 +207,8 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
         finish_data = json.loads(finished.stdout)
         self.assertTrue(finish_data["complete"])
-        self.assertEqual(finish_data["acceptance"]["total"], 2)
-        self.assertEqual(finish_data["acceptance"]["owner_report_covered"], 2)
+        self.assertEqual(finish_data["acceptance"]["total"], 3)
+        self.assertEqual(finish_data["acceptance"]["owner_report_covered"], 3)
 
         final_status = self.pact("task", "status", task_id, "--json")
         self.assertEqual(final_status.returncode, 0, final_status.stdout + final_status.stderr)
@@ -263,6 +274,13 @@ class TaskSurfaceTests(unittest.TestCase):
             "verification": [
                 {
                     "claim": "Primary reset behavior is present.",
+                    "evidence_ids": ["EV-ONLY-ONE"],
+                }
+            ],
+            "acceptance": [
+                {
+                    "criterion_id": "AC-1",
+                    "summary": "Password reset remains correct",
                     "evidence_ids": ["EV-ONLY-ONE"],
                 }
             ],
