@@ -17,6 +17,7 @@ doctor     deterministic PACT foundation health
 readiness  explicit brownfield baseline readiness
 audit      deterministic repository health inventory
 owner      validate and expose project Owner Profile
+fitness    run project-owned executable architecture invariants
 map        rebuild disposable project map
 discover   deterministic project discovery
 explain    build an explanation evidence packet for an owner query
@@ -42,6 +43,7 @@ python scripts/pact/pact.py doctor
 python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit --json
 python scripts/pact/pact.py owner --json
+python scripts/pact/pact.py fitness
 
 python scripts/pact/pact.py discover "batch state"
 
@@ -53,6 +55,14 @@ python scripts/pact/pact.py context "fix province switch" \
 
 python scripts/pact/pact.py impact --base main --json
 ```
+
+## Architecture fitness
+
+`.pact/fitness.yaml` is project-owned.
+
+PACT only standardizes how executable invariants are registered and reported; it does not prescribe architecture patterns.
+
+`severity: error` failures block. `severity: warn` failures are reported without blocking.
 
 ## Discovery vs Explain vs Context
 
