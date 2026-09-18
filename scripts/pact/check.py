@@ -282,8 +282,10 @@ def main() -> int:
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
     schema = root / ".pact" / "schema" / "artifact.schema.json"
-    if not schema.exists():
-        print(f"PACT: missing artifact schema at {schema}", file=sys.stderr)
+    try:
+        load_schema(schema)
+    except Exception as exc:
+        print(f"PACT: cannot load artifact schema: {exc}", file=sys.stderr)
         return 2
 
     artifacts, errors = discover(root)
