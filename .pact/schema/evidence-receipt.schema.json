@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pact.local/schema/evidence-receipt.schema.json",
+  "title": "PACT Evidence Receipt",
+  "type": "object",
+  "required": ["version", "task", "risk_level", "claims", "limitations"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "task": { "type": "string", "minLength": 1 },
+    "risk_level": { "enum": ["low", "medium", "high"] },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/claim" }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["id", "claim", "required", "status", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^EV-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+        },
+        "claim": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "status": { "enum": ["pass", "fail", "unverified"] },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["test", "browser", "visual", "runtime", "contract", "architecture", "manual", "other"]
+        },
+        "ref": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}
