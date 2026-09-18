@@ -10,6 +10,7 @@ import pathlib
 import re
 
 from cache import cache_is_fresh, fingerprint_files, git_head
+from distribution import discovery_excluded_paths
 from schema_validate import load_schema, validate_instance
 
 
@@ -96,10 +97,13 @@ def is_test_path(relative: str) -> bool:
 
 def discover_files(root: pathlib.Path) -> list[pathlib.Path]:
     files = []
+    excluded_paths = discovery_excluded_paths(root)
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in EXTENSIONS:
             continue
         if excluded(path, root):
+            continue
+        if rel(path, root) in excluded_paths:
             continue
         try:
             if path.stat().st_size > 1_000_000:
