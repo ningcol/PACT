@@ -20,7 +20,7 @@ SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 
 
 def run_discovery(
-    query: str,
+    queries: list[str],
     knowledge_limit: int,
     *,
     code: bool,
@@ -28,11 +28,13 @@ def run_discovery(
 ) -> dict:
     command = runtime_command(
         "discover",
-        query,
+        queries[0],
         "--limit",
         str(knowledge_limit),
         "--json",
     )
+    for query in queries[1:]:
+        command.extend(["--query", query])
     if code:
         command.extend([
             "--code",
@@ -80,7 +82,13 @@ def main() -> int:
     parser.add_argument("--goal")
     parser.add_argument("--success", required=True, help="observable success condition")
     parser.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
-    parser.add_argument("--query", help="discovery query; defaults to task")
+    parser.add_argument(
+        "--query",
+        dest="queries",
+        action="append",
+        default=[],
+        help="discovery query; repeat for multi-query fusion (defaults to task)",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -109,7 +117,7 @@ def main() -> int:
     args = parser.parse_args()
 
     goal = args.goal or args.task
-    query = args.query or args.task
+    queries = args.queries or [args.task]
     risk = profile(args.risk)
 
     knowledge_limit = max(args.limit or risk["knowledge_limit"], 1)
@@ -122,7 +130,7 @@ def main() -> int:
 
     try:
         discovery = run_discovery(
-            query,
+            queries,
             knowledge_limit,
             code=code_enabled,
             code_limit=code_limit,
@@ -204,7 +212,8 @@ def main() -> int:
             "code_limit": code_limit,
             "completion": risk["completion"],
         },
-        "discovery_query": query,
+        "discovery_query": queries[0],
+        "discovery_queries": queries,
         "domains": domains,
         "artifacts": [
             {
