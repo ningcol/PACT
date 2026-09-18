@@ -106,6 +106,9 @@ python scripts/pact/pact.py init --target ../my-existing-project
 
 # Create only missing scaffold files.
 python scripts/pact/pact.py init --target ../my-existing-project --apply
+
+# Optional: also create a separate PACT GitHub Actions workflow.
+python scripts/pact/pact.py init --target ../my-existing-project --apply --github-actions
 ```
 
 Safety rules:
@@ -122,6 +125,7 @@ After adoption:
 cd ../my-existing-project
 python -m pip install -r scripts/pact/requirements.txt
 python scripts/pact/pact.py doctor --strict
+python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit
 ```
 
@@ -132,7 +136,8 @@ See `docs/initialization.md` and `docs/initialization-checklist.md`.
 ```text
 init       safely scaffold PACT into an existing repository
 check      deterministic artifact checks
-doctor     repository readiness
+doctor     PACT foundation health
+readiness  explicit baseline readiness
 audit      repository health inventory
 owner      validate/expose project Owner Profile
 map        rebuild disposable discovery index
@@ -154,6 +159,23 @@ These are intentionally separate:
 - **Context** answers: "What does this implementation task need to understand before changing behavior?"
 
 `explain` does not invent a final narrative. If no Decision Record exists, it explicitly reports that the durable reason is missing instead of fabricating one.
+
+## Scaffolded is not PACT-ready
+
+`pact init` intentionally creates `.pact/baseline.yaml` with review areas marked `pending`.
+
+PACT derives adoption state as:
+
+```text
+scaffolded
+→ foundation-valid
+→ baseline-in-progress
+→ pact-ready
+```
+
+This prevents generated folders/templates from being mistaken for a reviewed Product/Architecture baseline.
+
+Only mark vocabulary, Product Truth, architecture, authority, Owner Profile, verification reality, and Known Drift as reviewed (or explicitly not applicable) after they were actually inspected.
 
 ## Repository structure
 
@@ -185,7 +207,8 @@ The rule is:
 
 PACT v1 currently includes the executable foundation for:
 
-- brownfield initialization;
+- brownfield initialization with explicit readiness state;
+- opt-in project CI integration;
 - validated project Owner Profiles for language/technical-depth communication;
 - Truth ownership and artifact lifecycle;
 - Project Discovery;
