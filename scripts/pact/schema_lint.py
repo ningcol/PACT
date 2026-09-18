@@ -184,26 +184,30 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    paths = [
+    explicit_paths = [
         pathlib.Path(value).expanduser().resolve()
         for value in args.paths
-    ] if args.paths else sorted(SCHEMA_DIR.glob("*.json"))
+    ]
+    embedded_names = embedded_schema_names() if not explicit_paths else []
 
     errors: list[str] = []
     schema_count = 0
-    if paths:
-        for path in paths:
+    if explicit_paths:
+        for path in explicit_paths:
             errors.extend(lint_file(path))
             schema_count += 1
-    else:
-        names = embedded_schema_names()
-        for name in names:
+    elif embedded_names:
+        for name in embedded_names:
             try:
                 schema = load_schema(SCHEMA_DIR / name)
             except Exception as exc:
                 errors.append(f"{name}: cannot load embedded schema: {exc}")
                 continue
             errors.extend(lint_schema(name, schema))
+            schema_count += 1
+    else:
+        for path in sorted(SCHEMA_DIR.glob("*.json")):
+            errors.extend(lint_file(path))
             schema_count += 1
 
     if errors:
