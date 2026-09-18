@@ -26,10 +26,7 @@ def load(path: pathlib.Path) -> dict:
 def load_optional(path: pathlib.Path) -> dict | None:
     if not path.is_file():
         return None
-    try:
-        return load(path)
-    except (OSError, json.JSONDecodeError):
-        return None
+    return load(path)
 
 
 def read_jsonl(path: pathlib.Path) -> list[dict]:
@@ -37,15 +34,23 @@ def read_jsonl(path: pathlib.Path) -> list[dict]:
         return []
 
     items: list[dict] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
         if not line.strip():
             continue
         try:
             value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            items.append(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"invalid JSONL at {path}:{line_number}: {exc}"
+            ) from exc
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"invalid JSONL object at {path}:{line_number}"
+            )
+        items.append(value)
     return items
 
 
@@ -150,23 +155,48 @@ def aggregate(records: list[dict]) -> dict:
     }
 
 
-def error_count(attempts: list[dict], *needles: str) -> int:
+def blocker_count(
+    attempts: list[dict],
+    code: str,
+    *legacy_needles: str,
+) -> int:
     count = 0
     for attempt in attempts:
+        blockers = attempt.get("blockers")
+        if isinstance(blockers, list) and code in blockers:
+            count += 1
+            continue
         text = "\n".join(str(value) for value in attempt.get("errors", []))
-        if any(needle in text for needle in needles):
+        if any(needle in text for needle in legacy_needles):
             count += 1
     return count
 
 
-def run_receipts(task_id: str) -> list[dict]:
+def run_receipts(task_id: str, evidence: dict | None) -> list[dict]:
+    paths: set[pathlib.Path] = set()
     root = ROOT / ".pact" / "runs" / task_id
-    if not root.is_dir():
-        return []
+    if root.is_dir():
+        paths.update(root.rglob("*.json"))
+
+    if evidence:
+        for claim in evidence.get("claims", []):
+            for item in claim.get("evidence", []):
+                if item.get("provenance") != "pact-run":
+                    continue
+                ref = item.get("ref")
+                if not isinstance(ref, str) or not ref:
+                    continue
+                path = pathlib.Path(ref).expanduser()
+                paths.add(path if path.is_absolute() else ROOT / path)
 
     receipts: list[dict] = []
-    for path in sorted(root.rglob("*.json")):
-        item = load_optional(path)
+    seen: set[pathlib.Path] = set()
+    for path in sorted(paths):
+        resolved = path.resolve()
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        item = load_optional(resolved)
         if item and item.get("task_id") == task_id and "status" in item:
             receipts.append(item)
     return receipts
@@ -218,7 +248,7 @@ def derive_task(task_id: str) -> dict:
         }
 
     attempts = read_jsonl(task_dir / "completion-attempts.jsonl")
-    receipts = run_receipts(task_id)
+    receipts = run_receipts(task_id, evidence)
 
     claims = evidence.get("claims", []) if evidence else []
     findings = convergence.get("findings", []) if convergence else []
@@ -245,23 +275,27 @@ def derive_task(task_id: str) -> dict:
         "completion": {
             "attempts": len(attempts),
             "failed_attempts": sum(not bool(item.get("complete")) for item in attempts),
-            "stale_workspace_blocks": error_count(
+            "stale_workspace_blocks": blocker_count(
                 attempts,
+                "stale-workspace",
                 "stale pact-run receipt",
                 "verified workspace",
             ),
-            "stale_contract_blocks": error_count(
+            "stale_contract_blocks": blocker_count(
                 attempts,
+                "stale-task-contract",
                 "task_contract_sha256",
                 "Task Contract",
             ),
-            "acceptance_gap_blocks": error_count(
+            "acceptance_gap_blocks": blocker_count(
                 attempts,
+                "acceptance-gap",
                 "acceptance criterion",
                 "Owner Report acceptance",
             ),
-            "ci_requirement_blocks": error_count(
+            "ci_requirement_blocks": blocker_count(
                 attempts,
+                "ci-required",
                 "CI-backed Evidence",
             ),
             "final_complete": manifest.get("status") == "completed",
