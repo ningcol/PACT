@@ -6,6 +6,15 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Retrieval / Context
+
+- `discover`, `context`, and `task prepare` accept repeatable discovery queries;
+- multi-query retrieval uses deterministic Reciprocal Rank Fusion across independent lexical/graph result lists;
+- fused multi-query Context is capped by the existing risk-adaptive knowledge/code limits;
+- Task Context records the actual `discovery_queries` used;
+- Agent guidance now treats expanded queries as search hypotheses rather than project truth;
+- the historical brownfield benchmark compares direct, single-expanded, and fused multi-query retrieval.
+
 ### Compact Runtime
 
 - adopted projects use one `.pact/pact.pyz` runtime plus a tiny legacy entrypoint shim;
