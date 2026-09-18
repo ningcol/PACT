@@ -12,7 +12,7 @@ These may block CI because the machine can establish them reliably:
 - invalid Domain-reference target type;
 - invalid lifecycle state or lifecycle-directory mismatch;
 - artifact type in an invalid repository location;
-- broken resolvable internal Markdown links;
+- broken resolvable Markdown links whose target remains inside the repository file tree;
 - broken generated artifacts when generation is deterministic;
 - forbidden dependency when a fitness function exists;
 - failed tests.
@@ -49,7 +49,7 @@ owner-decision
 
 **If a machine can establish the fact, FAIL. If it can only infer, WARN/review.**
 
-Referential integrity is deterministic: an explicit local ID/link either resolves or it does not.
+Referential integrity is deterministic only when the target is inside the repository file tree. Relative Markdown links that escape the file tree may represent hosting-platform UI navigation (for example GitHub Actions badge routes), so PACT does not hard-fail them.
 
 Semantic correctness is not: a resolved Rule may still be obsolete or irrelevant, which remains a Convergence concern.
 
