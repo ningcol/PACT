@@ -93,7 +93,13 @@ def ensure_runtime_bundle(source_root: pathlib.Path) -> pathlib.Path:
 
     installed = source_root / ".pact" / "pact.pyz"
     runtime_dir = source_root / RUNTIME_DIR
-    if installed.is_file() and not runtime_dir.is_dir():
+
+    # Adopted projects may retain only scripts/pact/pact.py as a compatibility
+    # shim for project-owned guidance written before compact runtime existed.
+    # That directory is not a source checkout and must never be used to rebuild
+    # the runtime archive.
+    source_builder = runtime_dir / "runtime_bundle.py"
+    if installed.is_file() and not source_builder.is_file():
         return installed
 
     output = source_root / BUNDLE_REL
