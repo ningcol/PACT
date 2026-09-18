@@ -14,7 +14,7 @@
   "additionalProperties": false,
   "properties": {
     "format_version": {
-      "const": 2
+      "const": 3
     },
     "root": {
       "type": "string"
@@ -49,6 +49,7 @@
         "path",
         "language",
         "symbols",
+        "identifiers",
         "imports",
         "is_test"
       ],
@@ -114,6 +115,15 @@
         },
         "is_test": {
           "type": "boolean"
+        },
+        "identifiers": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       }
     },
