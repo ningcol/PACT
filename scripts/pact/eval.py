@@ -10,7 +10,7 @@ import statistics
 import sys
 from collections import defaultdict
 
-from jsonschema import Draft202012Validator
+from schema_validate import load_schema, validate_instance
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -22,13 +22,7 @@ def load(path: pathlib.Path) -> dict:
 
 
 def validate(record: dict) -> list[str]:
-    schema = load(SCHEMA)
-    validator = Draft202012Validator(schema)
-    errors = []
-    for err in sorted(validator.iter_errors(record), key=lambda e: list(e.path)):
-        loc = ".".join(str(p) for p in err.path)
-        errors.append(f"{loc or '<root>'}: {err.message}")
-    return errors
+    return validate_instance(record, load_schema(SCHEMA))
 
 
 def aggregate(records: list[dict]) -> dict:
