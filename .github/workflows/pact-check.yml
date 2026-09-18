@@ -42,6 +42,9 @@ jobs:
       - name: Validate core high-risk policy
         run: python scripts/pact/pact.py risk high --json
 
+      - name: Validate schema/runtime contract
+        run: python scripts/pact/pact.py schema-lint
+
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
