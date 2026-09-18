@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  PACT_REF: c59f9913b216694d5e065607a65e8c194a0e2880
+  PACT_REF: f843ca2f9c7341d6e41621d256c012ac160213c9
 
 jobs:
   flask:
