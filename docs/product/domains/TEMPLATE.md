@@ -5,6 +5,7 @@ pact:
   status: confirmed
   owners:
     - product
+  paths: []
 ---
 
 # <Canonical Domain Name>
@@ -30,6 +31,12 @@ Historical aliases:
 ## Not the same as
 
 - ...
+
+## Path scope
+
+Optionally add a **small number of durable path globs** to `pact.paths` when they help Impact Analysis map implementation changes back to this Domain.
+
+Do not try to map every file.
 
 ## Durable rules
 
