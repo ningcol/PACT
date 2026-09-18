@@ -4,11 +4,17 @@
 from __future__ import annotations
 
 import importlib
+import pathlib
 import sys
 
 if sys.version_info < (3, 11):
     print("PACT 0.3 requires Python 3.11+.", file=sys.stderr)
     raise SystemExit(2)
+
+RUNTIME_ROOT = pathlib.Path(__file__).resolve().parent
+runtime_path = str(RUNTIME_ROOT)
+if runtime_path not in sys.path:
+    sys.path.insert(0, runtime_path)
 
 COMMANDS = {
     # Recommended agent-facing surface.
