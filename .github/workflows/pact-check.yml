@@ -45,6 +45,9 @@ jobs:
       - name: Validate schema/runtime contract
         run: python scripts/pact/pact.py schema-lint
 
+      - name: Validate immutable workflow action pins
+        run: python scripts/pact/pact.py workflow-lint
+
       - name: Run deterministic PACT checks
         run: python scripts/pact/pact.py check
 
