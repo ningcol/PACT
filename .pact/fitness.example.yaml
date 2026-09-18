@@ -1,0 +1,26 @@
+version: 1
+
+# Architecture fitness functions are project-owned executable invariants.
+#
+# PACT does not prescribe architecture patterns. Register only constraints
+# that the project has explicitly decided are important and machine-checkable.
+#
+# Example:
+#
+# checks:
+#   - id: no-domain-to-ui
+#     description: Domain code must not import UI modules.
+#     command:
+#       - python
+#       - scripts/architecture/check_domain_dependencies.py
+#     severity: error
+#     timeout_seconds: 120
+#
+#   - id: package-cycle-report
+#     description: Report package cycles while the migration is still in progress.
+#     command:
+#       - python
+#       - scripts/architecture/report_cycles.py
+#     severity: warn
+
+checks: []
