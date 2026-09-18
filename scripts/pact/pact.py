@@ -16,7 +16,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 COMMANDS = {
     # Recommended agent-facing surface.
     "status": "status.py",
-    "inspect": "inspect.py",
+    "inspect": "inspect_project.py",
     "task": "task.py",
 
     # Setup / maintenance.
