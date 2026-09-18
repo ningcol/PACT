@@ -51,16 +51,21 @@ def prepare(args) -> int:
         return 2
     task_dir.mkdir(parents=True, exist_ok=True)
 
-    acceptance_texts = [args.success, *args.acceptance]
+    acceptance_items = [
+        ("outcome", text)
+        for text in [args.success, *args.acceptance]
+    ] + [
+        ("constraint", text)
+        for text in args.constraint
+    ]
     contract = {
         "version": 1,
         "task_id": task_id,
         "intent": args.goal or args.task,
         "acceptance_criteria": [
-            {"id": f"AC-{index}", "text": text}
-            for index, text in enumerate(acceptance_texts, start=1)
+            {"id": f"AC-{index}", "kind": kind, "text": text}
+            for index, (kind, text) in enumerate(acceptance_items, start=1)
         ],
-        "constraints": args.constraint,
     }
     contract_errors = validate_contract(contract)
     if contract_errors:
@@ -78,7 +83,7 @@ def prepare(args) -> int:
         str(RUNTIME / "context.py"),
         args.task,
         "--success",
-        "; ".join(acceptance_texts),
+        "; ".join(text for _, text in acceptance_items),
         "--risk",
         args.risk,
         "--output",
