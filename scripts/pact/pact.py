@@ -29,9 +29,11 @@ COMMANDS = {
     "explain": "explain.py",
     "context": "context.py",
     "impact": "impact.py",
+    "run": "run.py",
     "converge": "converge.py",
     "evidence": "evidence.py",
     "report": "report.py",
+    "complete": "complete.py",
     "eval": "eval.py",
 }
 
