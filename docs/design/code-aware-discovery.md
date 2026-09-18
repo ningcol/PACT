@@ -80,3 +80,15 @@ Direct lexical matches are ranked ahead of one-hop import neighbors.
 - related test/import edges.
 
 These candidates help Context Resolution decide where to inspect next. They do not change authority or Product Truth.
+
+
+## Adopted-project ownership boundary
+
+When PACT is installed into another repository, generated Project/Code maps consult `.pact/install.json`.
+
+- framework-managed PACT files are excluded from target discovery;
+- project-owned seed files are excluded while byte-identical to their installed scaffold;
+- once a seed file is edited by the project, it becomes discoverable project knowledge;
+- a PACT source checkout without an install manifest continues indexing itself normally.
+
+This prevents PACT's own runtime, generic governance scaffolding, and Skills from being mistaken for the target product/codebase.
