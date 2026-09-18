@@ -93,7 +93,7 @@ def parse_legacy_yaml(text: str) -> dict:
             if not isinstance(parent, list):
                 raise FormatError("legacy YAML list item without list parent")
             item_text = content[2:].strip()
-            mapping = re.match(r"^([^:]+):(?:\\s+|$)(.*)$", item_text)
+            mapping = re.match(r"^([^:]+):(?:\s+|$)(.*)$", item_text)
             if mapping:
                 key = mapping.group(1).strip()
                 raw_value = mapping.group(2).strip()
