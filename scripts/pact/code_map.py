@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a disposable, explainable local code relationship map."""
+"""Build or refresh a disposable, explainable local code relationship map."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ import json
 import pathlib
 import re
 
+from cache import cache_is_fresh, fingerprint_files, git_head
 from schema_validate import load_schema, validate_instance
 
+
+FORMAT_VERSION = 2
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -117,6 +120,7 @@ def python_module_aliases(path: pathlib.Path, root: pathlib.Path) -> list[str]:
 
     if parts:
         aliases.append(".".join(parts))
+        # Bare-name aliases are convenient but ambiguous across packages.
         aliases.append(parts[-1])
 
     return list(dict.fromkeys(alias for alias in aliases if alias))
@@ -163,11 +167,10 @@ def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
 def resolve_relative_js(
     spec: str,
     source: pathlib.Path,
-    root: pathlib.Path,
     available: set[pathlib.Path],
-) -> pathlib.Path | None:
+) -> tuple[pathlib.Path | None, str | None]:
     if not spec.startswith("."):
-        return None
+        return None, None
 
     base = (source.parent / spec).resolve()
     candidates = [base]
@@ -180,8 +183,8 @@ def resolve_relative_js(
 
     for candidate in candidates:
         if candidate in available:
-            return candidate
-    return None
+            return candidate, "relative-resolved"
+    return None, None
 
 
 def resolve_python(
@@ -190,7 +193,8 @@ def resolve_python(
     source: pathlib.Path,
     root: pathlib.Path,
     module_map: dict[str, pathlib.Path],
-) -> pathlib.Path | None:
+) -> tuple[pathlib.Path | None, str | None]:
+    # Relative imports are explicit in the AST and resolved against the source package.
     if level:
         package = list(source.relative_to(root).with_suffix("").parts[:-1])
         up = max(level - 1, 0)
@@ -199,23 +203,30 @@ def resolve_python(
         module_parts = [part for part in raw.split(".") if part]
         candidate = ".".join(package + module_parts)
         if candidate in module_map:
-            return module_map[candidate]
+            return module_map[candidate], "ast-resolved"
+        return None, None
 
+    # Absolute imports depend on Python environment/sys.path. A repository-local
+    # alias match is useful generated evidence, but remains heuristic.
     if raw in module_map:
-        return module_map[raw]
+        return module_map[raw], "heuristic"
 
     parts = raw.split(".")
     while len(parts) > 1:
         parts.pop()
         candidate = ".".join(parts)
         if candidate in module_map:
-            return module_map[candidate]
+            return module_map[candidate], "heuristic"
 
-    return module_map.get(raw.split(".")[-1])
+    target = module_map.get(raw.split(".")[-1])
+    return (target, "heuristic") if target else (None, None)
 
 
-def build_code_map(root: pathlib.Path) -> dict:
-    paths = discover_files(root)
+def build_code_map(
+    root: pathlib.Path,
+    paths: list[pathlib.Path],
+    source_fingerprint: str,
+) -> dict:
     available = {path.resolve() for path in paths}
 
     module_map: dict[str, pathlib.Path] = {}
@@ -245,19 +256,37 @@ def build_code_map(root: pathlib.Path) -> dict:
         if language == "python":
             symbols, raw_imports = parse_python(path)
             for raw, level in raw_imports:
-                resolved = resolve_python(raw, level, path, root, module_map)
+                resolved, confidence = resolve_python(raw, level, path, root, module_map)
                 resolved_rel = rel(resolved, root) if resolved else None
-                imports.append({"raw": ("." * level) + raw, "resolved": resolved_rel})
+                imports.append({
+                    "raw": ("." * level) + raw,
+                    "resolved": resolved_rel,
+                    "confidence": confidence,
+                })
                 if resolved_rel and resolved_rel != relative:
-                    edges.append({"from": relative, "to": resolved_rel, "kind": "import"})
+                    edges.append({
+                        "from": relative,
+                        "to": resolved_rel,
+                        "kind": "import",
+                        "confidence": confidence,
+                    })
         else:
             symbols, raw_imports = parse_js_like(path)
             for raw in raw_imports:
-                resolved = resolve_relative_js(raw, path, root, available)
+                resolved, confidence = resolve_relative_js(raw, path, available)
                 resolved_rel = rel(resolved, root) if resolved else None
-                imports.append({"raw": raw, "resolved": resolved_rel})
+                imports.append({
+                    "raw": raw,
+                    "resolved": resolved_rel,
+                    "confidence": confidence,
+                })
                 if resolved_rel and resolved_rel != relative:
-                    edges.append({"from": relative, "to": resolved_rel, "kind": "import"})
+                    edges.append({
+                        "from": relative,
+                        "to": resolved_rel,
+                        "kind": "import",
+                        "confidence": confidence,
+                    })
 
         files.append({
             "path": relative,
@@ -268,13 +297,15 @@ def build_code_map(root: pathlib.Path) -> dict:
         })
 
     unique = {
-        (edge["from"], edge["to"], edge["kind"]): edge
+        (edge["from"], edge["to"], edge["kind"], edge["confidence"]): edge
         for edge in edges
     }
 
     return {
-        "format_version": 1,
+        "format_version": FORMAT_VERSION,
         "root": ".",
+        "source_fingerprint": source_fingerprint,
+        "git_head": git_head(root),
         "files": files,
         "edges": [unique[key] for key in sorted(unique)],
     }
@@ -284,6 +315,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build generated PACT code relationship map")
     parser.add_argument("--root", help="repository root; defaults to this script's repository")
     parser.add_argument("--output", default=".pact/cache/code-map.json")
+    parser.add_argument(
+        "--ensure",
+        action="store_true",
+        help="reuse the existing code map when its source fingerprint is current",
+    )
     args = parser.parse_args()
 
     default_root = pathlib.Path(__file__).resolve().parents[2]
@@ -292,7 +328,18 @@ def main() -> int:
     if not output.is_absolute():
         output = root / output
 
-    data = build_code_map(root)
+    paths = discover_files(root)
+    source_fingerprint = fingerprint_files(root, paths)
+
+    if args.ensure and cache_is_fresh(
+        output,
+        format_version=FORMAT_VERSION,
+        source_fingerprint=source_fingerprint,
+    ):
+        print(f"PACT code-map: fresh -> {output}")
+        return 0
+
+    data = build_code_map(root, paths, source_fingerprint)
 
     schema_path = root / ".pact" / "schema" / "code-map.schema.json"
     if schema_path.exists():
@@ -303,7 +350,10 @@ def main() -> int:
             return 2
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     print(
         f"PACT code-map: {len(data['files'])} source file(s), "
