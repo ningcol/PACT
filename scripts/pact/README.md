@@ -26,6 +26,7 @@ impact     map changed files to deterministic/candidate project impacts
 converge   validate/summarize semantic Convergence Report
 evidence   validate completion Evidence Receipt
 report     validate and render evidence-backed Owner Report
+eval       validate/summarize optional real-task pilot records
 ```
 
 Examples:
@@ -62,6 +63,8 @@ python scripts/pact/pact.py context "upgrade runtime" \
   --code
 
 python scripts/pact/pact.py impact --base main --json
+
+python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json
 ```
 
 ## Code-aware discovery
@@ -110,6 +113,14 @@ See `docs/design/distribution-upgrades.md`.
 A freshly scaffolded project should normally be `foundation-valid`, not `pact-ready`.
 
 Use `readiness --require-ready` only when the project has chosen readiness as a gate.
+
+## Pilot evaluation
+
+PACT evaluation is optional and task-based. It tracks dimensions such as owner technical escalations, clarification rounds, false-done prevention, Project Explain recovery, context overload, and optional process overhead.
+
+PACT intentionally does not compute a single 0–100 score.
+
+See `docs/evaluation/pilot-scorecard.md`.
 
 ## Safety boundary
 
