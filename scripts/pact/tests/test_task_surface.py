@@ -95,10 +95,7 @@ class TaskSurfaceTests(unittest.TestCase):
     def test_failed_prepare_leaves_no_visible_task_directory(self) -> None:
         bad = self.root / "docs" / "bad.md"
         bad.parent.mkdir(parents=True, exist_ok=True)
-        bad.write_text(
-            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
-            encoding="utf-8",
-        )
+        bad.write_bytes(b"\xff\xfe\x00\x80")
 
         task_id = "TASK-PREPARE-FAIL"
         prepared = self.pact(
@@ -196,10 +193,7 @@ class TaskSurfaceTests(unittest.TestCase):
 
         bad = self.root / "docs" / "bad.md"
         bad.parent.mkdir(parents=True, exist_ok=True)
-        bad.write_text(
-            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
-            encoding="utf-8",
-        )
+        bad.write_bytes(b"\xff\xfe\x00\x80")
 
         second = self.pact(
             "task",
