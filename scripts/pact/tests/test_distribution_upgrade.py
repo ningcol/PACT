@@ -40,11 +40,16 @@ class DistributionUpgradeTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def run_init(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_init(
+        self,
+        *args: str,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(INIT), "--target", str(self.target), *args],
             capture_output=True,
             text=True,
+            env=env,
         )
 
     def run_upgrade(
@@ -117,6 +122,58 @@ class DistributionUpgradeTests(unittest.TestCase):
             encoding="utf-8",
         )
         return destination
+
+    def test_mid_init_failure_rolls_back_created_files_and_manifest(self) -> None:
+        self.target.mkdir(parents=True)
+        existing = self.target / "README.md"
+        existing.write_text("# Existing project\n", encoding="utf-8")
+
+        env = os.environ.copy()
+        env["PACT_TEST_FAIL_INIT_AFTER_CREATE"] = "3"
+        result = self.run_init("--apply", env=env)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("rollback was attempted", result.stderr)
+        self.assertEqual(
+            existing.read_text(encoding="utf-8"),
+            "# Existing project\n",
+        )
+        self.assertFalse((self.target / "pact.py").exists())
+        self.assertFalse((self.target / ".pact" / "install.json").exists())
+        self.assertFalse((self.target / ".pact" / "pact.pyz").exists())
+        self.assertFalse((self.target / "AGENTS.md").exists())
+
+        remaining = sorted(
+            path.relative_to(self.target).as_posix()
+            for path in self.target.rglob("*")
+            if path.is_file()
+        )
+        self.assertEqual(remaining, ["README.md"])
+
+    def test_reinit_failure_restores_existing_manifest_and_files(self) -> None:
+        manifest = self.scaffold()
+        original_manifest = (
+            self.target / ".pact" / "install.json"
+        ).read_bytes()
+        existing_agents = self.target / "AGENTS.md"
+        original_agents = existing_agents.read_bytes()
+
+        # Create one missing optional framework target to exercise a same-version
+        # re-init transaction without changing existing managed files.
+        workflow = self.target / ".github" / "workflows" / "pact-project-check.yml"
+        env = os.environ.copy()
+        env["PACT_TEST_FAIL_INIT_AFTER_CREATE"] = "1"
+        result = self.run_init("--apply", "--github-actions", env=env)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(workflow.exists())
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(),
+            original_manifest,
+        )
+        self.assertEqual(existing_agents.read_bytes(), original_agents)
+        after = json.loads(original_manifest)
+        self.assertEqual(after, manifest)
 
     def test_init_records_current_runtime_and_seed_ownership(self) -> None:
         manifest = self.scaffold()
