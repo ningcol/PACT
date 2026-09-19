@@ -68,6 +68,25 @@ def validate(envelope: dict) -> list[str]:
     return validate_instance(envelope, load_schema(SCHEMA))
 
 
+def extend_candidate_pool(primary: list[dict], wider: list[dict]) -> list[dict]:
+    """Preserve canonical retrieval order; append wider-pool fallbacks only."""
+    merged: list[dict] = []
+    seen: set[str] = set()
+
+    for tier, items in enumerate((primary, wider)):
+        for ordinal, original in enumerate(items):
+            path = str(original.get("path") or "")
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            item = dict(original)
+            item["_pool_tier"] = tier
+            item["_pool_ordinal"] = ordinal
+            merged.append(item)
+
+    return merged
+
+
 def repo_file(relative: str) -> pathlib.Path | None:
     path = (ROOT / relative).resolve()
     try:
@@ -135,7 +154,8 @@ def select_context_candidates(
             "estimated_tokens": estimated,
             "priority": priority,
             "mandatory": mandatory,
-            "ordinal": ordinal,
+            "pool_tier": int(item.get("_pool_tier", 0)),
+            "ordinal": int(item.get("_pool_ordinal", ordinal)),
         })
 
     knowledge_count = len(knowledge)
@@ -150,12 +170,14 @@ def select_context_candidates(
             "estimated_tokens": estimated,
             "priority": code_priority(item),
             "mandatory": False,
-            "ordinal": knowledge_count + ordinal,
+            "pool_tier": int(item.get("_pool_tier", 0)),
+            "ordinal": int(item.get("_pool_ordinal", ordinal)),
         })
 
     candidates.sort(
         key=lambda candidate: (
             -int(candidate["mandatory"]),
+            candidate["pool_tier"],
             -candidate["priority"],
             candidate["ordinal"],
             candidate["item"].get("path", ""),
@@ -285,12 +307,20 @@ def main() -> int:
         else bool(args.code)
     )
 
-    # Retrieve a wider ranked pool, then apply the final count + token budgets.
+    # Preserve the normal retrieval result as the canonical ranked prefix.
+    # A second, wider query only supplies fallback candidates when token
+    # budgeting skips a canonical large file.
     knowledge_pool_limit = max(knowledge_limit * 3, knowledge_limit + 8)
     code_pool_limit = max(code_limit * 3, code_limit + 8)
 
     try:
         discovery = run_discovery(
+            queries,
+            knowledge_limit,
+            code=code_enabled,
+            code_limit=code_limit,
+        )
+        wider_discovery = run_discovery(
             queries,
             knowledge_pool_limit,
             code=code_enabled,
@@ -301,8 +331,14 @@ def main() -> int:
         return 2
 
     queries = discovery.get("queries", queries)
-    candidate_results = discovery.get("results", [])
-    candidate_code_results = discovery.get("code_results", [])
+    candidate_results = extend_candidate_pool(
+        discovery.get("results", []),
+        wider_discovery.get("results", []),
+    )
+    candidate_code_results = extend_candidate_pool(
+        discovery.get("code_results", []),
+        wider_discovery.get("code_results", []),
+    )
     results, code_results, budget = select_context_candidates(
         candidate_results,
         candidate_code_results,
