@@ -1,6 +1,11 @@
 name: External Multi-Repo Pilots
 
 on:
+  pull_request:
+    paths:
+      - "scripts/pact/code_map.py"
+      - "scripts/pact/discover.py"
+      - ".pact/schema/code-map.schema.json"
   workflow_dispatch:
     inputs:
       pact_ref:
@@ -28,10 +33,11 @@ permissions:
   contents: read
 
 env:
-  PACT_REF: ${{ inputs.pact_ref }}
+  PACT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.pact_ref }}
 
 jobs:
   flask:
+    if: github.event_name == 'workflow_dispatch'
     name: Flask / Python
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -166,6 +172,7 @@ jobs:
           retention-days: 7
 
   pinia:
+    if: github.event_name == 'workflow_dispatch'
     name: Pinia / Vue TypeScript
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -309,7 +316,7 @@ jobs:
           retention-days: 7
 
   bubbletea:
-    name: Bubble Tea / Go graceful degradation
+    name: Bubble Tea / Go generic lexical fallback
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -340,28 +347,40 @@ jobs:
       - name: Assert additive adoption
         run: test -z "$(git -C "$TARGET_DIR" diff --name-only)"
 
-      - name: Validate graceful unsupported-language behavior
+      - name: Validate bounded Go lexical fallback
         working-directory: /tmp/bubbletea
         run: |
           python3 pact.py doctor --strict
-          python3 pact.py discover "Elm Architecture" --json | tee /tmp/bubbletea-discover.json
+          python3 pact.py discover "Update" --code --code-limit 8 --json | tee /tmp/bubbletea-discover.json
           mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
-          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --output .pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --query "Update Model Cmd"             --code             --output .pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json
           python3 pact.py impact --files tea.go --risk medium --json | tee /tmp/bubbletea-impact.json
           python3 - <<'PY'
           import json
           d=json.load(open("/tmp/bubbletea-discover.json"))
           c=json.load(open("/tmp/bubbletea/.pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json"))
           i=json.load(open("/tmp/bubbletea-impact.json"))
-          assert d["result_count"] > 0, d
+
+          code=d["code_results"]
+          paths={item["path"] for item in code}
+          assert "tea.go" in paths, paths
+          tea=next(item for item in code if item["path"] == "tea.go")
+          assert tea["parser_mode"] == "generic-lexical", tea
+          assert "Update" in tea["identifiers"], tea
+          assert len(code) <= 8, len(code)
+
+          context_paths={item["path"] for item in c["code_artifacts"]}
+          assert "tea.go" in context_paths, context_paths
           assert c["risk_policy"]["code_context"] is True, c
-          assert len(c["code_artifacts"]) == 0, c
-          assert any("Code-aware discovery found no matching code artifact" in x for x in c["known_unknowns"]), c
+
+          # Generic lexical fallback locates files but must not fabricate Go
+          # structural/import relationships.
           assert i["code_analysis"] is True, i
           assert len(i["code_candidate_impacts"]) == 0, i
-          print("Bubble Tea graceful-degradation assertions passed")
-          print("knowledge matches", d["result_count"])
-          print("code artifacts", len(c["code_artifacts"]))
+
+          print("Bubble Tea generic lexical fallback assertions passed")
+          print("discover code matches", len(code), sorted(paths))
+          print("context code artifacts", len(c["code_artifacts"]), sorted(context_paths))
           print("impact code candidates", len(i["code_candidate_impacts"]))
           PY
 
@@ -390,15 +409,15 @@ jobs:
                 "evidence":[{"kind":"test","provenance":"pact-run","ref":".pact/runs/EXT-BUBBLETEA-001/tests.json"}]
               },
               {
-                "id":"EV-BUBBLE-DEGRADE",
-                "claim":"PACT explicitly reported unsupported code-aware context instead of fabricating Go relationships.",
+                "id":"EV-BUBBLE-GENERIC-CONTEXT",
+                "claim":"PACT located Go implementation candidates through bounded generic lexical identifiers without fabricating Go relationships.",
                 "required":true,
                 "status":"pass",
                 "evidence":[{"kind":"runtime","provenance":"pact-run","ref":".pact/runs/EXT-BUBBLETEA-001/context.json"}]
               }
             ],
             "limitations":[
-              "PACT 0.3 does not parse Go source relationships; this pilot validates explicit graceful degradation rather than Go code understanding."
+              "Generic Go fallback is lexical search evidence only; it does not infer Go AST/import/call relationships."
             ]
           }
           JSON
@@ -406,9 +425,9 @@ jobs:
           {
             "version":1,
             "task_id":"EXT-BUBBLETEA-001",
-            "change":"Ephemeral additive PACT adoption for unsupported-language pilot",
-            "owner_summary":"PACT preserved the Go project, exposed its code-analysis limitation, and upstream tests passed.",
-            "evidence":["EV-BUBBLE-GO-TESTS","EV-BUBBLE-DEGRADE"],
+            "change":"Ephemeral additive PACT adoption for generic-language retrieval pilot",
+            "owner_summary":"PACT located bounded Go lexical candidates without fabricating structural relationships, and upstream tests passed.",
+            "evidence":["EV-BUBBLE-GO-TESTS","EV-BUBBLE-GENERIC-CONTEXT"],
             "findings":[]
           }
           JSON
@@ -417,14 +436,14 @@ jobs:
             "version":1,
             "task_id":"EXT-BUBBLETEA-001",
             "status":"completed",
-            "summary":"PACT gracefully degraded on the Go-only Bubble Tea repository.",
-            "before":"The pinned Bubble Tea checkout had no PACT scaffold.",
-            "after":"PACT was added additively, did not fabricate Go code relationships, and Go tests still pass.",
+            "summary":"PACT passed the Go generic-lexical Bubble Tea pilot.",
+            "before":"The pinned Bubble Tea checkout had no PACT scaffold or Go code retrieval.",
+            "after":"PACT was added additively, located tea.go through bounded lexical identifiers, did not fabricate Go structural relationships, and Go tests still pass.",
             "verification":[
               {"claim":"Bubble Tea Go tests pass.","evidence_ids":["EV-BUBBLE-GO-TESTS"]},
-              {"claim":"Unsupported-language behavior was explicit.","evidence_ids":["EV-BUBBLE-DEGRADE"]}
+              {"claim":"Bounded Go lexical context was produced without structural fabrication.","evidence_ids":["EV-BUBBLE-GENERIC-CONTEXT"]}
             ],
-            "consistency":{"status":"aligned","summary":"No tracked upstream file was modified; Go code-map limitation remained explicit."},
+            "consistency":{"status":"aligned","summary":"No tracked upstream file was modified; generic Go retrieval remained explicitly lexical-only."},
             "owner_decisions":[]
           }
           JSON
