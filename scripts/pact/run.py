@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 
 from schema_validate import load_schema, validate_instance
@@ -26,8 +27,66 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def _pump_stream(
+    stream,
+    digest,
+    output,
+) -> None:
+    try:
+        for chunk in iter(lambda: stream.read(64 * 1024), b""):
+            digest.update(chunk)
+            if output is not None:
+                output.write(chunk)
+                output.flush()
+    finally:
+        stream.close()
+
+
+def run_streamed(
+    command: list[str],
+    *,
+    cwd: pathlib.Path,
+    quiet: bool,
+) -> tuple[int, str, str]:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+    )
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    stdout_digest = hashlib.sha256()
+    stderr_digest = hashlib.sha256()
+    stdout_target = None if quiet else sys.stdout.buffer
+    stderr_target = None if quiet else sys.stderr.buffer
+
+    threads = [
+        threading.Thread(
+            target=_pump_stream,
+            args=(process.stdout, stdout_digest, stdout_target),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_pump_stream,
+            args=(process.stderr, stderr_digest, stderr_target),
+            daemon=True,
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+
+    returncode = process.wait()
+    for thread in threads:
+        thread.join()
+
+    return (
+        int(returncode),
+        stdout_digest.hexdigest(),
+        stderr_digest.hexdigest(),
+    )
 
 
 def ci_provenance() -> dict | None:
@@ -104,24 +163,15 @@ def main() -> int:
 
     started = now_iso()
     try:
-        completed = subprocess.run(
+        returncode, stdout_sha256, stderr_sha256 = run_streamed(
             command,
             cwd=cwd,
-            capture_output=True,
-            shell=False,
+            quiet=args.quiet,
         )
     except OSError as exc:
         print(f"PACT run: cannot execute command: {exc}", file=sys.stderr)
         return 2
     finished = now_iso()
-
-    if not args.quiet:
-        if completed.stdout:
-            sys.stdout.buffer.write(completed.stdout)
-            sys.stdout.buffer.flush()
-        if completed.stderr:
-            sys.stderr.buffer.write(completed.stderr)
-            sys.stderr.buffer.flush()
 
     try:
         workspace_after = workspace_snapshot(cwd)
@@ -143,10 +193,10 @@ def main() -> int:
         "cwd": str(cwd),
         "started_at": started,
         "finished_at": finished,
-        "exit_code": int(completed.returncode),
-        "status": "pass" if completed.returncode == 0 else "fail",
-        "stdout_sha256": sha256_bytes(completed.stdout),
-        "stderr_sha256": sha256_bytes(completed.stderr),
+        "exit_code": returncode,
+        "status": "pass" if returncode == 0 else "fail",
+        "stdout_sha256": stdout_sha256,
+        "stderr_sha256": stderr_sha256,
         "git_head": workspace_after.get("git_head"),
         "git_dirty": workspace_after.get("dirty"),
         "workspace_before": workspace_before,
@@ -171,7 +221,7 @@ def main() -> int:
     )
     print(f"PACT run receipt: {output}", file=sys.stderr)
 
-    return completed.returncode
+    return returncode
 
 
 if __name__ == "__main__":
