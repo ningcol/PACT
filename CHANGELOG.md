@@ -17,6 +17,12 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - existing `AGENTS.md` remains untouched and receives merge guidance under `.pact/`;
 - real DouBaoFreeImageGen historical fresh-adoption validation reduced the install from the original 97 managed files to 8 managed files (9 physical files including `.pact/install.json`) while strict Doctor, Status, schema-lint, and code-aware Task Context still passed.
 
+### CI efficiency
+
+- PACT Check remains the single full correctness gate and still runs every unit test;
+- the 3×3 Core Matrix now focuses on cross-platform bootstrap/runtime/distribution/stdlib/init/Git-path portability instead of repeating the complete semantic test suite nine times;
+- release validation still runs the full unit suite.
+
 ### Pre-release simplification
 
 - removed unreleased legacy YAML config/front-matter parsing;
