@@ -8,6 +8,7 @@ import unittest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUNTIME = PROJECT_ROOT / "scripts" / "pact"
+sys.path.insert(0, str(RUNTIME))
 
 spec = importlib.util.spec_from_file_location(
     "pact_context_budget",
