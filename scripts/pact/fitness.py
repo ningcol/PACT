@@ -9,7 +9,7 @@ import pathlib
 import subprocess
 import sys
 
-from formats import load_legacy_yaml, load_toml
+from formats import load_toml
 from schema_validate import load_schema, validate_instance
 
 
@@ -20,24 +20,17 @@ def load_config(root: pathlib.Path, explicit: str | None, strict: bool):
             path = root / path
         if not path.exists():
             raise FileNotFoundError(f"missing config at {path}")
-        if path.suffix == ".toml":
-            return load_toml(path), path, "toml", path.name == "fitness.toml"
-        return load_legacy_yaml(path), path, "legacy-yaml", path.name == "fitness.yaml"
+        if path.suffix.lower() != ".toml":
+            raise ValueError("fitness config must be TOML")
+        return load_toml(path), path, "toml", path.name == "fitness.toml"
 
-    candidates = [
-        (root / ".pact" / "fitness.toml", "toml", True),
-        (root / ".pact" / "fitness.yaml", "legacy-yaml", True),
-    ]
+    candidates = [(root / ".pact" / "fitness.toml", True)]
     if not strict:
-        candidates.extend([
-            (root / ".pact" / "fitness.example.toml", "toml", False),
-            (root / ".pact" / "fitness.example.yaml", "legacy-yaml", False),
-        ])
+        candidates.append((root / ".pact" / "fitness.example.toml", False))
 
-    for path, kind, configured in candidates:
+    for path, configured in candidates:
         if path.exists():
-            data = load_toml(path) if kind == "toml" else load_legacy_yaml(path)
-            return data, path, kind, configured
+            return load_toml(path), path, "toml", configured
 
     raise FileNotFoundError("missing config at .pact/fitness.toml")
 
@@ -101,7 +94,7 @@ def run_check(root: pathlib.Path, check: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run PACT architecture fitness functions")
     parser.add_argument("--root", help="repository root; defaults to this script's repository")
-    parser.add_argument("--config", help="fitness TOML (legacy YAML remains readable)")
+    parser.add_argument("--config", help="fitness TOML")
     parser.add_argument(
         "--strict",
         action="store_true",
