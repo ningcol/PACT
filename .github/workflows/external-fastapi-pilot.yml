@@ -92,7 +92,8 @@ jobs:
           set -euo pipefail
           python3 pact.py discover "password reset"             --code             --json | tee /tmp/pact-discover.json
 
-          python3 pact.py context "change the password reset flow"             --success "Password reset still works for a user end to end"             --risk medium             --output /tmp/pact-context.json
+          mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
+          python3 pact.py run             --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change the password reset flow"             --success "Password reset still works for a user end to end"             --risk medium             --output .pact/tmp/full-stack-fastapi-template/.pact/tmp/pact-context.json
 
           python3 pact.py impact             --files               backend/app/api/routes/login.py               frontend/src/routes/reset-password.tsx             --risk medium             --json | tee /tmp/pact-impact.json
 
@@ -102,7 +103,7 @@ jobs:
           import json
 
           discovery = json.load(open("/tmp/pact-discover.json"))
-          context = json.load(open("/tmp/pact-context.json"))
+          context = json.load(open("/tmp/full-stack-fastapi-template/.pact/tmp/full-stack-fastapi-template/.pact/tmp/pact-context.json"))
           impact = json.load(open("/tmp/pact-impact.json"))
 
           assert discovery["code_result_count"] > 0, discovery
@@ -168,9 +169,9 @@ jobs:
                 "status": "pass",
                 "evidence": [
                   {
-                    "kind": "other",
-                    "provenance": "file",
-                    "ref": "/tmp/pact-context.json"
+                    "kind": "runtime",
+                    "provenance": "pact-run",
+                    "ref": ".pact/runs/EXT-FASTAPI-001/context.json"
                   }
                 ]
               }
@@ -244,7 +245,7 @@ jobs:
               python3 - <<'PY'
           import json, os
           d = json.load(open("/tmp/pact-discover.json"))
-          c = json.load(open("/tmp/pact-context.json"))
+          c = json.load(open("/tmp/full-stack-fastapi-template/.pact/tmp/full-stack-fastapi-template/.pact/tmp/pact-context.json"))
           i = json.load(open("/tmp/pact-impact.json"))
           out = os.environ["GITHUB_STEP_SUMMARY"]
           with open(out, "a") as f:
@@ -274,7 +275,7 @@ jobs:
             /tmp/pact-audit.json
             /tmp/pact-risk-high.json
             /tmp/pact-discover.json
-            /tmp/pact-context.json
+            /tmp/full-stack-fastapi-template/.pact/tmp/pact-context.json
             /tmp/pact-impact.json
             /tmp/pact-complete.json
             /tmp/full-stack-fastapi-template/.pact/runs/
