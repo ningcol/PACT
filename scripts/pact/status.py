@@ -9,6 +9,7 @@ import pathlib
 import subprocess
 import sys
 
+from audit import evaluate as evaluate_audit
 from readiness import evaluate as evaluate_readiness
 from runtime_exec import runtime_command
 
@@ -41,7 +42,6 @@ def main() -> int:
 
     doctor_args = ["--strict"] if args.strict else []
     doctor_rc, doctor, doctor_raw = run_json("doctor.py", *doctor_args)
-    audit_rc, audit, audit_raw = run_json("audit.py")
 
     foundation_state = doctor.get("overall") if doctor else "error"
     readiness = evaluate_readiness(
@@ -49,6 +49,30 @@ def main() -> int:
         foundation_valid=foundation_state == "pass",
         foundation_detail=foundation_state,
     )
+
+    audit = None
+    audit_error = None
+    if doctor is not None:
+        project_map_rel = doctor.get("project_map")
+        deterministic = next(
+            (
+                item.get("state")
+                for item in doctor.get("checks", [])
+                if item.get("check") == "deterministic-check"
+            ),
+            "error",
+        )
+        try:
+            if not project_map_rel:
+                raise FileNotFoundError("Doctor did not provide a project map")
+            project_map = ROOT / project_map_rel
+            index = json.loads(project_map.read_text(encoding="utf-8"))
+            audit = evaluate_audit(
+                index,
+                deterministic_check=deterministic,
+            )
+        except Exception as exc:
+            audit_error = str(exc)
 
     result = {
         "foundation": {
@@ -78,12 +102,12 @@ def main() -> int:
             for error in readiness["errors"]
         )
     if audit is None:
-        errors.append(f"audit failed: {audit_raw}")
+        errors.append(f"audit failed: {audit_error or 'unknown error'}")
     result["errors"] = errors
 
     blocking = (
         doctor_rc != 0
-        or audit_rc != 0
+        or audit is None
         or bool(errors)
     )
     warnings = []
