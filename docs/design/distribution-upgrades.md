@@ -57,6 +57,23 @@ For every file PACT actually created, it stores:
 
 The manifest is upgrade bookkeeping, not project truth.
 
+## Transactional initialization
+
+Fresh/repeated `pact init --apply` never overwrites existing project files.
+
+For missing install targets it uses a create-only transaction:
+
+```text
+plan
+→ render every new file into a transaction staging directory
+→ publish each missing target atomically
+→ build install provenance from the published bytes
+→ commit .pact/install.json last
+→ verify recorded hashes
+```
+
+If publishing, manifest construction, or final validation fails, PACT removes only files created by that init transaction and restores any prior install manifest. Existing project files are not part of the rollback set.
+
 ## Upgrade safety
 
 For framework-managed files:

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import shutil
 import sys
+import tempfile
 
 from distribution import (
     github_actions_entry,
@@ -219,11 +221,11 @@ def operation_entry(op: dict) -> dict:
     return generated_entry(op["path"], management=op["management"])
 
 
-def write_install_manifest(
+def build_install_manifest(
     target: pathlib.Path,
     operations: list[dict],
     created_paths: set[str],
-) -> None:
+) -> dict:
     existing = read_install_manifest(target)
     files = dict(existing.get("files", {})) if existing else {}
 
@@ -232,11 +234,11 @@ def write_install_manifest(
             continue
         destination = target / op["path"]
         if not destination.is_file():
-            continue
+            raise RuntimeError(f"created init file missing before manifest commit: {op['path']}")
         entry = operation_entry(op)
         files[op["path"]] = manifest_record(entry, destination)
 
-    manifest = {
+    return {
         "format_version": 1,
         "runtime_version": (
             existing.get("runtime_version")
@@ -245,42 +247,165 @@ def write_install_manifest(
         ),
         "files": files,
     }
-    path = target / INSTALL_MANIFEST
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def cleanup_empty_parents(path: pathlib.Path, stop: pathlib.Path) -> None:
+    stop = stop.resolve()
+    current = path.resolve()
+    while current != stop and stop in current.parents:
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
+def render_operation_to_stage(op: dict, destination: pathlib.Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if op["source"]:
+        source = (
+            ensure_runtime_bundle(SOURCE_ROOT)
+            if op["path"] == ".pact/pact.pyz"
+            else SOURCE_ROOT / op["source"]
+        )
+        shutil.copy2(source, destination)
+    elif op["path"] == "AGENTS.md":
+        destination.write_text(TARGET_AGENTS, encoding="utf-8")
+    elif op["path"] == ".pact/AGENT_BOOTSTRAP.md":
+        destination.write_text(bootstrap_snippet(), encoding="utf-8")
+    else:
+        raise RuntimeError(f"unsupported generated init path: {op['path']}")
 
 
 def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
-    target.mkdir(parents=True, exist_ok=True)
-    created: set[str] = set()
+    create_ops = [
+        op for op in operations
+        if op["action"].startswith("create")
+    ]
+    if not create_ops:
+        return set()
 
-    for op in operations:
-        if not op["action"].startswith("create"):
-            continue
+    target_parent = target.parent
+    target_parent.mkdir(parents=True, exist_ok=True)
 
-        destination = target / op["path"]
-        if destination.exists():
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path = target / INSTALL_MANIFEST
+    manifest_existed = manifest_path.is_file()
+    manifest_backup = (
+        manifest_path.read_bytes()
+        if manifest_existed
+        else None
+    )
 
-        if op["source"]:
-            source = (
-                ensure_runtime_bundle(SOURCE_ROOT)
-                if op["path"] == ".pact/pact.pyz"
-                else SOURCE_ROOT / op["source"]
+    with tempfile.TemporaryDirectory(
+        prefix=".pact-init-txn-",
+        dir=target_parent,
+    ) as tmp:
+        txn = pathlib.Path(tmp)
+        stage_root = txn / "stage"
+        stage_root.mkdir()
+
+        # Render every source/generated file before mutating the target.
+        for op in create_ops:
+            render_operation_to_stage(
+                op,
+                stage_root / pathlib.Path(op["path"]),
             )
-            shutil.copy2(source, destination)
-        elif op["path"] == "AGENTS.md":
-            destination.write_text(TARGET_AGENTS, encoding="utf-8")
-        elif op["path"] == ".pact/AGENT_BOOTSTRAP.md":
-            destination.write_text(bootstrap_snippet(), encoding="utf-8")
-        else:
-            continue
 
-        created.add(op["path"])
+        created: list[str] = []
+        fail_after_raw = os.environ.get("PACT_TEST_FAIL_INIT_AFTER_CREATE")
+        fail_after = int(fail_after_raw) if fail_after_raw else None
 
-    write_install_manifest(target, operations, created)
-    return created
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            for op in create_ops:
+                relative = op["path"]
+                destination = target / relative
+                if destination.exists():
+                    # Re-check at publish time to preserve no-overwrite semantics
+                    # if another process created the path after planning.
+                    continue
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                staged = stage_root / pathlib.Path(relative)
+                temp_destination = destination.parent / (
+                    f".{destination.name}.pact-init-tmp"
+                )
+                if temp_destination.exists():
+                    temp_destination.unlink()
+                shutil.copy2(staged, temp_destination)
+                os.replace(temp_destination, destination)
+                created.append(relative)
+
+                if fail_after is not None and len(created) >= fail_after:
+                    raise RuntimeError(
+                        f"simulated init failure after {len(created)} create(s)"
+                    )
+
+            created_set = set(created)
+            manifest = build_install_manifest(
+                target,
+                operations,
+                created_set,
+            )
+            staged_manifest = txn / "install.json"
+            staged_manifest.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged_manifest, manifest_path)
+
+            # Validate the final recorded hashes after manifest commit.
+            for relative in created:
+                record = manifest["files"].get(relative)
+                destination = target / relative
+                if not record or not destination.is_file():
+                    raise RuntimeError(
+                        f"init final state missing recorded file: {relative}"
+                    )
+                actual = manifest_record(
+                    operation_entry(
+                        next(op for op in operations if op["path"] == relative)
+                    ),
+                    destination,
+                )["installed_sha256"]
+                if actual != record.get("installed_sha256"):
+                    raise RuntimeError(
+                        f"init final hash mismatch for {relative}"
+                    )
+
+            return created_set
+
+        except Exception:
+            # Manifest was committed last, so rollback only removes files this
+            # transaction created and restores the prior manifest if any.
+            for relative in reversed(created):
+                destination = target / relative
+                try:
+                    if destination.is_file() or destination.is_symlink():
+                        destination.unlink()
+                    cleanup_empty_parents(destination.parent, target)
+                except OSError:
+                    pass
+
+            try:
+                if manifest_existed and manifest_backup is not None:
+                    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                    restore = txn / "restore-install.json"
+                    restore.write_bytes(manifest_backup)
+                    os.replace(restore, manifest_path)
+                elif manifest_path.exists():
+                    manifest_path.unlink()
+                    cleanup_empty_parents(manifest_path.parent, target)
+            except OSError:
+                pass
+
+            # Remove an empty target created only by this transaction.
+            try:
+                target.rmdir()
+            except OSError:
+                pass
+            raise
 
 
 def main() -> int:
@@ -322,7 +447,14 @@ def main() -> int:
 
     created_paths: set[str] = set()
     if args.apply:
-        created_paths = apply(target, operations)
+        try:
+            created_paths = apply(target, operations)
+        except Exception as exc:
+            print(
+                f"PACT init: transactional apply failed and rollback was attempted: {exc}",
+                file=sys.stderr,
+            )
+            return 2
 
     summary = {
         "target": str(target),

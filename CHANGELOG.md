@@ -33,6 +33,15 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - prepared tasks must carry the current Context SHA contract;
 - upgrade tests now cover current-runtime update/conflict/rollback/seed safety instead of unreleased migration paths.
 
+### Reliability hardening
+
+- `pact init --apply` now stages all would-be-created files before target mutation, publishes them atomically, commits install provenance last, and rolls back transaction-created files/manifest state on failure;
+- Project Map and Code Map freshness fingerprints now include source-content SHA256 instead of relying on size/mtime;
+- per-file parse cache reuse is content-hash bound, so equal-size content replacements with preserved mtimes are reparsed;
+- `pact run` streams stdout/stderr while hashing instead of retaining full command output in memory;
+- Git workspace fingerprint V2 hashes staged index state, current unstaged file state, and untracked contents instead of buffering full binary patches;
+- large-output and large-binary workspace regressions now run in the cross-platform portability matrix.
+
 ### Trust hardening batch
 
 - prepared task risk is bound through Context/Evidence/completion so a high-risk task cannot be downgraded by editing Evidence risk;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -94,7 +95,15 @@ class FreshnessAndRiskTests(unittest.TestCase):
             second_data["source_fingerprint"],
         )
 
-        self.write("README.md", "# Beta changed length\n")
+        readme = self.root / "README.md"
+        before = readme.stat()
+        self.write("README.md", "# Omega\n")
+        os.utime(
+            readme,
+            ns=(before.st_atime_ns, before.st_mtime_ns),
+        )
+        self.assertEqual(readme.stat().st_size, before.st_size)
+
         third = self.run_map(output)
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
         self.assertIn("parsed=1", third.stdout)
@@ -125,7 +134,15 @@ class FreshnessAndRiskTests(unittest.TestCase):
             second_data["source_fingerprint"],
         )
 
-        self.write("src/b.ts", "export const value = 200;\n")
+        source = self.root / "src" / "b.ts"
+        before = source.stat()
+        self.write("src/b.ts", "export const value = 2;\n")
+        os.utime(
+            source,
+            ns=(before.st_atime_ns, before.st_mtime_ns),
+        )
+        self.assertEqual(source.stat().st_size, before.st_size)
+
         third = self.run_code_map(output)
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
         self.assertIn("parsed=1", third.stdout)
