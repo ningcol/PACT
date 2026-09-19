@@ -15,15 +15,18 @@
     "stdout_sha256",
     "stderr_sha256",
     "git_head",
-    "git_dirty"
+    "git_dirty",
+    "argv_redacted",
+    "redacted_argument_count",
+    "workspace_before",
+    "workspace_after",
+    "workspace_changed",
+    "ci"
   ],
   "additionalProperties": false,
   "properties": {
     "version": {
-      "enum": [
-        1,
-        2
-      ]
+      "const": 2
     },
     "task_id": {
       "type": "string",
@@ -204,30 +207,5 @@
         }
       }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "const": 2
-          }
-        },
-        "required": [
-          "version"
-        ]
-      },
-      "then": {
-        "required": [
-          "argv_redacted",
-          "redacted_argument_count",
-          "workspace_before",
-          "workspace_after",
-          "workspace_changed",
-          "ci"
-        ]
-      }
-    }
-  ]
+  }
 }
