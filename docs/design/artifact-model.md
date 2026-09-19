@@ -33,7 +33,7 @@ IDs should survive file renames and directory moves.
 
 ## 3. Front matter
 
-Durable PACT artifacts should use TOML front matter. PACT 0.3 still reads the restricted YAML subset emitted by 0.2 for compatibility, but new/edited artifacts should converge to TOML.
+Durable PACT artifacts use TOML front matter. Other front-matter formats are not part of the PACT protocol.
 
 Example:
 
