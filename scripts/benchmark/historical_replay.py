@@ -178,8 +178,15 @@ def context_metrics(context: dict, oracle_files: list[str]) -> dict:
     recall = len(matched) / len(oracle_files) if oracle_files else None
     precision_proxy = len(matched) / len(paths) if paths else 0.0
 
+    budget = context.get("context_budget", {})
     return {
         "configured_code_budget": code_budget,
+        "materialization_token_budget": budget.get("limit_tokens"),
+        "selected_estimated_tokens": budget.get("selected_estimated_tokens"),
+        "candidate_estimated_tokens": budget.get("candidate_estimated_tokens"),
+        "dropped_for_token_budget": budget.get("dropped_for_token_budget"),
+        "dropped_for_count_limit": budget.get("dropped_for_count_limit"),
+        "authority_overage_tokens": budget.get("authority_overage_tokens"),
         "context_code_files": len(paths),
         "oracle_files": len(oracle_files),
         "matched_oracle_files": matched,
@@ -386,13 +393,18 @@ def main() -> int:
             result = replay_case(case)
             results.append(result)
             print(
-                f"{case['id']}: budget={result['configured_final_code_budget']} "
+                f"{case['id']}: files={result['configured_final_code_budget']} "
+                f"tokens={result['multi_query']['materialization_token_budget']} "
                 f"direct={result['direct']['context_code_files']}/"
-                f"{result['direct']['recall']:.3f} "
+                f"{result['direct']['recall']:.3f}/"
+                f"{result['direct']['selected_estimated_tokens']}t "
                 f"expanded={result['expanded']['context_code_files']}/"
-                f"{result['expanded']['recall']:.3f} "
+                f"{result['expanded']['recall']:.3f}/"
+                f"{result['expanded']['selected_estimated_tokens']}t "
                 f"multi={result['multi_query']['context_code_files']}/"
-                f"{result['multi_query']['recall']:.3f}"
+                f"{result['multi_query']['recall']:.3f}/"
+                f"{result['multi_query']['selected_estimated_tokens']}t "
+                f"token-drops={result['multi_query']['dropped_for_token_budget']}"
             )
         except Exception as exc:
             failures.append({"id": case.get("id"), "error": str(exc)})

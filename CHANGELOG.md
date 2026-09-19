@@ -50,6 +50,12 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ### Retrieval / Context
 
+- `code_limit` is now a true final output budget for both single- and multi-query retrieval;
+- query-diverse fusion prevents specialized query intents from being silently starved when the budget permits representation;
+- historical retrieval comparison now enforces equal final code budgets across direct/expanded/multi-query modes;
+- Context adds a soft risk-adaptive estimated materialization-token budget on top of hard artifact-count limits;
+- token estimates use deterministic repository file size (`UTF-8 bytes / 4`) and never materialize file bodies into the Context envelope;
+- confirmed Product Rules and implemented Decisions may explicitly exceed the soft token budget instead of being silently dropped;
 - `discover`, `context`, and `task prepare` accept repeatable discovery queries;
 - multi-query retrieval uses deterministic Reciprocal Rank Fusion across independent lexical/graph result lists;
 - fused multi-query Context is capped by the existing risk-adaptive knowledge/code limits;

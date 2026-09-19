@@ -95,10 +95,7 @@ class TaskSurfaceTests(unittest.TestCase):
     def test_failed_prepare_leaves_no_visible_task_directory(self) -> None:
         bad = self.root / "docs" / "bad.md"
         bad.parent.mkdir(parents=True, exist_ok=True)
-        bad.write_text(
-            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
-            encoding="utf-8",
-        )
+        bad.write_bytes(b"\xff\xfe\x00\x80")
 
         task_id = "TASK-PREPARE-FAIL"
         prepared = self.pact(
@@ -196,10 +193,7 @@ class TaskSurfaceTests(unittest.TestCase):
 
         bad = self.root / "docs" / "bad.md"
         bad.parent.mkdir(parents=True, exist_ok=True)
-        bad.write_text(
-            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
-            encoding="utf-8",
-        )
+        bad.write_bytes(b"\xff\xfe\x00\x80")
 
         second = self.pact(
             "task",
@@ -217,6 +211,33 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertNotEqual(second.returncode, 0)
         self.assertEqual(task_manifest.read_bytes(), original_manifest)
         self.assertTrue(marker.is_file())
+
+    def test_task_prepare_forwards_token_budget(self) -> None:
+        task_id = "TASK-TOKEN-BUDGET"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "inspect password reset behavior",
+            "--success",
+            "Relevant context is bounded",
+            "--risk",
+            "low",
+            "--token-budget",
+            "1234",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / prep["context"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            context["risk_policy"]["materialization_token_budget"],
+            1234,
+        )
+        self.assertEqual(context["context_budget"]["limit_tokens"], 1234)
 
     def test_task_prepare_and_finish_happy_path(self) -> None:
         task_id = "TASK-HAPPY"
