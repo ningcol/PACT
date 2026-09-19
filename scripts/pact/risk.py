@@ -27,7 +27,7 @@ PROFILES = {
         "knowledge_limit": 12,
         "code_context_default": True,
         "code_limit": 12,
-        "materialization_token_budget": 20000,
+        "materialization_token_budget": 40000,
         "completion": [
             "required passing claims need a current workspace-bound pact-run receipt",
             "Convergence Report is required",
@@ -38,7 +38,7 @@ PROFILES = {
         "knowledge_limit": 20,
         "code_context_default": True,
         "code_limit": 20,
-        "materialization_token_budget": 40000,
+        "materialization_token_budget": 80000,
         "completion": [
             "required passing claims need a current workspace-bound pact-run receipt",
             "inspect relevant architecture/contracts/decisions/history when applicable",
