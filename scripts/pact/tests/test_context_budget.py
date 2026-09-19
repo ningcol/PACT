@@ -35,6 +35,79 @@ class ContextBudgetTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"x" * size)
 
+    def test_wider_pool_only_appends_fallback_candidates(self) -> None:
+        primary = [
+            {"path": "src/a.ts", "score": 10},
+            {"path": "src/b.ts", "score": 9},
+        ]
+        wider = [
+            {"path": "src/x.ts", "score": 1000},
+            {"path": "src/a.ts", "score": 999},
+            {"path": "src/c.ts", "score": 998},
+        ]
+
+        merged = context.extend_candidate_pool(primary, wider)
+
+        self.assertEqual(
+            [item["path"] for item in merged],
+            ["src/a.ts", "src/b.ts", "src/x.ts", "src/c.ts"],
+        )
+        self.assertEqual(
+            [item["_pool_tier"] for item in merged],
+            [0, 0, 1, 1],
+        )
+
+    def test_selection_preserves_canonical_code_order(self) -> None:
+        for name in ["a.ts", "b.ts", "c.ts"]:
+            self.write_bytes(f"src/{name}", 100)
+
+        code = context.extend_candidate_pool(
+            [
+                {
+                    "path": "src/a.ts",
+                    "score": 1,
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": [],
+                    "relation": "direct-match",
+                    "confidence": "direct",
+                },
+                {
+                    "path": "src/b.ts",
+                    "score": 1000,
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": [],
+                    "relation": "direct-match",
+                    "confidence": "direct",
+                },
+            ],
+            [
+                {
+                    "path": "src/c.ts",
+                    "score": 5000,
+                    "language": "typescript",
+                    "is_test": False,
+                    "symbols": [],
+                    "relation": "direct-match",
+                    "confidence": "direct",
+                }
+            ],
+        )
+
+        _, selected, _ = context.select_context_candidates(
+            [],
+            code,
+            token_budget=0,
+            knowledge_limit=8,
+            code_limit=2,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in selected],
+            ["src/a.ts", "src/b.ts"],
+        )
+
     def test_large_low_priority_candidate_can_be_skipped_for_smaller_useful_file(self) -> None:
         self.write_bytes("src/huge.ts", 40_000)
         self.write_bytes("src/small.ts", 800)
