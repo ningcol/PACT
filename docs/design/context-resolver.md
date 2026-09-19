@@ -59,13 +59,31 @@ only after judging that it understands:
 - verification targets;
 - important unknowns.
 
-## 4. Multi-query budget
+## 4. Multi-query and materialization budgets
 
-Each query is retrieved independently. PACT then deduplicates and fuses the ranked lists before applying the final risk-adaptive artifact budget.
+Each query is retrieved independently. PACT deduplicates and fuses the ranked lists, then applies the final risk-adaptive Context budgets.
 
-This is intentionally different from simply increasing the number of files supplied to the model: additional queries should improve recall and ranking **inside** a bounded Context.
+Two independent controls are used:
 
-The Context Envelope records both the primary `discovery_query` for compatibility and the actual `discovery_queries` list used for retrieval.
+- **hard artifact-count limits** cap selected knowledge/code paths;
+- a **soft estimated materialization-token budget** limits the approximate downstream cost of reading those files.
+
+PACT estimates tokens deterministically from repository file size using `UTF-8 bytes / 4`. This is a stable budget heuristic, **not** an exact tokenizer result and not a claim about any particular model's final token count.
+
+Discovery may inspect a wider candidate pool than the final Context. Selection then prefers authority/relevance while allowing later smaller candidates to fit when an earlier large candidate would exceed the soft budget.
+
+Confirmed Product Rules and implemented Decisions are authority evidence. They are not silently dropped only because of the soft token budget; any resulting overage is recorded explicitly. Hard artifact-count limits remain hard.
+
+The Context Envelope records:
+
+- `discovery_queries`;
+- per-artifact `estimated_tokens`;
+- `context_budget.limit_tokens`;
+- selected/candidate estimated tokens;
+- candidates dropped by token budget vs count limits;
+- explicit authority overage.
+
+Use `--token-budget` on `context` or `task prepare` only when the default risk budget should be overridden.
 
 ## 5. Risk adaptation
 
@@ -73,9 +91,9 @@ PACT 0.3 applies a core risk policy instead of treating risk as a label.
 
 Default behavior:
 
-- **low** — smaller knowledge budget; code-aware discovery is off unless explicitly requested;
-- **medium** — larger knowledge budget; code-aware discovery is on; completion requires current workspace-bound `pact-run` Evidence for required pass claims, plus Convergence and Owner Report;
-- **high** — largest default context budget; code-aware discovery is on; missing Architecture/Decision/contract/history context is surfaced explicitly; completion requires current workspace-bound `pact-run` Evidence for required pass claims, no unresolved Evidence limitations, and fully aligned Convergence.
+- **low** — smaller artifact/token budgets; code-aware discovery is off unless explicitly requested;
+- **medium** — larger artifact/token budgets; code-aware discovery is on; completion requires current workspace-bound `pact-run` Evidence for required pass claims, plus Convergence and Owner Report;
+- **high** — largest default artifact/token budgets; code-aware discovery is on; missing Architecture/Decision/contract/history context is surfaced explicitly; completion requires current workspace-bound `pact-run` Evidence for required pass claims, no unresolved Evidence limitations, and fully aligned Convergence.
 
 The Agent may increase rigor beyond the minimum. It may not use project configuration to weaken these core guarantees.
 
