@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import json
 import pathlib
+
+from cache import file_sha256
 from collections.abc import Callable
 from typing import Any
 
 
-def signature(path: pathlib.Path) -> dict[str, int]:
+def signature(path: pathlib.Path) -> dict[str, int | str]:
     stat = path.stat()
     return {
         "size": int(stat.st_size),
         "mtime_ns": int(stat.st_mtime_ns),
+        "sha256": file_sha256(path),
     }
 
 
