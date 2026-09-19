@@ -13,9 +13,7 @@ import tempfile
 
 from distribution import (
     github_actions_entry,
-    legacy_seed_target,
     manifest_record,
-    minimal_source_manifest,
     runtime_version,
     sha256_file,
     source_manifest,
@@ -43,8 +41,7 @@ def load_manifest(target: pathlib.Path) -> dict:
     path = target / INSTALL_MANIFEST
     if not path.exists():
         raise FileNotFoundError(
-            "missing .pact/install.json; this project predates tracked PACT installs "
-            "or was not initialized with a manifest"
+            "missing .pact/install.json; initialize the project with PACT first"
         )
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
@@ -53,13 +50,7 @@ def load_manifest(target: pathlib.Path) -> dict:
 
 
 def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: dict) -> list[dict]:
-    # Fresh v0.4+ installs explicitly opt into the minimal profile. Legacy/full
-    # manifests retain their historical desired surface so upgrading cannot
-    # silently reinterpret project layout or remove compatibility files.
-    if manifest.get("install_profile") == "minimal":
-        entries = minimal_source_manifest(source_root)
-    else:
-        entries = source_manifest(source_root)
+    entries = source_manifest(source_root)
 
     workflow_path = ".github/workflows/pact-project-check.yml"
     tracked = manifest.get("files", {}).get(workflow_path)
@@ -69,27 +60,6 @@ def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: d
             entries.append(workflow)
 
     return entries
-
-
-def project_seed_references(
-    target: pathlib.Path,
-    tracked: dict,
-    relative: str,
-) -> list[str]:
-    references: list[str] = []
-    for seed_path, record in tracked.items():
-        if record.get("management") != "seed":
-            continue
-        path = target / seed_path
-        if not path.is_file():
-            continue
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        if relative in content:
-            references.append(seed_path)
-    return sorted(references)
 
 
 def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict) -> dict:
@@ -108,24 +78,6 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
         record = tracked.get(path)
 
         if entry["management"] == "seed":
-            legacy_rel = legacy_seed_target(path)
-            legacy_destination = target / legacy_rel if legacy_rel else None
-
-            if (
-                not destination.exists()
-                and legacy_destination is not None
-                and legacy_destination.exists()
-            ):
-                notices.append({
-                    "kind": "legacy-seed-preserved",
-                    "path": path,
-                    "reason": (
-                        f"legacy project-owned seed remains at {legacy_rel}; "
-                        "no default TOML replacement created"
-                    ),
-                })
-                continue
-
             if not destination.exists():
                 operations.append({
                     "action": "create-seed",
@@ -276,35 +228,7 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
 
         current_sha = sha256_file(destination)
         installed_sha = record.get("installed_sha256")
-        seed_refs = (
-            project_seed_references(target, tracked, path)
-            if path.startswith(".pact/schema/")
-            else []
-        )
-        if (
-            seed_refs
-            and isinstance(installed_sha, str)
-            and current_sha == installed_sha
-        ):
-            operations.append({
-                "action": "reclassify-seed",
-                "path": path,
-                "reason": (
-                    "obsolete framework schema is still referenced by "
-                    "project-owned guidance; preserve it as compatibility seed"
-                ),
-                "referenced_by": seed_refs,
-            })
-            notices.append({
-                "kind": "obsolete-schema-referenced-by-project-seed",
-                "path": path,
-                "reason": (
-                    "preserved as project-owned compatibility copy because "
-                    "existing seed guidance still references this path"
-                ),
-                "referenced_by": seed_refs,
-            })
-        elif isinstance(installed_sha, str) and current_sha == installed_sha:
+        if isinstance(installed_sha, str) and current_sha == installed_sha:
             operations.append({
                 "action": "remove-framework",
                 "path": path,
@@ -514,10 +438,6 @@ def apply_upgrade(
             for op in plan["operations"]:
                 if op["action"] == "detach-framework":
                     files.pop(op["path"], None)
-                elif op["action"] == "reclassify-seed":
-                    record = dict(files.get(op["path"], {}))
-                    record["management"] = "seed"
-                    files[op["path"]] = record
 
             touched = []
             for op in [
@@ -536,10 +456,6 @@ def apply_upgrade(
                 "runtime_version": plan["to_runtime_version"],
                 "files": files,
             }
-            install_profile = manifest.get("install_profile")
-            if install_profile:
-                new_manifest["install_profile"] = install_profile
-
             validate_new_manifest(target, new_manifest, touched)
 
             staged_manifest = txn / "new-install.json"
