@@ -1,11 +1,6 @@
 name: External Multi-Repo Pilots
 
 on:
-  pull_request:
-    paths:
-      - "scripts/pact/code_map.py"
-      - "scripts/pact/discover.py"
-      - ".pact/schema/code-map.schema.json"
   workflow_dispatch:
     inputs:
       pact_ref:
@@ -33,11 +28,10 @@ permissions:
   contents: read
 
 env:
-  PACT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.pact_ref }}
+  PACT_REF: ${{ inputs.pact_ref }}
 
 jobs:
   flask:
-    if: github.event_name == 'workflow_dispatch'
     name: Flask / Python
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -172,7 +166,6 @@ jobs:
           retention-days: 7
 
   pinia:
-    if: github.event_name == 'workflow_dispatch'
     name: Pinia / Vue TypeScript
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -321,7 +314,7 @@ jobs:
     timeout-minutes: 20
     env:
       TARGET_DIR: /tmp/bubbletea
-      TARGET_REF: ${{ inputs.bubbletea_ref || '657aaae216e3f87df09b60959a9fe5de7b2ca419' }}
+      TARGET_REF: ${{ inputs.bubbletea_ref }}
       TASK_ID: EXT-BUBBLETEA-001
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
