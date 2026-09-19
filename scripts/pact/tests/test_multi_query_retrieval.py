@@ -91,6 +91,77 @@ class MultiQueryRetrievalTests(unittest.TestCase):
             fused[0]["reasons"],
         )
 
+    def test_code_limit_is_a_hard_final_budget(self) -> None:
+        files = []
+        edges = []
+        for index in range(10):
+            files.append({
+                "path": f"src/direct-{index}.ts",
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [f"target{index}"],
+                "imports": [],
+            })
+        for index in range(10):
+            files.append({
+                "path": f"src/neighbor-{index}.ts",
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "imports": [],
+            })
+            edges.append({
+                "from": f"src/neighbor-{index}.ts",
+                "to": f"src/direct-{index}.ts",
+                "kind": "import",
+                "confidence": "relative-resolved",
+            })
+
+        results = discover.ranked_code_results(
+            {"files": files, "edges": edges},
+            "target",
+            limit=6,
+        )
+
+        self.assertLessEqual(len(results), 6)
+        self.assertTrue(any(item["relation"] == "direct-match" for item in results))
+        self.assertTrue(any(item["relation"] == "import-neighbor" for item in results))
+
+    def test_fusion_preserves_specialized_query_candidates_when_budget_allows(self) -> None:
+        def item(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "reasons": [path],
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        shared = [item(f"src/shared-{index}.ts", 100 - index) for index in range(8)]
+        specialized = [
+            item("src/specialized.ts", 500),
+            *shared,
+        ]
+        noisy = [
+            *shared,
+            item("src/noisy-only.ts", 50),
+        ]
+
+        fused = discover.fuse_ranked_results(
+            [
+                ("specialized query", specialized),
+                ("shared query", noisy),
+            ],
+            limit=6,
+        )
+
+        paths = [entry["path"] for entry in fused]
+        self.assertEqual(len(paths), 6)
+        self.assertIn("src/specialized.ts", paths)
+
     def test_direct_match_wins_relation_when_another_query_finds_neighbor(self) -> None:
         fused = discover.fuse_ranked_results(
             [
