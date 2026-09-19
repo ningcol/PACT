@@ -182,6 +182,12 @@ See `docs/evaluation/pilot-scorecard.md`.
 
 `init` is dry-run by default and never overwrites existing files. Fresh adoption uses the minimal install profile: executable/control-plane files are installed immediately, while empty Product/Architecture/Decision/Change/Drift/Skill scaffold is left unmaterialized. An existing `AGENTS.md` is preserved; PACT creates merge guidance under `.pact/` instead.
 
+## Local task state
+
+`.pact/tasks/`, `.pact/runs/`, `.pact/completions/`, `.pact/cache/`, and `.pact/tmp/` are generated local control-plane state. Fresh init creates `.pact/.gitignore` so these paths do not pollute project Git status. They remain available locally for task status/evaluation/completion but are not durable project knowledge.
+
+`task prepare` stages contract/context/impact under `.pact/tmp/` and publishes the task directory only after preparation succeeds. `--force` invalidates old generated completion state only after the replacement preparation has succeeded.
+
 The runtime is deliberately hybrid:
 
 - deterministic tooling validates facts it can reliably establish;
