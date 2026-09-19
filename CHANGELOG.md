@@ -6,6 +6,8 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been published by this change.
+
 ### Minimal Adoption / Lazy Materialization
 
 - fresh brownfield installs use one compact control-plane surface;
