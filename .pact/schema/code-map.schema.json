@@ -14,7 +14,7 @@
   "additionalProperties": false,
   "properties": {
     "format_version": {
-      "const": 2
+      "const": 3
     },
     "root": {
       "type": "string"
@@ -50,7 +50,9 @@
         "language",
         "symbols",
         "imports",
-        "is_test"
+        "is_test",
+        "parser_mode",
+        "identifiers"
       ],
       "additionalProperties": false,
       "properties": {
@@ -63,7 +65,17 @@
             "python",
             "javascript",
             "typescript",
-            "vue"
+            "vue",
+            "go",
+            "swift",
+            "kotlin",
+            "java",
+            "rust",
+            "c",
+            "cpp",
+            "csharp",
+            "ruby",
+            "php"
           ]
         },
         "symbols": {
@@ -114,6 +126,20 @@
         },
         "is_test": {
           "type": "boolean"
+        },
+        "parser_mode": {
+          "enum": [
+            "structured",
+            "generic-lexical"
+          ]
+        },
+        "identifiers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       }
     },

@@ -16,8 +16,8 @@ from repository_files import repository_files
 from schema_validate import load_schema, validate_instance
 
 
-FORMAT_VERSION = 2
-PARSE_CACHE_VERSION = 1
+FORMAT_VERSION = 3
+PARSE_CACHE_VERSION = 2
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -45,6 +45,59 @@ EXTENSIONS = {
     ".ts": "typescript",
     ".tsx": "typescript",
     ".vue": "vue",
+    ".go": "go",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".java": "java",
+    ".rs": "rust",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".php": "php",
+}
+
+STRUCTURED_LANGUAGES = {
+    "python",
+    "javascript",
+    "typescript",
+    "vue",
+}
+
+JS_RESOLVE_EXTENSIONS = (
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".vue",
+)
+
+GENERIC_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
+GENERIC_C_LIKE_NONCODE = re.compile(
+    r'''(?:
+        //[^
+]* |
+        /\*.*?\*/ |
+        "(?:\\.|[^"\\])*" |
+        '(?:\\.|[^'\\])*' |
+        `(?:\\.|[^`\\])*`
+    )''',
+    re.DOTALL | re.VERBOSE,
+)
+GENERIC_IDENTIFIER_LIMIT = 256
+GENERIC_STOPWORDS = {
+    "break", "case", "catch", "class", "const", "continue", "default",
+    "defer", "else", "enum", "false", "finally", "for", "func", "function",
+    "if", "import", "interface", "let", "match", "new", "nil", "null",
+    "package", "private", "protected", "public", "return", "static", "struct",
+    "switch", "this", "throw", "true", "try", "type", "var", "while",
 }
 
 JS_IMPORT = re.compile(
@@ -92,7 +145,7 @@ def is_test_path(relative: str) -> bool:
         or "test" in parts
         or "__tests__" in parts
         or name.startswith("test_")
-        or name.endswith("_test.py")
+        or "_test." in name
         or ".test." in name
         or ".spec." in name
     )
@@ -174,9 +227,37 @@ def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
     return sorted(set(symbols)), list(dict.fromkeys(imports))
 
 
+def parse_generic_identifiers(path: pathlib.Path) -> list[str]:
+    """Bounded code-like lexical fallback; no AST/import semantics are implied."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return []
+
+    # Remove common C/Go/Java/Swift-style comments and quoted strings so
+    # prose/examples do not dominate the bounded identifier budget. This is a
+    # lexical noise filter, not a language parser.
+    text = GENERIC_C_LIKE_NONCODE.sub(" ", text)
+
+    seen: set[str] = set()
+    identifiers: list[str] = []
+    for match in GENERIC_IDENTIFIER.finditer(text):
+        value = match.group(0)
+        if value.casefold() in GENERIC_STOPWORDS or value in seen:
+            continue
+        seen.add(value)
+        identifiers.append(value)
+        if len(identifiers) >= GENERIC_IDENTIFIER_LIMIT:
+            break
+    return identifiers
+
+
 def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
     language = EXTENSIONS[path.suffix.lower()]
     relative = rel(path, root)
+
+    identifiers: list[str] = []
+    parser_mode = "structured"
 
     if language == "python":
         symbols, raw_imports = parse_python(path)
@@ -184,16 +265,23 @@ def parse_source(path: pathlib.Path, root: pathlib.Path) -> dict:
             {"raw": raw, "level": int(level)}
             for raw, level in raw_imports
         ]
-    else:
+    elif language in {"javascript", "typescript", "vue"}:
         symbols, raw_imports = parse_js_like(path)
         imports = [
             {"raw": raw, "level": 0}
             for raw in raw_imports
         ]
+    else:
+        symbols = []
+        imports = []
+        identifiers = parse_generic_identifiers(path)
+        parser_mode = "generic-lexical"
 
     return {
         "language": language,
+        "parser_mode": parser_mode,
         "symbols": symbols,
+        "identifiers": identifiers,
         "raw_imports": imports,
         "is_test": is_test_path(relative),
     }
@@ -210,10 +298,10 @@ def resolve_relative_js(
     base = (source.parent / spec).resolve()
     candidates = [base]
 
-    for ext in EXTENSIONS:
+    for ext in JS_RESOLVE_EXTENSIONS:
         candidates.append(pathlib.Path(str(base) + ext))
 
-    for ext in EXTENSIONS:
+    for ext in JS_RESOLVE_EXTENSIONS:
         candidates.append(base / ("index" + ext))
 
     for candidate in candidates:
@@ -313,7 +401,7 @@ def build_code_map(
                         "kind": "import",
                         "confidence": confidence,
                     })
-        else:
+        elif language in {"javascript", "typescript", "vue"}:
             for item in parsed["raw_imports"]:
                 raw = item["raw"]
                 resolved, confidence = resolve_relative_js(raw, path, available)
@@ -334,7 +422,9 @@ def build_code_map(
         files.append({
             "path": relative,
             "language": language,
+            "parser_mode": parsed["parser_mode"],
             "symbols": parsed["symbols"],
+            "identifiers": parsed.get("identifiers", []),
             "imports": imports,
             "is_test": bool(parsed["is_test"]),
         })

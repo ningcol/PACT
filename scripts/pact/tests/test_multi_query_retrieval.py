@@ -91,6 +91,53 @@ class MultiQueryRetrievalTests(unittest.TestCase):
             fused[0]["reasons"],
         )
 
+    def test_structured_symbol_scores_above_generic_identifier(self) -> None:
+        structured_score, _ = discover.score_code_file(
+            {
+                "path": "src/service.ts",
+                "symbols": ["dispatchTask"],
+                "identifiers": [],
+                "imports": [],
+            },
+            "dispatchTask",
+        )
+        generic_score, reasons = discover.score_code_file(
+            {
+                "path": "server/service.go",
+                "symbols": [],
+                "identifiers": ["dispatchTask"],
+                "imports": [],
+            },
+            "dispatchTask",
+        )
+
+        self.assertGreater(structured_score, generic_score)
+        self.assertIn("exact generic identifier", reasons)
+
+    def test_generic_identifier_can_produce_direct_code_result(self) -> None:
+        results = discover.ranked_code_results(
+            {
+                "files": [
+                    {
+                        "path": "server/service.go",
+                        "language": "go",
+                        "parser_mode": "generic-lexical",
+                        "is_test": False,
+                        "symbols": [],
+                        "identifiers": ["roundRobinDispatch"],
+                        "imports": [],
+                    }
+                ],
+                "edges": [],
+            },
+            "roundRobinDispatch",
+            limit=4,
+        )
+
+        self.assertEqual([item["path"] for item in results], ["server/service.go"])
+        self.assertEqual(results[0]["parser_mode"], "generic-lexical")
+        self.assertEqual(results[0]["confidence"], "direct")
+
     def test_code_limit_is_a_hard_final_budget(self) -> None:
         files = []
         edges = []
