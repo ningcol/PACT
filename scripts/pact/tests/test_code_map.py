@@ -145,6 +145,31 @@ class CodeMapTests(unittest.TestCase):
             )
         )
 
+    def test_generic_identifiers_ignore_comments_and_strings(self) -> None:
+        self.write(
+            "server/main.go",
+            """package server
+
+// CommentOnlyIdentifier should not be indexed.
+func RealHandler() string {
+    return "StringOnlyIdentifier"
+}
+
+/* BlockOnlyIdentifier should also be ignored. */
+""",
+        )
+
+        data = self.build()
+        item = next(
+            entry for entry in data["files"]
+            if entry["path"] == "server/main.go"
+        )
+
+        self.assertIn("RealHandler", item["identifiers"])
+        self.assertNotIn("CommentOnlyIdentifier", item["identifiers"])
+        self.assertNotIn("StringOnlyIdentifier", item["identifiers"])
+        self.assertNotIn("BlockOnlyIdentifier", item["identifiers"])
+
     def test_generic_test_path_detection_supports_go_style(self) -> None:
         self.write("tea_test.go", "package tea\nfunc TestUpdate() {}\n")
         data = self.build()
