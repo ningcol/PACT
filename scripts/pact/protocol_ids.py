@@ -6,7 +6,7 @@ import pathlib
 import re
 
 
-TASK_ID_PATTERN = r"^TASK-[A-Z0-9]+(?:[._-][A-Z0-9]+)*$"
+TASK_ID_PATTERN = r"^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$"
 TASK_ID = re.compile(TASK_ID_PATTERN)
 
 
@@ -15,7 +15,7 @@ def validate_task_id(value: str) -> str:
         raise ValueError(
             "task_id must match "
             + TASK_ID_PATTERN
-            + " (uppercase alphanumerics with internal . _ - separators)"
+            + " (alphanumerics with internal . _ - separators)"
         )
     return value
 
