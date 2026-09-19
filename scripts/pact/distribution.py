@@ -138,6 +138,30 @@ def read_install_manifest(root: pathlib.Path) -> dict | None:
             raise ValueError(
                 f"invalid .pact/install.json: invalid installed_sha256 for {relative!r}"
             )
+
+        source_sha = record.get("source_sha256")
+        if source_sha is not None and (
+            not isinstance(source_sha, str)
+            or len(source_sha) != 64
+            or any(ch not in "0123456789abcdef" for ch in source_sha)
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid source_sha256 for {relative!r}"
+            )
+
+        source_path = record.get("source_path")
+        if source_path is not None and (
+            not isinstance(source_path, str)
+            or not source_path
+            or "\\" in source_path
+            or ":" in source_path
+            or "\x00" in source_path
+            or pathlib.PurePosixPath(source_path).is_absolute()
+            or ".." in pathlib.PurePosixPath(source_path).parts
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: unsafe source_path for {relative!r}"
+            )
     return data
 
 
