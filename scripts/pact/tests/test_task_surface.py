@@ -56,6 +56,73 @@ class TaskSurfaceTests(unittest.TestCase):
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         return path
 
+    def test_task_id_cannot_escape_pact_state_roots(self) -> None:
+        outside = self.root.parent / "escaped-task-state"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "unsafe task id",
+            "--success",
+            "Must never escape PACT state",
+            "--risk",
+            "low",
+            "--task-id",
+            "../../escaped-task-state",
+            "--force",
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 2)
+        self.assertIn("invalid task id", prepared.stderr)
+        self.assertFalse(outside.exists())
+
+        run = self.pact(
+            "run",
+            "--task-id",
+            "../unsafe",
+            "--output",
+            ".pact/runs/unsafe.json",
+            "--quiet",
+            "--",
+            sys.executable,
+            "-c",
+            "print('should not run')",
+        )
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("invalid task id", run.stderr)
+
+    def test_task_prepare_blocks_deterministically_invalid_repository(self) -> None:
+        rule_dir = self.root / "docs" / "product" / "rules"
+        rule_dir.mkdir(parents=True, exist_ok=True)
+        front = (
+            "+++\n[pact]\ntype = \"rule\"\n"
+            "id = \"RULE-DUPLICATE\"\nstatus = \"confirmed\"\n+++\n"
+        )
+        (rule_dir / "a.md").write_text(front + "# A\n", encoding="utf-8")
+        (rule_dir / "b.md").write_text(front + "# B\n", encoding="utf-8")
+
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "must not prepare invalid knowledge",
+            "--success",
+            "No ambiguous durable ID reaches Context",
+            "--risk",
+            "low",
+            "--task-id",
+            "TASK-PREFLIGHT-INVALID",
+            "--json",
+        )
+        self.assertNotEqual(prepared.returncode, 0)
+        self.assertIn("deterministic repository checks failed", prepared.stderr)
+        self.assertFalse(
+            (
+                self.root
+                / ".pact"
+                / "tasks"
+                / "TASK-PREFLIGHT-INVALID"
+            ).exists()
+        )
+
     def test_status_and_inspect_are_high_level_entry_points(self) -> None:
         status = self.pact("status", "--json")
         self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
