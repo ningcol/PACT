@@ -14,7 +14,7 @@
           "kind": "manual",
           "provenance": "manual",
           "ref": "example human confirmation",
-          "note": "Static framework example only; medium/high risk requires machine-backed evidence."
+          "note": "Static framework example only; medium/high required pass claims need current workspace-bound pact-run Evidence."
         }
       ]
     },
