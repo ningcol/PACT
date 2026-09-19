@@ -27,7 +27,7 @@ PROFILES = {
         "code_context_default": True,
         "code_limit": 12,
         "completion": [
-            "required passing claims need machine-backed evidence",
+            "required passing claims need a current workspace-bound pact-run receipt",
             "Convergence Report is required",
             "Owner Report must be evidence-backed",
         ],
@@ -37,7 +37,7 @@ PROFILES = {
         "code_context_default": True,
         "code_limit": 20,
         "completion": [
-            "required passing claims need machine-backed evidence",
+            "required passing claims need a current workspace-bound pact-run receipt",
             "inspect relevant architecture/contracts/decisions/history when applicable",
             "Evidence limitations must be resolved before completion",
             "Convergence must be fully aligned",
