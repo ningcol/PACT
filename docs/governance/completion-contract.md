@@ -27,6 +27,24 @@ Completion requires the Convergence Report to:
 
 This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
 
+
+## Actual changed-file coverage
+
+For a prepared task in a Git worktree, PACT records the prepare-time Git HEAD plus the content state of paths that were already dirty before the task. It does **not** require a clean workspace.
+
+At `task finish`, PACT derives the paths whose final content differs from that prepared baseline. This includes uncommitted and committed additions, modifications, and deletions while excluding generated PACT control-plane state.
+
+Completion then:
+
+- generates a final Impact report from those actual task-changed paths;
+- requires `convergence.change_coverage` to contain every task-changed path exactly once;
+- rejects missing, duplicate, or stale/extra path coverage;
+- leaves pre-existing dirty files alone when their content did not change during the task.
+
+Each change-coverage entry contains a path and an Agent-written rationale. PACT checks coverage mechanically; the rationale remains semantic review.
+
+For non-Git projects, PACT reports that exact task-delta path attribution is unavailable rather than inventing changed-file coverage.
+
 ## Default definition
 
 A task is complete when, to a degree appropriate for its risk:

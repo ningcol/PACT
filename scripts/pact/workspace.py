@@ -204,3 +204,195 @@ def filesystem_workspace_snapshot(cwd: pathlib.Path) -> dict:
 def workspace_snapshot(cwd: pathlib.Path) -> dict:
     git = git_workspace_snapshot(cwd)
     return git if git is not None else filesystem_workspace_snapshot(cwd)
+
+
+def _decode_nul_paths(data: bytes) -> list[str]:
+    return [
+        item.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+        for item in data.split(b"\0")
+        if item
+    ]
+
+
+def _working_file_state(root: pathlib.Path, relative: str) -> str:
+    path = root / relative
+    if path.is_symlink():
+        payload = b"symlink\0" + os.readlink(path).encode(
+            "utf-8",
+            errors="surrogateescape",
+        )
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
+    if not path.is_file():
+        return "missing"
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise WorkspaceError(f"cannot hash workspace file {relative}: {exc}") from exc
+    return "sha256:" + digest.hexdigest()
+
+
+def _git_ref_file_state(
+    root: pathlib.Path,
+    ref: str,
+    relative: str,
+) -> str:
+    try:
+        result = _run_git(root, ["show", f"{ref}:{relative}"])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(
+            f"cannot inspect prepared Git file {relative}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        return "missing"
+    return "sha256:" + hashlib.sha256(result.stdout).hexdigest()
+
+
+def _git_changed_paths(root: pathlib.Path) -> set[str]:
+    installed_exclusions = discovery_excluded_paths(root)
+    commands = [
+        ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
+        ["diff", "--name-only", "--no-renames", "-z", "--"],
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+    ]
+    paths: set[str] = set()
+    try:
+        for args in commands:
+            result = _run_git(root, args)
+            if result.returncode != 0:
+                raise WorkspaceError(
+                    "Git changed-file enumeration failed: "
+                    + " ".join(args)
+                )
+            paths.update(_decode_nul_paths(result.stdout))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot enumerate Git changed files: {exc}") from exc
+
+    return {
+        path
+        for path in paths
+        if path and not _excluded(path, installed_exclusions)
+    }
+
+
+def task_workspace_baseline(cwd: pathlib.Path) -> dict:
+    """Capture enough Git state to attribute later final-content changes to a task."""
+    root = git_root(cwd)
+    if root is None:
+        snapshot = filesystem_workspace_snapshot(cwd)
+        return {
+            "kind": "filesystem",
+            "workspace_sha256": snapshot["sha256"],
+        }
+
+    head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
+    head = head_result.stdout.strip() if head_result.returncode == 0 else None
+    dirty_paths = sorted(_git_changed_paths(root))
+    return {
+        "kind": "git",
+        "git_head": head,
+        "dirty_files": {
+            path: _working_file_state(root, path)
+            for path in dirty_paths
+        },
+    }
+
+
+def _git_committed_candidate_paths(
+    root: pathlib.Path,
+    base_head: str | None,
+    current_head: str | None,
+) -> set[str]:
+    if base_head == current_head:
+        return set()
+
+    installed_exclusions = discovery_excluded_paths(root)
+    if base_head and current_head:
+        result = _run_git(
+            root,
+            [
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                base_head,
+                current_head,
+                "--",
+            ],
+        )
+    elif current_head:
+        result = _run_git(
+            root,
+            ["ls-tree", "-r", "--name-only", "-z", current_head],
+        )
+    else:
+        return set()
+
+    if result.returncode != 0:
+        raise WorkspaceError("cannot enumerate committed task changes")
+
+    return {
+        path
+        for path in _decode_nul_paths(result.stdout)
+        if path and not _excluded(path, installed_exclusions)
+    }
+
+
+def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
+    """Return paths whose final content differs from the prepared task baseline."""
+    if baseline.get("kind") != "git":
+        current = workspace_snapshot(cwd)
+        return {
+            "supported": False,
+            "reason": "exact task changed-file attribution requires Git",
+            "changed_files": [],
+            "workspace_changed": (
+                baseline.get("workspace_sha256") != current.get("sha256")
+            ),
+        }
+
+    root = git_root(cwd)
+    if root is None:
+        raise WorkspaceError("prepared task used Git but repository is no longer a Git worktree")
+
+    current_head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
+    current_head = (
+        current_head_result.stdout.strip()
+        if current_head_result.returncode == 0
+        else None
+    )
+    base_head = baseline.get("git_head")
+    prepared_dirty = baseline.get("dirty_files") or {}
+    if not isinstance(prepared_dirty, dict):
+        raise WorkspaceError("invalid prepared task dirty-file baseline")
+
+    candidates = set(prepared_dirty)
+    candidates.update(_git_changed_paths(root))
+    candidates.update(
+        _git_committed_candidate_paths(root, base_head, current_head)
+    )
+
+    changed: list[str] = []
+    for path in sorted(candidates):
+        prepared_state = prepared_dirty.get(path)
+        if prepared_state is None:
+            prepared_state = (
+                _git_ref_file_state(root, base_head, path)
+                if base_head
+                else "missing"
+            )
+        current_state = _working_file_state(root, path)
+        if current_state != prepared_state:
+            changed.append(path)
+
+    return {
+        "supported": True,
+        "base_git_head": base_head,
+        "current_git_head": current_head,
+        "prepared_dirty_count": len(prepared_dirty),
+        "candidate_count": len(candidates),
+        "changed_files": changed,
+    }

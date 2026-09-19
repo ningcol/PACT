@@ -84,7 +84,7 @@ python3 pact.py task finish <TASK-ID>
 
 These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.
 
-`task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent.
+`task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent. In Git projects it also derives the files whose final content changed since preparation, writes a final Impact report, and requires Convergence `change_coverage` rationale for every task-changed path.
 
 Task Context is bounded by both hard artifact-count limits and a soft risk-adaptive estimated materialization-token budget. The estimate is derived from repository file size, not from reading file bodies into PACT. Use `--token-budget` only when an Agent has a concrete reason to override the default risk budget.
 
