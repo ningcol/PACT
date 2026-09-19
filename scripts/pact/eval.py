@@ -505,8 +505,8 @@ def derive_task(task_id: str) -> dict:
             ),
             "ci_requirement_blocks": blocker_count(
                 attempts,
-                "ci-required",
-                "CI-backed Evidence",
+                "ci-metadata-required",
+                "CI-metadata Evidence",
             ),
             "final_complete": manifest.get("status") == "completed",
         },
