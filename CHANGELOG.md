@@ -102,6 +102,10 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Evaluation / proof of value
 
+- machine task observations now include Context token-budget pressure, task changed-file attribution/final Impact, and changed-file coverage blockers;
+- `pact eval --all-tasks --json` derives all valid local task observations and summarizes machine-only trust/context/verification metrics overall and by risk;
+- malformed local task state is reported explicitly in the machine summary instead of being silently omitted;
+- machine summaries deliberately do not infer owner interactions, comprehension, subjective overload, PACT overhead, or a single PACT score;
 - high-level `task finish` persists completion-attempt outcomes for later evaluation;
 - `pact eval --task <TASK-ID>` derives machine-observed task metrics without fabricating human-interaction values;
 - added a real historical brownfield Context-retrieval benchmark using owner-maintained repositories;
