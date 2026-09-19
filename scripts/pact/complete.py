@@ -46,9 +46,9 @@ def main() -> int:
         help="repository root used to resolve Evidence provenance refs",
     )
     parser.add_argument(
-        "--require-ci",
+        "--require-ci-metadata",
         action="store_true",
-        help="require at least one CI-backed Evidence claim for completion",
+        help="require at least one Evidence claim with GitHub Actions metadata; this is provenance metadata, not remote attestation",
     )
     parser.add_argument(
         "--contract",
@@ -167,9 +167,9 @@ def main() -> int:
 
     policy_gaps: list[str] = []
     provenance_stats = {
-        "machine_backed_claims": 0,
+        "execution_backed_claims": 0,
         "workspace_bound_claims": 0,
-        "ci_backed_claims": 0,
+        "ci_metadata_claims": 0,
         "current_workspace": None,
     }
     acceptance_stats = None
@@ -252,11 +252,11 @@ def main() -> int:
 
     if (
         not errors
-        and args.require_ci
-        and provenance_stats.get("ci_backed_claims", 0) == 0
+        and args.require_ci_metadata
+        and provenance_stats.get("ci_metadata_claims", 0) == 0
     ):
         errors.append(
-            "completion requires CI-backed Evidence but no claim is backed by "
+            "completion requires CI-metadata Evidence but no claim is backed by "
             "a GitHub Actions pact-run receipt"
         )
 
@@ -280,9 +280,9 @@ def main() -> int:
         "complete": not errors,
         "errors": errors,
         "policy_gaps": policy_gaps,
-        "machine_backed_claims": provenance_stats.get("machine_backed_claims", 0),
+        "execution_backed_claims": provenance_stats.get("execution_backed_claims", 0),
         "workspace_bound_claims": provenance_stats.get("workspace_bound_claims", 0),
-        "ci_backed_claims": provenance_stats.get("ci_backed_claims", 0),
+        "ci_metadata_claims": provenance_stats.get("ci_metadata_claims", 0),
         "current_workspace": provenance_stats.get("current_workspace"),
         "acceptance": acceptance_stats,
         "contract": str(contract_path.resolve()) if contract_path else None,
@@ -310,9 +310,9 @@ def main() -> int:
         print(f"- owner status: {owner.get('status')}")
         print(
             "- evidence backing: "
-            f"machine={result['machine_backed_claims']}, "
+            f"execution-backed={result['execution_backed_claims']}, "
             f"workspace-bound={result['workspace_bound_claims']}, "
-            f"ci-backed={result['ci_backed_claims']}"
+            f"ci-metadata={result['ci_metadata_claims']}"
         )
         if acceptance_stats is not None:
             print(
