@@ -8,7 +8,7 @@ import pathlib
 import sys
 
 if sys.version_info < (3, 11):
-    print("PACT 0.3 requires Python 3.11+.", file=sys.stderr)
+    print("PACT requires Python 3.11+.", file=sys.stderr)
     raise SystemExit(2)
 
 RUNTIME_ROOT = pathlib.Path(__file__).resolve().parent

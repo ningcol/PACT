@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import pathlib
 import subprocess
 import sys
@@ -11,6 +12,11 @@ import zipfile
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 BOOTSTRAP = PROJECT_ROOT / "bootstrap.py"
+
+spec = importlib.util.spec_from_file_location("pact_bootstrap_module", BOOTSTRAP)
+bootstrap = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(bootstrap)
 
 
 class BootstrapTests(unittest.TestCase):
@@ -123,6 +129,82 @@ raise SystemExit(0)
             digest,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_local_archive_size_limit_is_enforced(self) -> None:
+        source = self.root / "oversized.zip"
+        source.write_bytes(b"xx")
+        destination = self.root / "copy.zip"
+
+        original = bootstrap.MAX_ARCHIVE_BYTES
+        bootstrap.MAX_ARCHIVE_BYTES = 1
+        try:
+            with self.assertRaisesRegex(RuntimeError, "exceeds"):
+                bootstrap.download_archive(
+                    "ignored/repo",
+                    "ignored-ref",
+                    destination,
+                    archive_override=source,
+                )
+        finally:
+            bootstrap.MAX_ARCHIVE_BYTES = original
+
+    def test_archive_entry_count_limit_is_enforced_before_extract(self) -> None:
+        archive = self.root / "many.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("root/a.txt", "a")
+            zf.writestr("root/b.txt", "b")
+            zf.writestr("root/c.txt", "c")
+
+        original = bootstrap.MAX_ARCHIVE_ENTRIES
+        bootstrap.MAX_ARCHIVE_ENTRIES = 2
+        try:
+            with self.assertRaisesRegex(RuntimeError, "too many files"):
+                bootstrap.safe_extract(archive, self.root / "extract-many")
+        finally:
+            bootstrap.MAX_ARCHIVE_ENTRIES = original
+
+    def test_archive_uncompressed_limits_are_enforced_before_extract(self) -> None:
+        single = self.root / "single-large.zip"
+        with zipfile.ZipFile(single, "w") as zf:
+            zf.writestr("root/large.txt", "123456")
+
+        original_file = bootstrap.MAX_UNCOMPRESSED_FILE_BYTES
+        bootstrap.MAX_UNCOMPRESSED_FILE_BYTES = 5
+        try:
+            with self.assertRaisesRegex(RuntimeError, "too large"):
+                bootstrap.safe_extract(single, self.root / "extract-single")
+        finally:
+            bootstrap.MAX_UNCOMPRESSED_FILE_BYTES = original_file
+
+        total = self.root / "total-large.zip"
+        with zipfile.ZipFile(total, "w") as zf:
+            zf.writestr("root/a.txt", "123456")
+            zf.writestr("root/b.txt", "abcdef")
+
+        original_total = bootstrap.MAX_UNCOMPRESSED_BYTES
+        bootstrap.MAX_UNCOMPRESSED_BYTES = 10
+        try:
+            with self.assertRaisesRegex(RuntimeError, "allowed total size"):
+                bootstrap.safe_extract(total, self.root / "extract-total")
+        finally:
+            bootstrap.MAX_UNCOMPRESSED_BYTES = original_total
+
+    def test_suspicious_compression_ratio_is_rejected(self) -> None:
+        archive = self.root / "ratio.zip"
+        with zipfile.ZipFile(
+            archive,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as zf:
+            zf.writestr("root/repeated.bin", b"A" * (1024 * 1024))
+
+        original = bootstrap.MAX_COMPRESSION_RATIO
+        bootstrap.MAX_COMPRESSION_RATIO = 2
+        try:
+            with self.assertRaisesRegex(RuntimeError, "compression ratio"):
+                bootstrap.safe_extract(archive, self.root / "extract-ratio")
+        finally:
+            bootstrap.MAX_COMPRESSION_RATIO = original
 
     def test_zip_slip_archive_is_rejected(self) -> None:
         archive = self.root / "unsafe.zip"

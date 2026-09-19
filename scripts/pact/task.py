@@ -381,6 +381,16 @@ def finish(args) -> int:
         return 2
 
     changed_files = task_change.get("changed_files", [])
+    trust_warnings: list[str] = []
+    if not task_change.get("supported"):
+        trust_warnings.append(
+            "Exact task changed-file attribution is unavailable: "
+            + str(
+                task_change.get("reason")
+                or "the current workspace does not support exact attribution"
+            )
+        )
+
     final_impact = None
     if task_change.get("supported") and changed_files:
         final_impact = task_dir / "final-impact.json"
@@ -445,6 +455,7 @@ def finish(args) -> int:
             output = json.loads(completed.stdout)
             output["task_change"] = task_change
             output["final_impact"] = manifest.get("final_impact")
+            output["trust_warnings"] = trust_warnings
         except json.JSONDecodeError:
             pass
 
@@ -462,6 +473,7 @@ def finish(args) -> int:
         "acceptance": output.get("acceptance") if output is not None else None,
         "task_change": task_change,
         "final_impact": manifest.get("final_impact"),
+        "trust_warnings": trust_warnings,
     }
     append_jsonl(task_dir / "completion-attempts.jsonl", attempt)
 
@@ -482,6 +494,8 @@ def finish(args) -> int:
             print(completed.stdout, end="")
         if completed.stderr:
             print(completed.stderr, end="", file=sys.stderr)
+        for warning in trust_warnings:
+            print(f"PACT task finish WARNING: {warning}", file=sys.stderr)
 
     return completed.returncode
 

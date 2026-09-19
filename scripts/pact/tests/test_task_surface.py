@@ -521,6 +521,11 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertTrue(finish_data["complete"])
         self.assertEqual(finish_data["acceptance"]["total"], 3)
         self.assertEqual(finish_data["acceptance"]["owner_report_covered"], 3)
+        self.assertEqual(len(finish_data["trust_warnings"]), 1)
+        self.assertIn(
+            "Exact task changed-file attribution is unavailable",
+            finish_data["trust_warnings"][0],
+        )
 
         final_status = self.pact("task", "status", task_id, "--json")
         self.assertEqual(final_status.returncode, 0, final_status.stdout + final_status.stderr)

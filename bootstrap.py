@@ -23,6 +23,10 @@ import zipfile
 DEFAULT_REPO = "ningcol/PACT"
 DEFAULT_REF = "main"
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 20_000
+MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
+MAX_UNCOMPRESSED_FILE_BYTES = 100 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 500
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -41,6 +45,11 @@ def download_archive(
     archive_override: pathlib.Path | None = None,
 ) -> None:
     if archive_override is not None:
+        size = archive_override.stat().st_size
+        if size > MAX_ARCHIVE_BYTES:
+            raise RuntimeError(
+                f"PACT source archive exceeds {MAX_ARCHIVE_BYTES} bytes"
+            )
         shutil.copy2(archive_override, destination)
         return
 
@@ -71,7 +80,16 @@ def download_archive(
 def safe_extract(archive_path: pathlib.Path, destination: pathlib.Path) -> None:
     destination = destination.resolve()
     with zipfile.ZipFile(archive_path) as archive:
-        for info in archive.infolist():
+        infos = archive.infolist()
+        files = [info for info in infos if not info.is_dir()]
+        if len(files) > MAX_ARCHIVE_ENTRIES:
+            raise RuntimeError(
+                "PACT source archive has too many files: "
+                f"{len(files)} > {MAX_ARCHIVE_ENTRIES}"
+            )
+
+        total_uncompressed = 0
+        for info in infos:
             name = info.filename
             if not name:
                 continue
@@ -88,6 +106,32 @@ def safe_extract(archive_path: pathlib.Path, destination: pathlib.Path) -> None:
             target = (destination / pathlib.Path(*pure.parts)).resolve()
             if target != destination and destination not in target.parents:
                 raise RuntimeError(f"archive entry escapes destination: {name!r}")
+
+            if info.is_dir():
+                continue
+
+            if info.file_size > MAX_UNCOMPRESSED_FILE_BYTES:
+                raise RuntimeError(
+                    "archive entry is too large after decompression: "
+                    f"{name!r} ({info.file_size} > {MAX_UNCOMPRESSED_FILE_BYTES})"
+                )
+
+            total_uncompressed += info.file_size
+            if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+                raise RuntimeError(
+                    "PACT source archive expands beyond the allowed total size: "
+                    f"{total_uncompressed} > {MAX_UNCOMPRESSED_BYTES}"
+                )
+
+            if (
+                info.file_size >= 1024 * 1024
+                and info.compress_size > 0
+                and info.file_size / info.compress_size > MAX_COMPRESSION_RATIO
+            ):
+                raise RuntimeError(
+                    "archive entry has suspicious compression ratio: "
+                    f"{name!r}"
+                )
 
         archive.extractall(destination)
 

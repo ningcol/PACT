@@ -87,7 +87,7 @@ Use `--token-budget` on `context` or `task prepare` only when the default risk b
 
 ## 5. Risk adaptation
 
-PACT 0.3 applies a core risk policy instead of treating risk as a label.
+PACT applies a core risk policy instead of treating risk as a label.
 
 Default behavior:
 

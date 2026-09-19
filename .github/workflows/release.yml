@@ -6,11 +6,55 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  portability:
+    name: portability (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        python:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Runtime entry points
+        run: |
+          python pact.py --help
+          python bootstrap.py --help
+          python scripts/pact/pact.py schema-lint
+          python scripts/pact/pact.py check
+
+      - name: Cross-platform portability tests
+        run: |
+          python -m unittest discover -s scripts/pact/tests -p "test_bootstrap.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_compact_runtime.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_distribution_upgrade.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_stdlib_runtime.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_init_readiness.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_streaming_reliability.py"
+
   release:
+    needs:
+      - portability
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -19,7 +63,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify tag matches runtime version
+      - name: Verify tag matches runtime version and classify release
+        id: version
         shell: bash
         run: |
           set -euo pipefail
@@ -27,6 +72,19 @@ jobs:
           RUNTIME_VERSION="$(tr -d '[:space:]' < .pact/VERSION)"
           echo "tag=$TAG_VERSION runtime=$RUNTIME_VERSION"
           test "$TAG_VERSION" = "$RUNTIME_VERSION"
+
+          python - "$TAG_VERSION" >> "$GITHUB_OUTPUT" <<'PY'
+          import re
+          import sys
+
+          version = sys.argv[1]
+          if not re.fullmatch(
+              r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?",
+              version,
+          ):
+              raise SystemExit(f"unsupported release version: {version}")
+          print(f"prerelease={'true' if '-' in version else 'false'}")
+          PY
 
       - name: Validate release source
         run: |
@@ -51,7 +109,20 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME"             dist/pact-bootstrap.py             dist/pact.pyz             dist/SHA256SUMS             --verify-tag             --title "PACT $GITHUB_REF_NAME"             --generate-notes
+          EXTRA_ARGS=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            EXTRA_ARGS+=(--prerelease)
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            dist/pact-bootstrap.py \
+            dist/pact.pyz \
+            dist/SHA256SUMS \
+            --verify-tag \
+            --title "PACT $GITHUB_REF_NAME" \
+            --generate-notes \
+            "${EXTRA_ARGS[@]}"

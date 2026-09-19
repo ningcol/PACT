@@ -10,7 +10,7 @@ import sys
 
 if sys.version_info < (3, 11):
     print(
-        "PACT 0.3 requires Python 3.11+ (stdlib tomllib is used).",
+        "PACT requires Python 3.11+ (stdlib tomllib is used).",
         file=sys.stderr,
     )
     raise SystemExit(2)
