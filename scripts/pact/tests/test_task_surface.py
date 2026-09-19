@@ -471,6 +471,25 @@ class TaskSurfaceTests(unittest.TestCase):
             "owner_interactions.technical_escalations",
             observed["human_required"],
         )
+        self.assertIsNotNone(
+            observed["context"]["selected_estimated_tokens"]
+        )
+
+        all_tasks = self.pact("eval", "--all-tasks", "--json")
+        self.assertEqual(
+            all_tasks.returncode,
+            0,
+            all_tasks.stdout + all_tasks.stderr,
+        )
+        machine_summary = json.loads(all_tasks.stdout)
+        self.assertEqual(machine_summary["summary"]["task_count"], 1)
+        self.assertEqual(
+            machine_summary["summary"]["overall"]["completed"],
+            1,
+        )
+        self.assertEqual(len(machine_summary["observations"]), 1)
+        self.assertEqual(machine_summary["errors"], [])
+        self.assertNotIn("score", machine_summary["summary"])
 
 
     def test_task_finish_rejects_unverified_acceptance_criterion(self) -> None:
