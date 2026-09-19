@@ -6,7 +6,7 @@
   "after": "The selected province and displayed data move together.",
   "verification": [
     {
-      "claim": "Switching province updates the displayed data.",
+      "claim": "Displayed data follows the newly selected province.",
       "evidence_ids": [
         "EV-PROVINCE-SWITCH"
       ]
