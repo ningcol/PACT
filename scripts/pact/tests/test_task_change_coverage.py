@@ -176,7 +176,7 @@ class TaskChangedFileTests(unittest.TestCase):
                     "criteria": ["AC-1"],
                     "evidence": [
                         {
-                            "kind": "source",
+                            "kind": "other",
                             "provenance": "file",
                             "ref": "src/feature.py",
                         }
