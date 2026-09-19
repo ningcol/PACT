@@ -39,7 +39,7 @@
     },
     "task_id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^TASK-[A-Z0-9]+(?:[._-][A-Z0-9]+)*$"
     },
     "context_sha256": {
       "type": "string",
