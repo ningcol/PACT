@@ -59,9 +59,9 @@ Impact Analysis therefore exposes import neighbors as **code candidates**, not d
 
 ## Freshness
 
-Project Map and Code Map store a source fingerprint. Discovery/Context/Impact/Explain reuse a cached map only while that fingerprint still matches the repository source set.
+Project Map and Code Map store a content-integrity source fingerprint. Discovery/Context/Impact/Explain reuse a cached map only while repository-relative paths and source-content SHA256 values still match.
 
-This avoids both stale indexes and unconditional full reparsing on every query.
+This avoids stale indexes even when restore/sync/generator tools preserve file size and modification time, while still avoiding unconditional full reparsing on every query.
 
 ## Unresolved imports
 
@@ -135,9 +135,10 @@ It keeps a disposable per-file parse cache keyed by:
 - repository-relative path;
 - file size;
 - nanosecond modification time;
+- source-content SHA256;
 - parser-cache version.
 
-Unchanged files reuse parsed symbols/raw imports. Changed/new files are reparsed; removed files are dropped. Global import resolution/edges are then rebuilt from these cheap cached parse results.
+SHA256 is the correctness boundary: equal-size replacements with preserved mtimes are still reparsed. Size/mtime remain useful diagnostic metadata but are not trusted as sufficient freshness proof. Removed files are dropped; global import resolution/edges are then rebuilt from the cached parse results.
 
 The same model is used for Project Map Markdown parsing.
 
