@@ -149,7 +149,7 @@ class TrustedCompletionTests(unittest.TestCase):
             "after": "After state.",
             "verification": [
                 {
-                    "claim": "Verification passed.",
+                    "claim": "The verification command passes.",
                     "evidence_ids": ["EV-TEST-PASS"],
                 }
             ],
@@ -255,7 +255,7 @@ class TrustedCompletionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         data = json.loads(result.stdout)
         self.assertFalse(data["complete"])
-        self.assertEqual(data["machine_backed_claims"], 0)
+        self.assertEqual(data["execution_backed_claims"], 0)
         self.assertEqual(data["workspace_bound_claims"], 0)
         self.assertTrue(any(
             "pact-run receipt bound to the current workspace" in gap
@@ -275,7 +275,7 @@ class TrustedCompletionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertTrue(data["complete"])
-        self.assertEqual(data["machine_backed_claims"], 0)
+        self.assertEqual(data["execution_backed_claims"], 0)
         self.assertEqual(data["workspace_bound_claims"], 0)
 
     def test_evidence_ref_outside_repository_is_rejected(self) -> None:
@@ -336,6 +336,54 @@ class TrustedCompletionTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("non-passing evidence id", result.stderr)
+
+    def test_completion_rejects_prepared_risk_downgrade(self) -> None:
+        evidence, convergence, owner = self.base_bundle("low")
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete("--expected-risk", "high")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "evidence.risk_level does not match prepared task risk",
+            result.stdout,
+        )
+
+    def test_inconsistent_run_receipt_status_is_rejected(self) -> None:
+        run = self.create_passing_run()
+        data = json.loads(run.read_text(encoding="utf-8"))
+        data["status"] = "fail"
+        self.write_json(run, data)
+
+        evidence, convergence, owner = self.base_bundle("medium", run=run)
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exit_code", result.stdout + result.stderr)
+
+    def test_owner_verification_cannot_expand_evidence_claim(self) -> None:
+        evidence, convergence, owner = self.base_bundle("low")
+        owner["verification"][0]["claim"] = "The entire product flow is verified."
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "owner verification claim must exactly match",
+            result.stdout,
+        )
+
+    def test_convergence_cannot_reference_unknown_evidence(self) -> None:
+        evidence, convergence, owner = self.base_bundle("low")
+        convergence["evidence"] = ["EV-UNKNOWN"]
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "convergence references unknown evidence id",
+            result.stdout + result.stderr,
+        )
 
     def test_task_id_mismatch_blocks_completion(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
@@ -414,17 +462,17 @@ class TrustedCompletionTests(unittest.TestCase):
 
         evidence, convergence, owner = self.base_bundle("medium", run=run)
         self.save_bundle(evidence, convergence, owner)
-        result = self.run_complete("--require-ci")
+        result = self.run_complete("--require-ci-metadata")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(result.stdout)["ci_backed_claims"], 1)
+        self.assertEqual(json.loads(result.stdout)["ci_metadata_claims"], 1)
 
     def test_require_ci_blocks_local_only_completion(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
         self.save_bundle(evidence, convergence, owner)
 
-        result = self.run_complete("--require-ci")
+        result = self.run_complete("--require-ci-metadata")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("requires CI-backed Evidence", result.stdout)
+        self.assertIn("requires CI-metadata Evidence", result.stdout)
 
 
 if __name__ == "__main__":
