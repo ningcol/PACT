@@ -63,6 +63,11 @@ def main() -> int:
         help="expected SHA256 of the prepared Task Context",
     )
     parser.add_argument(
+        "--expected-risk",
+        choices=["low", "medium", "high"],
+        help="prepared task risk level; completion Evidence/Context must match",
+    )
+    parser.add_argument(
         "--check-change-coverage",
         action="store_true",
         help="require Convergence coverage for the supplied task changed files",
@@ -146,6 +151,18 @@ def main() -> int:
             errors.append(
                 "evidence.task_contract_sha256 does not match current Task Contract "
                 f"({recorded_contract_sha!r} != {contract_sha256!r})"
+            )
+
+    if args.expected_risk:
+        if evidence.get("risk_level") != args.expected_risk:
+            errors.append(
+                "evidence.risk_level does not match prepared task risk "
+                f"({evidence.get('risk_level')!r} != {args.expected_risk!r})"
+            )
+        if context is not None and context.get("risk_level") != args.expected_risk:
+            errors.append(
+                "context.risk_level does not match prepared task risk "
+                f"({context.get('risk_level')!r} != {args.expected_risk!r})"
             )
 
     policy_gaps: list[str] = []
