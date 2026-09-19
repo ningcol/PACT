@@ -19,7 +19,7 @@ def run_json(command: list[str], *, allow_empty: bool = False) -> dict:
         capture_output=True,
         text=True,
     )
-    if result.returncode not in {0, 1}:
+    if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "PACT child command failed")
     if not result.stdout.strip():
         if allow_empty:
@@ -33,7 +33,19 @@ def main() -> int:
         description="Inspect a remembered project feature/business behavior"
     )
     parser.add_argument("query")
+    parser.add_argument(
+        "--query",
+        dest="extra_queries",
+        action="append",
+        default=[],
+        help="additional retrieval query; repeat for multi-query fusion",
+    )
     parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument(
+        "--code-limit",
+        type=int,
+        help="hard final code result budget; defaults to --limit",
+    )
     code_group = parser.add_mutually_exclusive_group()
     code_group.add_argument("--code", dest="code", action="store_true")
     code_group.add_argument("--no-code", dest="code", action="store_false")
@@ -42,25 +54,34 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        explanation = run_json(
-            runtime_command(
-                "explain",
-                args.query,
-                "--limit",
-                str(args.limit),
-                "--json",
-            )
-        )
-
-        discover_command = runtime_command(
-            "discover",
+        explain_command = runtime_command(
+            "explain",
             args.query,
             "--limit",
             str(args.limit),
             "--json",
         )
+        for query in args.extra_queries:
+            explain_command.extend(["--query", query])
+        explanation = run_json(explain_command)
+
+        queries = explanation.get(
+            "queries",
+            [args.query, *args.extra_queries],
+        )
+        code_limit = max(args.code_limit or args.limit, 1)
+
+        discover_command = runtime_command(
+            "discover",
+            queries[0],
+            "--limit",
+            str(args.limit),
+            "--json",
+        )
+        for query in queries[1:]:
+            discover_command.extend(["--query", query])
         if args.code:
-            discover_command.extend(["--code", "--code-limit", str(args.limit)])
+            discover_command.extend(["--code", "--code-limit", str(code_limit)])
         discovery = run_json(discover_command, allow_empty=True)
     except Exception as exc:
         print(f"PACT inspect: {exc}", file=sys.stderr)
@@ -68,6 +89,7 @@ def main() -> int:
 
     result = {
         "query": args.query,
+        "queries": queries,
         "explanation": explanation,
         "discovery": discovery,
         "next_steps": explanation.get("followup", []),
@@ -77,6 +99,10 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"PACT inspect: {args.query}")
+        if len(queries) > 1:
+            print("- retrieval queries:")
+            for query in queries:
+                print(f"  - {query}")
         print(f"- product truth: {len(explanation.get('product_truth', []))}")
         print(f"- architecture: {len(explanation.get('architecture', []))}")
         print(f"- decisions: {len(explanation.get('decisions', []))}")
