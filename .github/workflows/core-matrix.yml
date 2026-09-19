@@ -39,5 +39,11 @@ jobs:
           python scripts/pact/pact.py schema-lint
           python scripts/pact/pact.py check
 
-      - name: Core unit tests
-        run: python -m unittest discover -s scripts/pact/tests -p "test_*.py"
+      - name: Cross-platform portability tests
+        run: |
+          python -m unittest discover -s scripts/pact/tests -p "test_bootstrap.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_compact_runtime.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_distribution_upgrade.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_stdlib_runtime.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_init_readiness.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
