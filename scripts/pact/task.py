@@ -86,7 +86,7 @@ def prepare(args) -> int:
         )
         return 2
 
-    preflight = run(runtime_command("check"))
+    preflight = run(runtime_command("check", "--artifact-only"))
     if preflight.returncode != 0:
         print(
             "PACT task prepare: deterministic repository checks failed; "
