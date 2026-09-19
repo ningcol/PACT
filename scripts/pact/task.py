@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from task_contract import validate as validate_contract
 from runtime_exec import runtime_command
 from workspace import task_workspace_baseline, task_changed_files
+from protocol_ids import validate_task_id, confined_child
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -68,8 +69,13 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 def prepare(args) -> int:
     task_id = args.task_id or generated_task_id(args.task)
-    task_dir = TASK_ROOT / task_id
-    completion_dir = COMPLETION_ROOT / task_id
+    try:
+        validate_task_id(task_id)
+        task_dir = confined_child(TASK_ROOT, task_id)
+        completion_dir = confined_child(COMPLETION_ROOT, task_id)
+    except ValueError as exc:
+        print(f"PACT task prepare: invalid task id: {exc}", file=sys.stderr)
+        return 2
 
     if (task_dir.exists() or completion_dir.exists()) and not args.force:
         existing = task_dir if task_dir.exists() else completion_dir
@@ -297,7 +303,12 @@ def prepare(args) -> int:
 
 
 def finish(args) -> int:
-    task_dir = TASK_ROOT / args.task_id
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id)
+    except ValueError as exc:
+        print(f"PACT task finish: invalid task id: {exc}", file=sys.stderr)
+        return 2
     manifest_path = task_dir / "task.json"
     if not manifest_path.is_file():
         print(
@@ -331,7 +342,7 @@ def finish(args) -> int:
         )
         return 2
 
-    bundle = pathlib.Path(args.bundle) if args.bundle else COMPLETION_ROOT / args.task_id
+    bundle = pathlib.Path(args.bundle) if args.bundle else confined_child(COMPLETION_ROOT, args.task_id)
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
@@ -387,6 +398,7 @@ def finish(args) -> int:
     command.extend(["--contract", str(ROOT / manifest["contract"])])
     command.extend(["--context", str(ROOT / manifest["context"])])
     command.extend(["--context-sha256", manifest["context_sha256"]])
+    command.extend(["--expected-risk", manifest["risk_level"]])
     if task_change.get("supported"):
         command.append("--check-change-coverage")
         for path in changed_files:
@@ -441,7 +453,12 @@ def finish(args) -> int:
 
 
 def task_status(args) -> int:
-    task_dir = TASK_ROOT / args.task_id
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id)
+    except ValueError as exc:
+        print(f"PACT task status: invalid task id: {exc}", file=sys.stderr)
+        return 2
     manifest_path = task_dir / "task.json"
     if not manifest_path.is_file():
         print(f"PACT task status: unknown task {args.task_id}", file=sys.stderr)
@@ -453,7 +470,7 @@ def task_status(args) -> int:
         print(f"PACT task status: invalid task manifest: {exc}", file=sys.stderr)
         return 2
 
-    bundle = COMPLETION_ROOT / args.task_id
+    bundle = confined_child(COMPLETION_ROOT, args.task_id)
     completion_files = {
         name: (bundle / filename).is_file()
         for name, filename in {
