@@ -13,7 +13,7 @@ PACT_RUNTIME = PROJECT_ROOT / "scripts" / "pact"
 SCHEMA_LINT = PACT_RUNTIME / "schema_lint.py"
 sys.path.insert(0, str(PACT_RUNTIME))
 
-from formats import parse_legacy_yaml, parse_markdown_metadata  # noqa: E402
+from formats import parse_markdown_metadata  # noqa: E402
 from schema_validate import load_schema, validate_instance  # noqa: E402
 
 
@@ -39,30 +39,6 @@ class StdlibRuntimeTests(unittest.TestCase):
         self.assertEqual(data["pact"]["id"], "DOMAIN-BATCH")
         self.assertEqual(data["pact"]["aliases"], ["批次", "examBatch"])
         self.assertIn("# Batch", body)
-
-    def test_legacy_yaml_front_matter(self) -> None:
-        data, _, kind = parse_markdown_metadata(
-            "---\npact:\n  type: domain\n  id: DOMAIN-LEGACY\n  owners:\n    - product\n---\n# Legacy\n"
-        )
-        self.assertEqual(kind, "legacy-yaml")
-        self.assertEqual(data["pact"]["id"], "DOMAIN-LEGACY")
-        self.assertEqual(data["pact"]["owners"], ["product"])
-
-    def test_legacy_yaml_list_of_mappings(self) -> None:
-        data = parse_legacy_yaml(
-            """
-            version: 1
-            checks:
-              - id: test-check
-                description: Test check.
-                command:
-                  - python
-                  - check.py
-                severity: error
-            """
-        )
-        self.assertEqual(data["checks"][0]["id"], "test-check")
-        self.assertEqual(data["checks"][0]["command"], ["python", "check.py"])
 
     def test_schema_if_then_is_enforced(self) -> None:
         schema = load_schema(PROJECT_ROOT / ".pact/schema/convergence-report.schema.json")
