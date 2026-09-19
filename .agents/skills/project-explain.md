@@ -10,7 +10,10 @@ Load the Owner Profile, then build the explanation evidence packet:
 
 ```bash
 python pact.py owner --json
-python pact.py explain "<owner query>" --json
+python pact.py explain "<owner query>" \
+  --query "<canonical/business hypothesis>" \
+  --query "<code vocabulary hypothesis>" \
+  --json
 ```
 
 Use the Explanation Packet as the first evidence set.
@@ -72,3 +75,6 @@ Surface conflicts between Product Truth, code, tests, architecture, or old docum
 - distinguish "should" from "currently does";
 - distinguish recorded rationale from inference;
 - put technical paths/symbols under optional detail.
+
+
+Retrieval queries are hypotheses only. Preserve the owner's original question as the primary query; use additional queries to locate durable knowledge or implementation vocabulary without promoting those terms into project truth.
