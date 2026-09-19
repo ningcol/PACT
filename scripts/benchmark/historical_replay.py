@@ -167,6 +167,7 @@ def multi_query_context(
 
 def context_metrics(context: dict, oracle_files: list[str]) -> dict:
     paths = [item["path"] for item in context.get("code_artifacts", [])]
+    code_budget = context.get("risk_policy", {}).get("code_limit")
     path_set = set(paths)
     matched = [path for path in oracle_files if path in path_set]
     ranks = {
@@ -178,6 +179,7 @@ def context_metrics(context: dict, oracle_files: list[str]) -> dict:
     precision_proxy = len(matched) / len(paths) if paths else 0.0
 
     return {
+        "configured_code_budget": code_budget,
         "context_code_files": len(paths),
         "oracle_files": len(oracle_files),
         "matched_oracle_files": matched,
@@ -228,6 +230,31 @@ def replay_case(case: dict) -> dict:
         expanded_metrics = context_metrics(expanded, available_oracle)
         multi_metrics = context_metrics(multi, available_oracle)
 
+        budgets = {
+            direct_metrics["configured_code_budget"],
+            expanded_metrics["configured_code_budget"],
+            multi_metrics["configured_code_budget"],
+        }
+        if len(budgets) != 1 or None in budgets:
+            raise RuntimeError(
+                "retrieval modes used different/unknown final code budgets: "
+                f"direct={direct_metrics['configured_code_budget']}, "
+                f"expanded={expanded_metrics['configured_code_budget']}, "
+                f"multi={multi_metrics['configured_code_budget']}"
+            )
+
+        final_budget = next(iter(budgets))
+        for label, metrics in [
+            ("direct", direct_metrics),
+            ("expanded", expanded_metrics),
+            ("multi_query", multi_metrics),
+        ]:
+            if metrics["context_code_files"] > final_budget:
+                raise RuntimeError(
+                    f"{label} exceeded final code budget: "
+                    f"{metrics['context_code_files']} > {final_budget}"
+                )
+
         return {
             "id": case["id"],
             "repository": case["repository"],
@@ -243,6 +270,7 @@ def replay_case(case: dict) -> dict:
                 "unknown",
             ),
             "oracle_missing_at_base": missing_at_base,
+            "configured_final_code_budget": final_budget,
             "direct": direct_metrics,
             "expanded": expanded_metrics,
             "multi_query": multi_metrics,
@@ -276,6 +304,9 @@ def aggregate(results: list[dict]) -> dict:
     return {
         "case_count": len(results),
         "oracle_file_count": oracle_total,
+        "configured_final_code_budgets": sorted({
+            item["configured_final_code_budget"] for item in results
+        }),
         "direct_weighted_recall": (
             direct_hits / oracle_total if oracle_total else None
         ),
@@ -355,9 +386,13 @@ def main() -> int:
             result = replay_case(case)
             results.append(result)
             print(
-                f"{case['id']}: direct recall={result['direct']['recall']:.3f} "
-                f"expanded recall={result['expanded']['recall']:.3f} "
-                f"multi recall={result['multi_query']['recall']:.3f}"
+                f"{case['id']}: budget={result['configured_final_code_budget']} "
+                f"direct={result['direct']['context_code_files']}/"
+                f"{result['direct']['recall']:.3f} "
+                f"expanded={result['expanded']['context_code_files']}/"
+                f"{result['expanded']['recall']:.3f} "
+                f"multi={result['multi_query']['context_code_files']}/"
+                f"{result['multi_query']['recall']:.3f}"
             )
         except Exception as exc:
             failures.append({"id": case.get("id"), "error": str(exc)})
