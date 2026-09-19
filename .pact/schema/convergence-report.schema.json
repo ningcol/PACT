@@ -27,9 +27,10 @@
       "type": "array",
       "items": {
         "type": "string",
-        "minLength": 1
+        "pattern": "^EV-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
       },
-      "default": []
+      "default": [],
+      "uniqueItems": true
     },
     "findings": {
       "type": "array",
