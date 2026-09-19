@@ -11,7 +11,7 @@ import sys
 
 from runtime_exec import runtime_command
 
-from formats import load_legacy_yaml, load_toml
+from formats import load_toml
 from schema_validate import load_schema, validate_instance
 
 
@@ -45,14 +45,9 @@ def doctor_state(root: pathlib.Path) -> tuple[bool, str]:
 
 
 def load_baseline(root: pathlib.Path) -> tuple[dict | None, pathlib.Path | None, str | None]:
-    toml_path = root / ".pact" / "baseline.toml"
-    if toml_path.exists():
-        return load_toml(toml_path), toml_path, "toml"
-
-    legacy_path = root / ".pact" / "baseline.yaml"
-    if legacy_path.exists():
-        return load_legacy_yaml(legacy_path), legacy_path, "legacy-yaml"
-
+    path = root / ".pact" / "baseline.toml"
+    if path.exists():
+        return load_toml(path), path, "toml"
     return None, None, None
 
 
@@ -96,10 +91,6 @@ def main() -> int:
     try:
         baseline, baseline_path, baseline_format = load_baseline(root)
         if baseline is not None:
-            if baseline_format == "legacy-yaml":
-                reviews = baseline.setdefault("reviews", {})
-                reviews.setdefault("agent_bootstrap", "pending")
-
             baseline_errors.extend(
                 validate_instance(baseline, load_schema(schema_path))
             )
