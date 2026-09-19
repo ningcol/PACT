@@ -30,13 +30,15 @@ Pushing a `v*` tag triggers the release workflow.
 
 The workflow:
 
-- verifies the tag/version match;
+- verifies the tag/version match and semantic-version shape;
+- runs the 3 OS × 3 Python portability matrix on the tag commit and blocks publication unless all nine cells pass;
 - runs schema/check/full-unit validation;
 - builds the compact `pact.pyz` runtime from the tagged source;
 - publishes `pact-bootstrap.py`;
 - publishes `pact.pyz`;
 - publishes `SHA256SUMS` covering both artifacts;
-- creates the GitHub Release with generated notes.
+- creates the GitHub Release with generated notes;
+- marks versions with a prerelease suffix (for example `0.4.0-rc.1` or `0.4.0-dev.1`) as GitHub prereleases rather than stable releases.
 
 Users should prefer a release tag or exact commit over moving `main` for reproducible bootstrap/install.
 
