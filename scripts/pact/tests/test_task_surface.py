@@ -72,6 +72,152 @@ class TaskSurfaceTests(unittest.TestCase):
             1,
         )
 
+    def test_generated_control_plane_state_is_git_ignored(self) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+
+        paths = [
+            ".pact/cache/example.json",
+            ".pact/tasks/TASK-X/task.json",
+            ".pact/runs/TASK-X/run.json",
+            ".pact/completions/TASK-X/evidence.json",
+            ".pact/tmp/staged.json",
+        ]
+        for relative in paths:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", relative],
+                cwd=self.root,
+            )
+            self.assertEqual(ignored.returncode, 0, relative)
+
+    def test_failed_prepare_leaves_no_visible_task_directory(self) -> None:
+        bad = self.root / "docs" / "bad.md"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_text(
+            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
+            encoding="utf-8",
+        )
+
+        task_id = "TASK-PREPARE-FAIL"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "trigger invalid project metadata",
+            "--success",
+            "Preparation should not publish partial state",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertNotEqual(prepared.returncode, 0)
+        self.assertFalse((self.root / ".pact" / "tasks" / task_id).exists())
+        self.assertFalse(
+            (self.root / ".pact" / "completions" / task_id).exists()
+        )
+
+    def test_force_reprepare_replaces_task_and_invalidates_completion(self) -> None:
+        task_id = "TASK-FORCE-REPREPARE"
+        first = self.pact(
+            "task",
+            "prepare",
+            "first task wording",
+            "--success",
+            "First success condition",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+        completion = self.root / ".pact" / "completions" / task_id
+        completion.mkdir(parents=True, exist_ok=True)
+        (completion / "old.json").write_text("{}\n", encoding="utf-8")
+
+        second = self.pact(
+            "task",
+            "prepare",
+            "replacement task wording",
+            "--success",
+            "Replacement success condition",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--force",
+            "--json",
+        )
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertFalse(completion.exists())
+
+        contract = json.loads(
+            (
+                self.root
+                / ".pact"
+                / "tasks"
+                / task_id
+                / "contract.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            contract["acceptance_criteria"][0]["text"],
+            "Replacement success condition",
+        )
+
+    def test_force_failure_preserves_existing_task_and_completion(self) -> None:
+        task_id = "TASK-FORCE-ROLLBACK"
+        first = self.pact(
+            "task",
+            "prepare",
+            "stable task",
+            "--success",
+            "Stable success",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+        task_manifest = (
+            self.root / ".pact" / "tasks" / task_id / "task.json"
+        )
+        original_manifest = task_manifest.read_bytes()
+        completion = self.root / ".pact" / "completions" / task_id
+        completion.mkdir(parents=True, exist_ok=True)
+        marker = completion / "old.json"
+        marker.write_text("{}\n", encoding="utf-8")
+
+        bad = self.root / "docs" / "bad.md"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_text(
+            "+++\n[pact\ntype = \"rule\"\n+++\n# Bad\n",
+            encoding="utf-8",
+        )
+
+        second = self.pact(
+            "task",
+            "prepare",
+            "replacement that must fail",
+            "--success",
+            "Never published",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--force",
+            "--json",
+        )
+        self.assertNotEqual(second.returncode, 0)
+        self.assertEqual(task_manifest.read_bytes(), original_manifest)
+        self.assertTrue(marker.is_file())
+
     def test_task_prepare_and_finish_happy_path(self) -> None:
         task_id = "TASK-HAPPY"
         prepared = self.pact(
