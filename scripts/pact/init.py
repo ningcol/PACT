@@ -183,25 +183,18 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
             "reason": "no existing AGENTS.md",
         })
 
-    gitignore = target / ".gitignore"
-    if gitignore.exists():
-        text = gitignore.read_text(encoding="utf-8", errors="ignore")
-        if ".pact/cache/" not in text:
-            operations.append({
-                "action": "warn",
-                "path": ".gitignore",
-                "source": None,
-                "management": "seed",
-                "reason": "add .pact/cache/ manually; existing .gitignore is never modified",
-            })
-    else:
-        operations.append({
-            "action": "create-generated",
-            "path": ".gitignore",
-            "source": None,
-            "management": "seed",
-            "reason": "ignore derived PACT cache",
-        })
+    control_ignore = target / ".pact" / ".gitignore"
+    operations.append({
+        "action": "skip" if control_ignore.exists() else "create-generated",
+        "path": ".pact/.gitignore",
+        "source": None,
+        "management": "seed",
+        "reason": (
+            "existing PACT control-plane ignore rules preserved"
+            if control_ignore.exists()
+            else "ignore local PACT runtime/task state"
+        ),
+    })
 
     if github_actions:
         entry = github_actions_entry(SOURCE_ROOT)
@@ -304,8 +297,11 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             destination.write_text(TARGET_AGENTS, encoding="utf-8")
         elif op["path"] == ".pact/AGENT_BOOTSTRAP.md":
             destination.write_text(bootstrap_snippet(), encoding="utf-8")
-        elif op["path"] == ".gitignore":
-            destination.write_text(".pact/cache/\n", encoding="utf-8")
+        elif op["path"] == ".pact/.gitignore":
+            destination.write_text(
+                "cache/\ntasks/\nruns/\ncompletions/\ntmp/\n.upgrade-txn-*\n",
+                encoding="utf-8",
+            )
         else:
             continue
 
