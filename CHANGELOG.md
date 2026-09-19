@@ -33,6 +33,14 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - prepared tasks must carry the current Context SHA contract;
 - upgrade tests now cover current-runtime update/conflict/rollback/seed safety instead of unreleased migration paths.
 
+### Release / distribution hardening
+
+- bootstrap ZIP extraction now limits archive file count, per-file expanded size, total expanded size, local archive size, and suspicious compression ratios before extraction;
+- tag releases are blocked on the same 3 OS × 3 Python portability coverage used for normal development;
+- prerelease version suffixes publish as GitHub prereleases instead of stable releases while exact tag/VERSION equality remains required;
+- non-Git high-level task completion now surfaces that exact changed-file attribution is unavailable instead of silently providing a weaker guarantee;
+- stale version-specific Python requirement messages were replaced with the protocol-level Python 3.11+ requirement.
+
 ### Reliability hardening
 
 - `pact init --apply` now stages all would-be-created files before target mutation, publishes them atomically, commits install provenance last, and rolls back transaction-created files/manifest state on failure;
