@@ -84,6 +84,8 @@ These commands compose the lower-level PACT primitives; they do not replace them
 
 `task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent.
 
+Task Context is bounded by both hard artifact-count limits and a soft risk-adaptive estimated materialization-token budget. The estimate is derived from repository file size, not from reading file bodies into PACT. Use `--token-budget` only when an Agent has a concrete reason to override the default risk budget.
+
 ## Adopt PACT in an existing project
 
 You do **not** need to clone PACT or install Python packages.
@@ -146,7 +148,7 @@ Safety rules:
 - dry-run is the default;
 - existing files are never overwritten;
 - an existing `AGENTS.md` is preserved;
-- fresh adoption uses a minimal install profile instead of copying empty knowledge/lifecycle scaffold;
+- fresh adoption uses one compact install surface instead of copying empty knowledge/lifecycle scaffold;
 - Product/Architecture/Decision/Change/Drift/Skill locations are created only when real durable project knowledge needs them;
 - PACT does not infer confirmed Product Truth from code;
 - historical documentation does not need to be fully backfilled before adoption.
