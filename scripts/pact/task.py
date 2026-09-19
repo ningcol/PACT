@@ -222,8 +222,7 @@ def finish(args) -> int:
     if not manifest_path.is_file():
         print(
             f"PACT task finish: task was not prepared: {args.task_id}. "
-            "Use 'pact task prepare' first, or use the low-level 'pact complete' "
-            "primitive for a legacy/unmanaged completion bundle.",
+            "Use 'pact task prepare' first.",
             file=sys.stderr,
         )
         return 2
@@ -232,6 +231,19 @@ def finish(args) -> int:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
+        return 2
+
+    required_manifest_fields = ("contract", "context", "context_sha256")
+    missing_fields = [
+        field for field in required_manifest_fields
+        if not manifest.get(field)
+    ]
+    if missing_fields:
+        print(
+            "PACT task finish: prepared task manifest is incomplete; missing "
+            + ", ".join(missing_fields),
+            file=sys.stderr,
+        )
         return 2
 
     bundle = pathlib.Path(args.bundle) if args.bundle else COMPLETION_ROOT / args.task_id
@@ -248,16 +260,9 @@ def finish(args) -> int:
     if args.require_ci:
         command.append("--require-ci")
 
-    if manifest is not None and manifest.get("contract"):
-        command.extend(["--contract", str(ROOT / manifest["contract"])])
-
-    if (
-        manifest is not None
-        and manifest.get("context")
-        and manifest.get("context_sha256")
-    ):
-        command.extend(["--context", str(ROOT / manifest["context"])])
-        command.extend(["--context-sha256", manifest["context_sha256"]])
+    command.extend(["--contract", str(ROOT / manifest["contract"])])
+    command.extend(["--context", str(ROOT / manifest["context"])])
+    command.extend(["--context-sha256", manifest["context_sha256"]])
 
     completed = run(command)
     output = None
@@ -282,7 +287,7 @@ def finish(args) -> int:
     }
     append_jsonl(task_dir / "completion-attempts.jsonl", attempt)
 
-    if completed.returncode == 0 and manifest is not None:
+    if completed.returncode == 0:
         manifest["status"] = "completed"
         manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
         try:
