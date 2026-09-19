@@ -152,6 +152,27 @@ class CodeMapTests(unittest.TestCase):
         self.assertTrue(item["is_test"])
         self.assertEqual(item["parser_mode"], "generic-lexical")
 
+    def test_generic_file_is_not_used_for_js_import_resolution(self) -> None:
+        self.write("src/bridge.go", "package bridge\nfunc Bridge() {}\n")
+        self.write(
+            "src/app.ts",
+            'import { Bridge } from "./bridge";\nexport const app = Bridge;\n',
+        )
+
+        data = self.build()
+        self.assertFalse(
+            any(
+                edge["from"] == "src/app.ts"
+                and edge["to"] == "src/bridge.go"
+                for edge in data["edges"]
+            )
+        )
+        app = next(item for item in data["files"] if item["path"] == "src/app.ts")
+        bridge_import = next(
+            item for item in app["imports"] if item["raw"] == "./bridge"
+        )
+        self.assertIsNone(bridge_import["resolved"])
+
     def test_excluded_directories_are_not_indexed(self) -> None:
         self.write("node_modules/pkg/index.js", "export const hidden = true;\n")
         self.write("src/visible.js", "export const visible = true;\n")
