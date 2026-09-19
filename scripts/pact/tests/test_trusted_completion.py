@@ -240,7 +240,78 @@ class TrustedCompletionTests(unittest.TestCase):
 
         result = self.run_complete()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("machine-backed", result.stdout)
+        self.assertIn("pact-run receipt bound to the current workspace", result.stdout)
+
+    def test_medium_static_file_only_required_claim_is_incomplete(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        evidence["claims"][0]["evidence"] = [{
+            "kind": "contract",
+            "provenance": "file",
+            "ref": "app.txt",
+        }]
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 1)
+        data = json.loads(result.stdout)
+        self.assertFalse(data["complete"])
+        self.assertEqual(data["machine_backed_claims"], 0)
+        self.assertEqual(data["workspace_bound_claims"], 0)
+        self.assertTrue(any(
+            "pact-run receipt bound to the current workspace" in gap
+            for gap in data["policy_gaps"]
+        ))
+
+    def test_low_risk_static_file_evidence_remains_usable(self) -> None:
+        evidence, convergence, owner = self.base_bundle("low")
+        evidence["claims"][0]["evidence"] = [{
+            "kind": "contract",
+            "provenance": "file",
+            "ref": "app.txt",
+        }]
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertTrue(data["complete"])
+        self.assertEqual(data["machine_backed_claims"], 0)
+        self.assertEqual(data["workspace_bound_claims"], 0)
+
+    def test_evidence_ref_outside_repository_is_rejected(self) -> None:
+        evidence, convergence, owner = self.base_bundle("low")
+        outside = pathlib.Path(self.temp.name).parent / "pact-outside-evidence.txt"
+        outside.write_text("outside\n", encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        evidence["claims"][0]["evidence"] = [{
+            "kind": "contract",
+            "provenance": "file",
+            "ref": str(outside),
+        }]
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "evidence ref escapes repository root",
+            result.stdout + result.stderr,
+        )
+
+    def test_pact_run_ref_outside_repository_is_rejected(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        run = self.create_passing_run()
+        outside = pathlib.Path(self.temp.name).parent / "pact-outside-run.json"
+        outside.write_bytes(run.read_bytes())
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        evidence["claims"][0]["evidence"][0]["ref"] = str(outside)
+        self.save_bundle(evidence, convergence, owner)
+
+        result = self.run_complete()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "evidence ref escapes repository root",
+            result.stdout + result.stderr,
+        )
 
     def test_owner_cannot_call_unverified_claim_verified(self) -> None:
         evidence, convergence, owner = self.base_bundle("low")
