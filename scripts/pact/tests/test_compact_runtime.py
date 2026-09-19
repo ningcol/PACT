@@ -178,7 +178,8 @@ class CompactRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
             data = json.loads(status.stdout)
-            self.assertIn(data["overall"], {"pass", "warn"})
+            self.assertEqual(data["overall"], "pass")
+            self.assertIn("baseline-review-pending", data["warnings"])
             self.assertEqual(data["readiness"]["stage"], "foundation-valid")
             self.assertFalse((target / ".pact" / "schema").exists())
 
