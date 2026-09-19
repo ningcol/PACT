@@ -162,6 +162,38 @@ class MultiQueryRetrievalTests(unittest.TestCase):
         self.assertEqual(len(paths), 6)
         self.assertIn("src/specialized.ts", paths)
 
+    def test_each_query_gets_representation_when_budget_equals_query_count(self) -> None:
+        def item(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "reasons": [path],
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        first = [
+            item("src/shared.ts", 100),
+            item("src/first-only.ts", 90),
+        ]
+        second = [
+            item("src/shared.ts", 100),
+            item("src/second-only.ts", 1000),
+        ]
+
+        fused = discover.fuse_ranked_results(
+            [("first query", first), ("second query", second)],
+            limit=2,
+        )
+
+        paths = {entry["path"] for entry in fused}
+        self.assertEqual(len(paths), 2)
+        self.assertIn("src/shared.ts", paths)
+        self.assertIn("src/second-only.ts", paths)
+
     def test_direct_match_wins_relation_when_another_query_finds_neighbor(self) -> None:
         fused = discover.fuse_ranked_results(
             [
