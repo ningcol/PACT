@@ -3,7 +3,8 @@
   "change": "Example province switch behavior",
   "owner_summary": "Province switching behavior and its related product rule are aligned in this example.",
   "evidence": [
-    "Example only: replace with real test/browser/runtime evidence in a project."
+    "EV-PROVINCE-SWITCH",
+    "EV-PROVINCE-REFRESH"
   ],
   "findings": [
     {
