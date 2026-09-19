@@ -1,0 +1,6 @@
+cache/
+tasks/
+runs/
+completions/
+tmp/
+.upgrade-txn-*
