@@ -17,6 +17,7 @@ spec.loader.exec_module(historical_replay)
 class HistoricalReplayMetricTests(unittest.TestCase):
     def test_context_metrics_are_oracle_based(self) -> None:
         context = {
+            "risk_policy": {"code_limit": 12},
             "code_artifacts": [
                 {"path": "src/a.ts"},
                 {"path": "src/b.ts"},
@@ -35,10 +36,12 @@ class HistoricalReplayMetricTests(unittest.TestCase):
         self.assertEqual(result["recall"], 0.5)
         self.assertAlmostEqual(result["precision_proxy"], 1 / 3)
         self.assertEqual(result["known_unknowns"], 1)
+        self.assertEqual(result["configured_code_budget"], 12)
 
     def test_aggregate_compares_direct_expanded_and_multi_query_without_gate(self) -> None:
         results = [
             {
+                "configured_final_code_budget": 12,
                 "query_expansion_recall_delta": 0.5,
                 "multi_query_recall_delta": 0.5,
                 "multi_vs_single_expanded_recall_delta": 0.0,
@@ -59,6 +62,7 @@ class HistoricalReplayMetricTests(unittest.TestCase):
                 },
             },
             {
+                "configured_final_code_budget": 12,
                 "query_expansion_recall_delta": 0.0,
                 "multi_query_recall_delta": 1.0,
                 "multi_vs_single_expanded_recall_delta": 1.0,
@@ -83,6 +87,7 @@ class HistoricalReplayMetricTests(unittest.TestCase):
         summary = historical_replay.aggregate(results)
         self.assertEqual(summary["case_count"], 2)
         self.assertEqual(summary["oracle_file_count"], 3)
+        self.assertEqual(summary["configured_final_code_budgets"], [12])
         self.assertAlmostEqual(summary["direct_weighted_recall"], 1 / 3)
         self.assertAlmostEqual(summary["expanded_weighted_recall"], 2 / 3)
         self.assertAlmostEqual(summary["multi_query_weighted_recall"], 1.0)

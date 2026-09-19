@@ -281,14 +281,41 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
         })
 
     neighbors.sort(key=lambda x: (-x["score"], x["path"]))
-    return direct + neighbors[: max(limit, 1)]
+
+    # code-limit is a final output budget, not a per-class budget. Keep a
+    # small graph-neighbor share when available so structural context does not
+    # disappear merely because lexical matches filled the candidate list.
+    final_limit = max(limit, 1)
+    if not neighbors:
+        return direct[:final_limit]
+
+    neighbor_budget = min(
+        len(neighbors),
+        max(1, final_limit // 3),
+    )
+    direct_budget = max(final_limit - neighbor_budget, 0)
+    selected = direct[:direct_budget] + neighbors[:neighbor_budget]
+
+    # If one class cannot use its share, fill the remaining budget from the
+    # other class deterministically.
+    selected_paths = {item["path"] for item in selected}
+    if len(selected) < final_limit:
+        remainder = [
+            item
+            for item in [*direct, *neighbors]
+            if item["path"] not in selected_paths
+        ]
+        selected.extend(remainder[: final_limit - len(selected)])
+
+    return selected[:final_limit]
 
 
 def fuse_ranked_results(
     query_results: list[tuple[str, list[dict]]],
     limit: int,
 ) -> list[dict]:
-    """Fuse independent ranked lists with deterministic Reciprocal Rank Fusion."""
+    """Fuse ranked lists with deterministic RRF plus bounded query diversity."""
+    final_limit = max(limit, 1)
     fused: dict[str, dict] = {}
 
     for query, results in query_results:
@@ -333,8 +360,8 @@ def fuse_ranked_results(
                 ):
                     entry["confidence"] = incoming
 
-    ranked = []
-    for entry in fused.values():
+    rendered: dict[str, dict] = {}
+    for path, entry in fused.items():
         result = {
             key: value
             for key, value in entry.items()
@@ -344,10 +371,46 @@ def fuse_ranked_results(
         result["reasons"] = [
             f"matched query: {query}" for query in entry["_queries"]
         ] + entry["_reasons"]
-        ranked.append(result)
+        rendered[path] = result
 
-    ranked.sort(key=lambda item: (-item["score"], item["path"]))
-    return ranked[: max(limit, 1)]
+    global_ranked = sorted(
+        rendered.values(),
+        key=lambda item: (-item["score"], item["path"]),
+    )
+
+    # When the final budget can represent every independent query, reserve at
+    # least one candidate per query. For larger budgets keep the diversity
+    # reservation bounded so global RRF still controls most of the result.
+    query_count = len(query_results)
+    reserve_per_query = 0
+    if query_count and final_limit >= query_count:
+        reserve_per_query = max(1, final_limit // (2 * query_count))
+
+    selected_paths: set[str] = set()
+    if reserve_per_query:
+        for _, results in query_results:
+            taken = 0
+            for item in results:
+                path = item.get("path")
+                if not path or path in selected_paths:
+                    continue
+                selected_paths.add(path)
+                taken += 1
+                if taken >= reserve_per_query:
+                    break
+
+    for item in global_ranked:
+        if len(selected_paths) >= final_limit:
+            break
+        selected_paths.add(item["path"])
+
+    selected = [
+        rendered[path]
+        for path in selected_paths
+        if path in rendered
+    ]
+    selected.sort(key=lambda item: (-item["score"], item["path"]))
+    return selected[:final_limit]
 
 
 def main() -> int:
@@ -401,17 +464,34 @@ def main() -> int:
         ensure_code_index(code_index_path)
         code_index = json.loads(code_index_path.read_text(encoding="utf-8"))
 
-        code_lists = [
-            (
-                query,
-                ranked_code_results(code_index, query, args.code_limit),
-            )
-            for query in queries
-        ]
         if len(queries) == 1:
-            code_results = code_lists[0][1]
+            code_results = ranked_code_results(
+                code_index,
+                queries[0],
+                args.code_limit,
+            )
         else:
-            code_results = fuse_ranked_results(code_lists, args.code_limit)
+            # Fusion may inspect a wider candidate pool, but the final result
+            # is always capped by the requested code budget.
+            candidate_limit = max(
+                args.code_limit * 2,
+                args.code_limit + len(queries),
+            )
+            code_lists = [
+                (
+                    query,
+                    ranked_code_results(
+                        code_index,
+                        query,
+                        candidate_limit,
+                    ),
+                )
+                for query in queries
+            ]
+            code_results = fuse_ranked_results(
+                code_lists,
+                args.code_limit,
+            )
 
     result = {
         "query": args.query,
