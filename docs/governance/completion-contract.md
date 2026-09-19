@@ -45,6 +45,17 @@ Each change-coverage entry contains a path and an Agent-written rationale. PACT 
 
 For non-Git projects, PACT reports that exact task-delta path attribution is unavailable rather than inventing changed-file coverage.
 
+## Mechanical integrity versus semantic assertion
+
+PACT deliberately separates two trust layers:
+
+- **mechanical integrity** — task IDs, schema, hashes, prepared risk, exact workspace binding, exit-status consistency, changed-file coverage, and Evidence references;
+- **semantic assertion** — whether a particular test/runtime command truly proves the business claim an Agent attaches to it.
+
+A local `pact-run` receipt is an execution-backed, workspace-bound provenance record. It is **not** a tamper-proof machine attestation. PACT can validate the receipt's structure and consistency, but an independent remote/signed attestation is required when the threat model includes a party rewriting local control-plane files.
+
+Owner Report verification text must not broaden a passing Evidence claim. Business-friendly consequence summaries belong in `summary`, `before`, and `after`; the machine-checked verification entry stays bounded by its referenced Evidence.
+
 ## Default definition
 
 A task is complete when, to a degree appropriate for its risk:
