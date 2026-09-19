@@ -8,26 +8,18 @@ import json
 import pathlib
 import sys
 
-from formats import load_legacy_yaml, load_toml
+from formats import load_toml
 from schema_validate import load_schema, validate_instance
 
 
 def load_config(root: pathlib.Path, strict: bool) -> tuple[dict, pathlib.Path, str, bool]:
-    candidates = [
-        (root / ".pact" / "config.toml", "toml", True),
-        (root / ".pact" / "config.yaml", "legacy-yaml", True),
-    ]
+    candidates = [(root / ".pact" / "config.toml", True)]
     if not strict:
-        candidates.extend([
-            (root / ".pact" / "config.example.toml", "toml", False),
-            (root / ".pact" / "config.example.yaml", "legacy-yaml", False),
-        ])
+        candidates.append((root / ".pact" / "config.example.toml", False))
 
-    for path, kind, configured in candidates:
-        if not path.exists():
-            continue
-        data = load_toml(path) if kind == "toml" else load_legacy_yaml(path)
-        return data, path, kind, configured
+    for path, configured in candidates:
+        if path.exists():
+            return load_toml(path), path, "toml", configured
 
     raise FileNotFoundError(".pact/config.toml is missing")
 
@@ -38,7 +30,7 @@ def main() -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="require project config.toml (legacy config.yaml remains readable)",
+        help="require project config.toml",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -54,12 +46,6 @@ def main() -> int:
     except Exception as exc:
         print(f"PACT owner: {exc}", file=sys.stderr)
         return 2
-
-    if source_format == "legacy-yaml":
-        config = {
-            "version": config.get("version", 1),
-            "owner": config.get("owner", {}),
-        }
 
     errors = validate_instance(config, schema)
     if errors:
