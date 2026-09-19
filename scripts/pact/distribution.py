@@ -92,6 +92,22 @@ def manifest_record(entry: dict, destination: pathlib.Path) -> dict:
     }
 
 
+def read_install_manifest(root: pathlib.Path) -> dict | None:
+    """Return a valid install manifest, None when absent, or raise when corrupt."""
+    path = root / ".pact" / "install.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid .pact/install.json: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+        raise ValueError("invalid .pact/install.json: expected object with files map")
+    if not isinstance(data.get("runtime_version"), str) or not data["runtime_version"]:
+        raise ValueError("invalid .pact/install.json: missing runtime_version")
+    return data
+
+
 def discovery_excluded_paths(root: pathlib.Path) -> set[str]:
     """Return installed PACT control-plane paths that are not project knowledge.
 
@@ -99,18 +115,10 @@ def discovery_excluded_paths(root: pathlib.Path) -> set[str]:
     excluded only while byte-identical to their installed default; once edited
     by the project they become discoverable project knowledge.
     """
-    manifest_path = root / ".pact" / "install.json"
-    if not manifest_path.is_file():
+    manifest = read_install_manifest(root)
+    if manifest is None:
         return set()
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return set()
-
-    files = manifest.get("files")
-    if not isinstance(files, dict):
-        return set()
+    files = manifest["files"]
 
     excluded: set[str] = set()
     for relative, record in files.items():
