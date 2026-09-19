@@ -9,6 +9,7 @@ import pathlib
 import subprocess
 import sys
 
+from readiness import evaluate as evaluate_readiness
 from runtime_exec import runtime_command
 
 
@@ -40,8 +41,14 @@ def main() -> int:
 
     doctor_args = ["--strict"] if args.strict else []
     doctor_rc, doctor, doctor_raw = run_json("doctor.py", *doctor_args)
-    readiness_rc, readiness, readiness_raw = run_json("readiness.py")
     audit_rc, audit, audit_raw = run_json("audit.py")
+
+    foundation_state = doctor.get("overall") if doctor else "error"
+    readiness = evaluate_readiness(
+        ROOT,
+        foundation_valid=foundation_state == "pass",
+        foundation_detail=foundation_state,
+    )
 
     result = {
         "foundation": {
@@ -65,8 +72,11 @@ def main() -> int:
     errors = []
     if doctor is None:
         errors.append(f"doctor failed: {doctor_raw}")
-    if readiness is None:
-        errors.append(f"readiness failed: {readiness_raw}")
+    if readiness.get("errors"):
+        errors.extend(
+            f"readiness failed: {error}"
+            for error in readiness["errors"]
+        )
     if audit is None:
         errors.append(f"audit failed: {audit_raw}")
     result["errors"] = errors
@@ -76,11 +86,20 @@ def main() -> int:
         or audit_rc != 0
         or bool(errors)
     )
+    warnings = []
+    if result["foundation"]["state"] == "warn":
+        warnings.append("foundation-warning")
+    if (result["health"]["known_drift"] or 0) > 0:
+        warnings.append("known-drift")
+    if result["readiness"]["pending_reviews"]:
+        warnings.append("baseline-review-pending")
+    result["warnings"] = warnings
+
+    # Global baseline review is advisory for normal daily work. Projects that
+    # want it as a hard governance gate use readiness --require-ready.
     result["overall"] = "fail" if blocking else (
         "warn"
-        if result["foundation"]["state"] == "warn"
-        or result["readiness"]["stage"] != "pact-ready"
-        or (result["health"]["known_drift"] or 0) > 0
+        if "foundation-warning" in warnings or "known-drift" in warnings
         else "pass"
     )
 
