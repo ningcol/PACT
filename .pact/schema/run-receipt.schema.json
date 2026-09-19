@@ -30,7 +30,7 @@
     },
     "task_id": {
       "type": "string",
-      "pattern": "^TASK-[A-Z0-9]+(?:[._-][A-Z0-9]+)*$"
+      "pattern": "^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$"
     },
     "argv": {
       "type": "array",
