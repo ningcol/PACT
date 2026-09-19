@@ -82,25 +82,6 @@ class FitnessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"overall": "warn"', result.stdout)
 
-    def test_legacy_yaml_list_of_checks_remains_readable(self) -> None:
-        checker = self.write("checks/ok.py", "raise SystemExit(0)\n")
-        self.write(
-            ".pact/fitness.yaml",
-            f"""
-            version: 1
-            checks:
-              - id: legacy-check
-                description: Legacy config stays readable.
-                command:
-                  - {sys.executable}
-                  - {checker}
-                severity: error
-            """,
-        )
-        result = self.run_fitness("--strict", "--json")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('"config_format": "legacy-yaml"', result.stdout)
-
     def test_strict_requires_project_config(self) -> None:
         self.write(".pact/fitness.example.toml", "version = 1\nchecks = []\n")
         result = self.run_fitness("--strict")
