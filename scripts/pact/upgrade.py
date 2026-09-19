@@ -17,6 +17,7 @@ from distribution import (
     runtime_version,
     sha256_file,
     source_manifest,
+    read_install_manifest,
 )
 from schema_validate import load_schema, validate_instance
 
@@ -38,14 +39,11 @@ class UpgradeApplyError(RuntimeError):
 
 
 def load_manifest(target: pathlib.Path) -> dict:
-    path = target / INSTALL_MANIFEST
-    if not path.exists():
+    data = read_install_manifest(target)
+    if data is None:
         raise FileNotFoundError(
             "missing .pact/install.json; initialize the project with PACT first"
         )
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
-        raise ValueError("invalid install manifest")
     return data
 
 
@@ -172,13 +170,16 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
                 "source_sha256": source_sha,
             })
         elif old_source_sha == source_sha:
-            notices.append({
-                "kind": "local-framework-modification",
+            conflicts.append({
                 "path": path,
                 "reason": (
-                    "target was locally modified, but this framework file has "
-                    "no upstream change in this upgrade"
+                    "framework-managed file was locally modified; automatic "
+                    "upgrade refuses to preserve stale framework ownership"
                 ),
+                "installed_sha256": installed_sha,
+                "current_sha256": current_sha,
+                "previous_source_sha256": old_source_sha,
+                "source_sha256": source_sha,
             })
         else:
             conflicts.append({
