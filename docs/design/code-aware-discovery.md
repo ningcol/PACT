@@ -6,24 +6,41 @@ The code map is **derived evidence**, never Product Truth.
 
 ## v1.1 scope
 
-Supported source families:
+Structured source families:
 
 - Python;
 - JavaScript / JSX;
 - TypeScript / TSX;
-- Vue single-file components for import extraction.
+- Vue single-file components.
 
-Generated facts:
+Generic lexical fallback source families:
+
+- Go;
+- Swift;
+- Kotlin;
+- Java;
+- Rust;
+- C / C++;
+- C#;
+- Ruby;
+- PHP.
+
+Structured files may provide top-level symbols, import statements, resolved local import edges, and test-file classification.
+
+Generic files provide only:
 
 - source file path;
-- top-level symbols where cheaply extractable;
-- import statements;
-- resolved local import edges;
+- language;
+- bounded lexical identifiers (maximum 256);
 - test-file classification.
+
+Generic lexical fallback deliberately does **not** claim AST structure, imports, call relationships, or behavioral dependencies.
 
 ## Confidence boundary
 
-Generated relationships explicitly carry confidence rather than pretending all resolution is equally certain:
+Generated relationships explicitly carry confidence rather than pretending all resolution is equally certain. Generic lexical identifiers are not relationships at all; they are low-confidence search evidence only.
+
+Structured relationship confidence:
 
 - `relative-resolved` — relative JS/TS/Vue import resolved to a repository file;
 - `ast-resolved` — Python relative import resolved using AST + package position;
@@ -58,7 +75,7 @@ Examples that may remain unresolved:
 - dynamic routing conventions;
 - reflection/string-based loading.
 
-Future adapters may add project-specific resolvers.
+Future adapters may add project-specific resolvers. Until then, generic lexical fallback helps locate candidate files without fabricating those missing relationships.
 
 ## Search
 
@@ -67,9 +84,10 @@ Future adapters may add project-specific resolvers.
 - path;
 - file name;
 - extracted symbol names;
-- raw import names.
+- raw import names;
+- lower-weight bounded generic identifiers for unsupported structured languages.
 
-Direct lexical matches are ranked ahead of one-hop import neighbors.
+Structured top-level symbol matches rank above generic identifier matches. Direct lexical matches are ranked ahead of one-hop import neighbors.
 
 ## Impact
 
