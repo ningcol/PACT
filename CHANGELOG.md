@@ -50,6 +50,10 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ### Retrieval / Context
 
+- recommended `inspect` now accepts repeatable retrieval queries and forwards the same normalized query set to explanation knowledge and code discovery;
+- `inspect --code-limit` provides a hard final code-candidate budget;
+- Explanation Packets record the actual retrieval query set used;
+- inspect/explain now propagate indexing/discovery failures instead of downgrading nonzero JSON child exits to empty results;
 - `code_limit` is now a true final output budget for both single- and multi-query retrieval;
 - query-diverse fusion prevents specialized query intents from being silently starved when the budget permits representation;
 - historical retrieval comparison now enforces equal final code budgets across direct/expanded/multi-query modes;
