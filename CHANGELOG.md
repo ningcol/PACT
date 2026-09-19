@@ -37,7 +37,8 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - normal `status` treats pending repository-wide baseline review as advisory instead of permanent warning state;
 - `readiness --require-ready` remains the explicit opt-in full-baseline governance gate;
 - malformed/invalid baseline readiness now blocks `status` rather than being silently downgraded;
-- `status` reuses its Doctor result when evaluating readiness instead of invoking Doctor twice.
+- `status` reuses its Doctor result when evaluating readiness instead of invoking Doctor twice;
+- Doctor persists the freshness-aware Project Map used for its check, and `status` reuses that same map/check result for the audit summary instead of rescanning the repository.
 
 ### Retrieval / Context
 
