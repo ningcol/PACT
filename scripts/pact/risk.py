@@ -17,6 +17,7 @@ PROFILES = {
         "knowledge_limit": 8,
         "code_context_default": False,
         "code_limit": 4,
+        "materialization_token_budget": 8000,
         "completion": [
             "targeted verification appropriate to the observable change",
             "blocking ambiguity must be surfaced",
@@ -26,6 +27,7 @@ PROFILES = {
         "knowledge_limit": 12,
         "code_context_default": True,
         "code_limit": 12,
+        "materialization_token_budget": 20000,
         "completion": [
             "required passing claims need a current workspace-bound pact-run receipt",
             "Convergence Report is required",
@@ -36,6 +38,7 @@ PROFILES = {
         "knowledge_limit": 20,
         "code_context_default": True,
         "code_limit": 20,
+        "materialization_token_budget": 40000,
         "completion": [
             "required passing claims need a current workspace-bound pact-run receipt",
             "inspect relevant architecture/contracts/decisions/history when applicable",
@@ -67,6 +70,10 @@ def main() -> int:
         print(f"- knowledge limit: {result['knowledge_limit']}")
         print(f"- code context default: {result['code_context_default']}")
         print(f"- code limit: {result['code_limit']}")
+        print(
+            "- soft materialization token budget: "
+            f"{result['materialization_token_budget']}"
+        )
         print("Completion requirements:")
         for requirement in result["completion"]:
             print(f"- {requirement}")
