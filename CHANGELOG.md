@@ -56,6 +56,9 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ### Retrieval / Context
 
+- Code Map adds a bounded `generic-lexical` fallback for Go, Swift, Kotlin, Java, Rust, C/C++, C#, Ruby, and PHP;
+- generic fallback stores at most 256 lexical identifiers per file and creates no import/AST edges;
+- generic identifier matches rank below structured top-level symbols and remain derived search evidence only;
 - recommended `inspect` now accepts repeatable retrieval queries and forwards the same normalized query set to explanation knowledge and code discovery;
 - `inspect --code-limit` provides a hard final code-candidate budget;
 - Explanation Packets record the actual retrieval query set used;
