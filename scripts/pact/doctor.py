@@ -8,7 +8,6 @@ import json
 import pathlib
 import subprocess
 import sys
-import tempfile
 
 from distribution import sha256_file
 from schema_validate import load_schema, validate_instance
@@ -200,17 +199,25 @@ def main() -> int:
         )
     )
 
+    project_map = ROOT / ".pact" / "cache" / "project-map.json"
     try:
-        with tempfile.TemporaryDirectory(prefix="pact-doctor-") as tmp:
-            output = pathlib.Path(tmp) / "project-map.json"
-            map_run = subprocess.run(
-                runtime_command("map", "--output", str(output)),
-                capture_output=True,
-                text=True,
-            )
-            state = "pass" if map_run.returncode == 0 and output.exists() else "fail"
-            detail = (map_run.stdout + map_run.stderr).strip()
-            checks.append(item("project-map", state, detail))
+        map_run = subprocess.run(
+            runtime_command(
+                "map",
+                "--output",
+                str(project_map),
+                "--ensure",
+            ),
+            capture_output=True,
+            text=True,
+        )
+        state = (
+            "pass"
+            if map_run.returncode == 0 and project_map.is_file()
+            else "fail"
+        )
+        detail = (map_run.stdout + map_run.stderr).strip()
+        checks.append(item("project-map", state, detail))
     except Exception as exc:
         checks.append(item("project-map", "fail", str(exc)))
 
@@ -218,7 +225,15 @@ def main() -> int:
         "warn" if any(c["state"] == "warn" for c in checks) else "pass"
     )
 
-    result = {"overall": overall, "checks": checks}
+    result = {
+        "overall": overall,
+        "checks": checks,
+        "project_map": (
+            project_map.relative_to(ROOT).as_posix()
+            if project_map.is_file()
+            else None
+        ),
+    }
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
