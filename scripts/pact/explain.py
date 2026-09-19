@@ -27,24 +27,30 @@ def build_index(path: pathlib.Path) -> None:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "map failed")
 
 
-def run_discovery(query: str, index: pathlib.Path, limit: int) -> dict:
+def run_discovery(queries: list[str], index: pathlib.Path, limit: int) -> dict:
+    command = runtime_command(
+        "discover",
+        queries[0],
+        "--index",
+        str(index),
+        "--limit",
+        str(limit),
+        "--json",
+    )
+    for query in queries[1:]:
+        command.extend(["--query", query])
+
     result = subprocess.run(
-        runtime_command(
-            "discover",
-            query,
-            "--index",
-            str(index),
-            "--limit",
-            str(limit),
-            "--json",
-        ),
+        command,
         capture_output=True,
         text=True,
     )
-    if result.returncode not in {0, 1}:
+    if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "discovery failed")
     return json.loads(result.stdout) if result.stdout.strip() else {
-        "query": query,
+        "query": queries[0],
+        "queries": queries,
+        "query_count": len(queries),
         "result_count": 0,
         "results": [],
     }
@@ -109,6 +115,13 @@ def main() -> int:
         description="Build a PACT evidence packet for project explanation"
     )
     parser.add_argument("query")
+    parser.add_argument(
+        "--query",
+        dest="extra_queries",
+        action="append",
+        default=[],
+        help="additional retrieval query; repeat for multi-query fusion",
+    )
     parser.add_argument("--limit", type=int, default=12)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--output")
@@ -118,7 +131,9 @@ def main() -> int:
         index_path = ROOT / ".pact" / "cache" / "project-map.json"
         build_index(index_path)
         index = json.loads(index_path.read_text(encoding="utf-8"))
-        discovery = run_discovery(args.query, index_path, max(args.limit, 1))
+        queries = [args.query, *args.extra_queries]
+        discovery = run_discovery(queries, index_path, max(args.limit, 1))
+        queries = discovery.get("queries", queries)
     except Exception as exc:
         print(f"PACT explain: setup failed: {exc}", file=sys.stderr)
         return 2
@@ -170,6 +185,7 @@ def main() -> int:
     packet = {
         "version": 1,
         "query": args.query,
+        "queries": queries,
         "domains": sorted(
             {
                 domain
