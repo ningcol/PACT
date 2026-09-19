@@ -337,11 +337,20 @@ def finish(args) -> int:
         print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
         return 2
 
+    if manifest.get("task_id") != args.task_id:
+        print(
+            "PACT task finish: task manifest task_id does not match requested task "
+            f"({manifest.get('task_id')!r} != {args.task_id!r})",
+            file=sys.stderr,
+        )
+        return 2
+
     required_manifest_fields = (
         "contract",
         "context",
         "context_sha256",
         "workspace_baseline",
+        "risk_level",
     )
     missing_fields = [
         field for field in required_manifest_fields
@@ -408,8 +417,20 @@ def finish(args) -> int:
     if args.require_ci_metadata:
         command.append("--require-ci-metadata")
 
-    command.extend(["--contract", str(ROOT / manifest["contract"])])
-    command.extend(["--context", str(ROOT / manifest["context"])])
+    try:
+        contract_path = (ROOT / manifest["contract"]).resolve()
+        context_path = (ROOT / manifest["context"]).resolve()
+        contract_path.relative_to(ROOT.resolve())
+        context_path.relative_to(ROOT.resolve())
+    except (ValueError, TypeError) as exc:
+        print(
+            f"PACT task finish: prepared task path escapes repository: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    command.extend(["--contract", str(contract_path)])
+    command.extend(["--context", str(context_path)])
     command.extend(["--context-sha256", manifest["context_sha256"]])
     command.extend(["--expected-risk", manifest["risk_level"]])
     if task_change.get("supported"):
