@@ -462,7 +462,7 @@ class TrustedCompletionTests(unittest.TestCase):
 
         evidence, convergence, owner = self.base_bundle("medium", run=run)
         self.save_bundle(evidence, convergence, owner)
-        result = self.run_complete("--require-ci-metadata")
+        result = self.run_complete("--require-ci-metadata-metadata")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["ci_metadata_claims"], 1)
 
@@ -470,7 +470,7 @@ class TrustedCompletionTests(unittest.TestCase):
         evidence, convergence, owner = self.base_bundle("medium")
         self.save_bundle(evidence, convergence, owner)
 
-        result = self.run_complete("--require-ci-metadata")
+        result = self.run_complete("--require-ci-metadata-metadata")
         self.assertEqual(result.returncode, 1)
         self.assertIn("requires CI-metadata Evidence", result.stdout)
 
