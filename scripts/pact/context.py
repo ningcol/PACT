@@ -50,7 +50,10 @@ def run_discovery(
         capture_output=True,
         text=True,
     )
-    if result.returncode not in {0, 1}:
+    # discover --json returns 0 even for an empty result set. Any nonzero
+    # status therefore represents an execution/indexing failure and must not
+    # be downgraded to "no matches".
+    if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "discovery failed")
     if not result.stdout.strip():
         return {
