@@ -254,8 +254,8 @@ def _git_ref_file_state(
 def _git_changed_paths(root: pathlib.Path) -> set[str]:
     installed_exclusions = discovery_excluded_paths(root)
     commands = [
-        ["diff", "--cached", "--name-only", "-z", "--"],
-        ["diff", "--name-only", "-z", "--"],
+        ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
+        ["diff", "--name-only", "--no-renames", "-z", "--"],
         ["ls-files", "--others", "--exclude-standard", "-z"],
     ]
     paths: set[str] = set()
@@ -313,7 +313,15 @@ def _git_committed_candidate_paths(
     if base_head and current_head:
         result = _run_git(
             root,
-            ["diff", "--name-only", "-z", base_head, current_head, "--"],
+            [
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                base_head,
+                current_head,
+                "--",
+            ],
         )
     elif current_head:
         result = _run_git(
