@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 from task_contract import validate as validate_contract
 from runtime_exec import runtime_command
+from workspace import task_workspace_baseline, task_changed_files
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -52,6 +53,7 @@ def completion_blockers(errors: list[str]) -> list[str]:
         ("stale-task-contract", ("task_contract_sha256",)),
         ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
         ("convergence-coverage", ("convergence coverage:",)),
+        ("change-coverage", ("change coverage:", "Task changed file missing")),
         ("ci-required", ("CI-backed Evidence",)),
     ]
     for code, needles in checks:
@@ -99,6 +101,15 @@ def prepare(args) -> int:
         print("PACT task prepare: generated invalid Task Contract", file=sys.stderr)
         for error in contract_errors:
             print(f"  - {error}", file=sys.stderr)
+        return 2
+
+    try:
+        workspace_baseline = task_workspace_baseline(ROOT)
+    except Exception as exc:
+        print(
+            f"PACT task prepare: cannot capture workspace baseline: {exc}",
+            file=sys.stderr,
+        )
         return 2
 
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
@@ -201,6 +212,7 @@ def prepare(args) -> int:
                 else None
             ),
             "impact_state": impact_state,
+            "workspace_baseline": workspace_baseline,
             "completion_bundle": completion_dir.relative_to(ROOT).as_posix(),
         }
         write_json(staged_task / "task.json", manifest)
@@ -250,7 +262,9 @@ def prepare(args) -> int:
             "Implement and verify every Task Contract acceptance criterion. "
             "Evidence claims that prove acceptance must list the relevant "
             "criteria IDs. Convergence must bind the prepared context_sha256 "
-            "and explicitly cover every context.artifacts entry. Create "
+            "and explicitly cover every context.artifacts entry. At finish, "
+            "PACT will derive the files actually changed by this task and "
+            "require convergence.change_coverage rationale for each one. Create "
             "evidence.json, convergence.json, and owner-report.json in the "
             "completion bundle, then run "
             f"'pact task finish {task_id}'."
@@ -299,7 +313,12 @@ def finish(args) -> int:
         print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
         return 2
 
-    required_manifest_fields = ("contract", "context", "context_sha256")
+    required_manifest_fields = (
+        "contract",
+        "context",
+        "context_sha256",
+        "workspace_baseline",
+    )
     missing_fields = [
         field for field in required_manifest_fields
         if not manifest.get(field)
@@ -316,6 +335,45 @@ def finish(args) -> int:
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
+    try:
+        task_change = task_changed_files(
+            ROOT,
+            manifest["workspace_baseline"],
+        )
+    except Exception as exc:
+        print(
+            f"PACT task finish: cannot derive task changed files: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    changed_files = task_change.get("changed_files", [])
+    final_impact = None
+    if task_change.get("supported") and changed_files:
+        final_impact = task_dir / "final-impact.json"
+        impact_cmd = runtime_command(
+            "impact",
+            "--risk",
+            manifest.get("risk_level", "medium"),
+            "--output",
+            str(final_impact),
+            "--files",
+            *changed_files,
+        )
+        impact_result = run(impact_cmd)
+        if impact_result.returncode != 0:
+            print(impact_result.stdout, end="")
+            print(impact_result.stderr, end="", file=sys.stderr)
+            return impact_result.returncode
+
+    manifest["task_change"] = task_change
+    manifest["final_impact"] = (
+        final_impact.relative_to(ROOT).as_posix()
+        if final_impact is not None
+        else None
+    )
+    write_json(manifest_path, manifest)
+
     command = runtime_command(
         "complete",
         str(bundle),
@@ -329,12 +387,18 @@ def finish(args) -> int:
     command.extend(["--contract", str(ROOT / manifest["contract"])])
     command.extend(["--context", str(ROOT / manifest["context"])])
     command.extend(["--context-sha256", manifest["context_sha256"]])
+    if task_change.get("supported"):
+        command.append("--check-change-coverage")
+        for path in changed_files:
+            command.extend(["--changed-file", path])
 
     completed = run(command)
     output = None
     if completed.stdout.strip():
         try:
             output = json.loads(completed.stdout)
+            output["task_change"] = task_change
+            output["final_impact"] = manifest.get("final_impact")
         except json.JSONDecodeError:
             pass
 
@@ -350,6 +414,8 @@ def finish(args) -> int:
         ),
         "policy_gaps": output.get("policy_gaps", []) if output is not None else [],
         "acceptance": output.get("acceptance") if output is not None else None,
+        "task_change": task_change,
+        "final_impact": manifest.get("final_impact"),
     }
     append_jsonl(task_dir / "completion-attempts.jsonl", attempt)
 
