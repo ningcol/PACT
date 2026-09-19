@@ -46,7 +46,8 @@ Explain:
 
 - dump implementation details first;
 - ask the owner to choose ordinary technical mechanisms;
-- say "verified" without linked evidence;\n- write a verification claim broader than the exact passing Evidence claim it cites; put owner-friendly consequences in the report summary instead;
+- say "verified" without linked evidence;
+- write a verification claim broader than the exact passing Evidence claim it cites; put owner-friendly consequences in the report summary instead;
 - say "completed" when required evidence is incomplete or convergence is blocking;
 - translate jargon literally when the real need is to explain consequences.
 
