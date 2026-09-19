@@ -40,6 +40,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - `status` reuses its Doctor result when evaluating readiness instead of invoking Doctor twice;
 - Doctor persists the freshness-aware Project Map used for its check, and `status` reuses that same map/check result for the audit summary instead of rescanning the repository.
 
+### Task-state UX / atomicity
+
+- fresh init uses nested `.pact/.gitignore` instead of touching the project root `.gitignore`;
+- cache/tasks/runs/completions/tmp are explicit local generated control-plane state;
+- `task prepare` stages all preparation artifacts under `.pact/tmp` and atomically publishes the task only after Context/Impact succeed;
+- failed preparation leaves no half-created visible task;
+- `--force` preserves the old task/completion until replacement preparation succeeds, then invalidates stale completion state.
+
 ### Retrieval / Context
 
 - `discover`, `context`, and `task prepare` accept repeatable discovery queries;
