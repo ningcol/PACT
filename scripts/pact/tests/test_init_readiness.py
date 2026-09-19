@@ -61,6 +61,41 @@ class InitReadinessTests(unittest.TestCase):
         self.assertEqual(data["stage"], "foundation-valid")
         self.assertIn("agent_bootstrap", data["pending_reviews"])
 
+    def test_fresh_status_is_healthy_with_baseline_advisory(self) -> None:
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        status = self.run_target("status", "--strict", "--json")
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        data = json.loads(status.stdout)
+        self.assertEqual(data["overall"], "pass")
+        self.assertEqual(data["foundation"]["state"], "pass")
+        self.assertEqual(data["readiness"]["stage"], "foundation-valid")
+        self.assertIn("baseline-review-pending", data["warnings"])
+
+        gated = self.run_target("readiness", "--require-ready", "--json")
+        self.assertEqual(gated.returncode, 1)
+        self.assertEqual(json.loads(gated.stdout)["stage"], "foundation-valid")
+
+    def test_invalid_baseline_blocks_status(self) -> None:
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        baseline = self.target / ".pact" / "baseline.toml"
+        baseline.write_text(
+            'version = 1\n[reviews]\nagent_bootstrap = "invalid-state"\n',
+            encoding="utf-8",
+        )
+
+        status = self.run_target("status", "--strict", "--json")
+        self.assertEqual(status.returncode, 1)
+        data = json.loads(status.stdout)
+        self.assertEqual(data["overall"], "fail")
+        self.assertTrue(
+            any("readiness failed:" in error for error in data["errors"]),
+            data,
+        )
+
     def test_all_reviewed_can_become_pact_ready(self) -> None:
         result = self.run_init("--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
