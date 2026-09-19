@@ -89,6 +89,14 @@ def verify_item(
         if schema_errors:
             return errors, metrics
 
+        exit_code = run_receipt.get("exit_code")
+        status = run_receipt.get("status")
+        if (exit_code == 0) != (status == "pass"):
+            errors.append(
+                f"run receipt {ref} has inconsistent exit_code/status "
+                f"({exit_code!r}, {status!r})"
+            )
+
         if run_receipt.get("task_id") != task_id:
             errors.append(
                 f"run receipt {ref} task_id {run_receipt.get('task_id')!r} "
