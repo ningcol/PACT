@@ -74,8 +74,8 @@ PACT 0.3 applies a core risk policy instead of treating risk as a label.
 Default behavior:
 
 - **low** — smaller knowledge budget; code-aware discovery is off unless explicitly requested;
-- **medium** — larger knowledge budget; code-aware discovery is on; completion requires machine-backed Evidence, Convergence, and Owner Report;
-- **high** — largest default context budget; code-aware discovery is on; missing Architecture/Decision/contract/history context is surfaced explicitly; completion requires machine-backed Evidence, no unresolved Evidence limitations, and fully aligned Convergence.
+- **medium** — larger knowledge budget; code-aware discovery is on; completion requires current workspace-bound `pact-run` Evidence for required pass claims, plus Convergence and Owner Report;
+- **high** — largest default context budget; code-aware discovery is on; missing Architecture/Decision/contract/history context is surfaced explicitly; completion requires current workspace-bound `pact-run` Evidence for required pass claims, no unresolved Evidence limitations, and fully aligned Convergence.
 
 The Agent may increase rigor beyond the minimum. It may not use project configuration to weaken these core guarantees.
 

@@ -25,6 +25,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - prepared tasks must carry the current Context SHA contract;
 - upgrade tests now cover current-runtime update/conflict/rollback/seed safety instead of unreleased migration paths.
 
+### Evidence trust hardening
+
+- repository file provenance is static/source evidence and no longer counts as executed verification;
+- medium/high required pass claims need a passing `pact-run` receipt bound to the current workspace;
+- Evidence refs are confined to the repository root after path/symlink resolution;
+- low-risk claims may still use static repository evidence when that level of proof is appropriate.
+
 ### Retrieval / Context
 
 - `discover`, `context`, and `task prepare` accept repeatable discovery queries;
