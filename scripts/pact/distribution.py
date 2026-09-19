@@ -113,6 +113,8 @@ def read_install_manifest(root: pathlib.Path) -> dict | None:
             not isinstance(relative, str)
             or not relative
             or "\\" in relative
+            or ":" in relative
+            or "\x00" in relative
             or pathlib.PurePosixPath(relative).is_absolute()
             or ".." in pathlib.PurePosixPath(relative).parts
         ):
