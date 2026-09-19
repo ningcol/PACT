@@ -39,4 +39,4 @@ PACT aims to:
 - stage and rollback runtime upgrades;
 - pin GitHub Actions used by PACT CI to immutable commit SHAs.
 
-PACT local receipts are evidence/provenance records, not tamper-proof cryptographic attestations. For stronger assurance, use CI-backed receipts and repository protections appropriate to the project.
+PACT local receipts are execution/provenance records, not tamper-proof cryptographic attestations. GitHub Actions metadata recorded in a receipt is provenance metadata only; local environment variables can imitate it and PACT does not remotely attest the run. Stronger assurance requires repository protections and an independent remote/signed attestation layer.

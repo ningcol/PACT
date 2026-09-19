@@ -25,7 +25,7 @@
     },
     "task_id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$"
     },
     "task_status": {
       "type": "string",

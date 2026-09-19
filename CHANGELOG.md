@@ -33,6 +33,17 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - prepared tasks must carry the current Context SHA contract;
 - upgrade tests now cover current-runtime update/conflict/rollback/seed safety instead of unreleased migration paths.
 
+### Trust hardening batch
+
+- prepared task risk is bound through Context/Evidence/completion so a high-risk task cannot be downgraded by editing Evidence risk;
+- task IDs use one safe path-segment protocol and are confined before task/run/eval filesystem access;
+- run receipts enforce exit-code/status consistency;
+- local receipt terminology distinguishes execution-backed/workspace-bound provenance from tamper-proof attestation; GitHub Actions fields are CI metadata only;
+- malformed or unsafe install manifests fail closed;
+- locally modified framework-managed files block automatic upgrade instead of leaving stale framework ownership;
+- high-level task preparation runs deterministic repository checks before Context creation;
+- Owner verification claims cannot expand referenced Evidence claims, and Convergence Evidence IDs must resolve.
+
 ### Evidence trust hardening
 
 - repository file provenance is static/source evidence and no longer counts as executed verification;

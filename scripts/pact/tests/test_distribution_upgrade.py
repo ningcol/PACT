@@ -150,6 +150,61 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
 
+    def test_corrupt_install_manifest_blocks_reinit_and_upgrade(self) -> None:
+        self.scaffold()
+        manifest_path = self.target / ".pact" / "install.json"
+        manifest_path.write_text("{ not valid json\n", encoding="utf-8")
+
+        reinit = self.run_init("--apply")
+        self.assertEqual(reinit.returncode, 2)
+        self.assertIn("invalid .pact/install.json", reinit.stderr)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("invalid .pact/install.json", upgrade.stderr)
+
+    def test_local_framework_modification_conflicts_even_when_upstream_file_is_unchanged(self) -> None:
+        self.scaffold()
+        root_entry = self.target / "pact.py"
+        root_entry.write_text(
+            root_entry.read_text(encoding="utf-8")
+            + "\n# local framework modification\n",
+            encoding="utf-8",
+        )
+
+        self.change_runtime_source()
+        result = self.run_upgrade("--apply", "--json")
+
+        self.assertEqual(result.returncode, 1)
+        data = json.loads(result.stdout)
+        conflict_paths = {item["path"] for item in data["conflicts"]}
+        self.assertIn("pact.py", conflict_paths)
+        self.assertIn(
+            "local framework modification",
+            root_entry.read_text(encoding="utf-8"),
+        )
+
+    def test_unsafe_install_manifest_path_is_rejected(self) -> None:
+        manifest = self.scaffold()
+        manifest["files"]["../../outside"] = {
+            "management": "framework",
+            "source_path": "pact.py",
+            "source_sha256": "0" * 64,
+            "installed_sha256": "0" * 64,
+        }
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+
+        reinit = self.run_init("--apply")
+        self.assertEqual(reinit.returncode, 2)
+        self.assertIn("unsafe tracked path", reinit.stderr)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("unsafe tracked path", upgrade.stderr)
+
     def test_reinit_from_different_runtime_is_rejected(self) -> None:
         manifest = self.scaffold()
         manifest["runtime_version"] = "0.0.other"

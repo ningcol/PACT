@@ -51,8 +51,8 @@ def verify_item(
     ref = item.get("ref", "")
     errors: list[str] = []
     metrics = {
-        "machine_backed": False,
-        "ci_backed": False,
+        "execution_backed": False,
+        "ci_metadata": False,
         "workspace_bound": False,
     }
 
@@ -89,6 +89,14 @@ def verify_item(
         if schema_errors:
             return errors, metrics
 
+        exit_code = run_receipt.get("exit_code")
+        status = run_receipt.get("status")
+        if (exit_code == 0) != (status == "pass"):
+            errors.append(
+                f"run receipt {ref} has inconsistent exit_code/status "
+                f"({exit_code!r}, {status!r})"
+            )
+
         if run_receipt.get("task_id") != task_id:
             errors.append(
                 f"run receipt {ref} task_id {run_receipt.get('task_id')!r} "
@@ -122,8 +130,8 @@ def verify_item(
         else:
             metrics["workspace_bound"] = True
 
-        metrics["ci_backed"] = bool(run_receipt.get("ci"))
-        metrics["machine_backed"] = not errors
+        metrics["ci_metadata"] = bool(run_receipt.get("ci"))
+        metrics["execution_backed"] = not errors
         return errors, metrics
 
     return [f"unsupported provenance {provenance!r}"], metrics
@@ -135,8 +143,8 @@ def provenance_review(
 ) -> tuple[list[str], list[str], dict]:
     errors: list[str] = []
     policy_gaps: list[str] = []
-    machine_backed_claims = 0
-    ci_backed_claims = 0
+    execution_backed_claims = 0
+    ci_metadata_claims = 0
     workspace_bound_claims = 0
 
     try:
@@ -146,8 +154,8 @@ def provenance_review(
             [f"cannot fingerprint current workspace: {exc}"],
             [],
             {
-                "machine_backed_claims": 0,
-                "ci_backed_claims": 0,
+                "execution_backed_claims": 0,
+                "ci_metadata_claims": 0,
                 "workspace_bound_claims": 0,
                 "claim_count": len(receipt.get("claims", [])),
                 "current_workspace": None,
@@ -182,14 +190,14 @@ def provenance_review(
                 f"{claim_id}.evidence[{index}]: {error}"
                 for error in item_errors
             )
-            machine_count += int(metrics["machine_backed"])
-            ci_count += int(metrics["ci_backed"])
+            machine_count += int(metrics["execution_backed"])
+            ci_count += int(metrics["ci_metadata"])
             workspace_bound_count += int(metrics["workspace_bound"])
 
         if machine_count:
-            machine_backed_claims += 1
+            execution_backed_claims += 1
         if ci_count:
-            ci_backed_claims += 1
+            ci_metadata_claims += 1
         if workspace_bound_count:
             workspace_bound_claims += 1
 
@@ -205,8 +213,8 @@ def provenance_review(
             )
 
     return errors, policy_gaps, {
-        "machine_backed_claims": machine_backed_claims,
-        "ci_backed_claims": ci_backed_claims,
+        "execution_backed_claims": execution_backed_claims,
+        "ci_metadata_claims": ci_metadata_claims,
         "workspace_bound_claims": workspace_bound_claims,
         "claim_count": len(receipt.get("claims", [])),
         "current_workspace": current_workspace,
@@ -228,8 +236,8 @@ def review(receipt: dict, root: pathlib.Path = ROOT) -> tuple[list[str], list[st
     schema_errors = validate(receipt)
     if schema_errors:
         return schema_errors, [], {
-            "machine_backed_claims": 0,
-            "ci_backed_claims": 0,
+            "execution_backed_claims": 0,
+            "ci_metadata_claims": 0,
             "workspace_bound_claims": 0,
             "claim_count": 0,
             "current_workspace": None,
@@ -279,9 +287,9 @@ def main() -> int:
         "risk_level": receipt["risk_level"],
         "readiness": state,
         "required_claims": len([c for c in receipt["claims"] if c["required"]]),
-        "machine_backed_claims": stats["machine_backed_claims"],
+        "execution_backed_claims": stats["execution_backed_claims"],
         "workspace_bound_claims": stats["workspace_bound_claims"],
-        "ci_backed_claims": stats["ci_backed_claims"],
+        "ci_metadata_claims": stats["ci_metadata_claims"],
         "current_workspace": stats["current_workspace"],
         "policy_gaps": policy_gaps,
         "limitations": receipt["limitations"],
@@ -293,10 +301,10 @@ def main() -> int:
         print(f"PACT evidence: {state}")
         print(f"Task: {result['task']} ({result['task_id']})")
         print(
-            "Evidence backing: "
-            f"machine={result['machine_backed_claims']}, "
+            "Evidence provenance: "
+            f"execution-backed={result['execution_backed_claims']}, "
             f"workspace-bound={result['workspace_bound_claims']}, "
-            f"ci-backed={result['ci_backed_claims']}"
+            f"ci-metadata={result['ci_metadata_claims']}"
         )
         for claim in receipt["claims"]:
             marker = "*" if claim["required"] else "-"

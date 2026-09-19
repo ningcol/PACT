@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from task_contract import validate as validate_contract
 from runtime_exec import runtime_command
 from workspace import task_workspace_baseline, task_changed_files
+from protocol_ids import validate_task_id, confined_child
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -54,7 +55,7 @@ def completion_blockers(errors: list[str]) -> list[str]:
         ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
         ("convergence-coverage", ("convergence coverage:",)),
         ("change-coverage", ("change coverage:", "Task changed file missing")),
-        ("ci-required", ("CI-backed Evidence",)),
+        ("ci-metadata-required", ("CI-metadata Evidence",)),
     ]
     for code, needles in checks:
         if any(needle in text for needle in needles):
@@ -68,8 +69,13 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 def prepare(args) -> int:
     task_id = args.task_id or generated_task_id(args.task)
-    task_dir = TASK_ROOT / task_id
-    completion_dir = COMPLETION_ROOT / task_id
+    try:
+        validate_task_id(task_id)
+        task_dir = confined_child(TASK_ROOT, task_id)
+        completion_dir = confined_child(COMPLETION_ROOT, task_id)
+    except ValueError as exc:
+        print(f"PACT task prepare: invalid task id: {exc}", file=sys.stderr)
+        return 2
 
     if (task_dir.exists() or completion_dir.exists()) and not args.force:
         existing = task_dir if task_dir.exists() else completion_dir
@@ -79,6 +85,19 @@ def prepare(args) -> int:
             file=sys.stderr,
         )
         return 2
+
+    preflight = run(runtime_command("check", "--artifact-only"))
+    if preflight.returncode != 0:
+        print(
+            "PACT task prepare: deterministic repository checks failed; "
+            "fix machine-established repository errors before preparing work.",
+            file=sys.stderr,
+        )
+        if preflight.stdout:
+            print(preflight.stdout, end="", file=sys.stderr)
+        if preflight.stderr:
+            print(preflight.stderr, end="", file=sys.stderr)
+        return preflight.returncode
 
     acceptance_items = [
         ("outcome", text)
@@ -297,7 +316,12 @@ def prepare(args) -> int:
 
 
 def finish(args) -> int:
-    task_dir = TASK_ROOT / args.task_id
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id)
+    except ValueError as exc:
+        print(f"PACT task finish: invalid task id: {exc}", file=sys.stderr)
+        return 2
     manifest_path = task_dir / "task.json"
     if not manifest_path.is_file():
         print(
@@ -313,11 +337,20 @@ def finish(args) -> int:
         print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
         return 2
 
+    if manifest.get("task_id") != args.task_id:
+        print(
+            "PACT task finish: task manifest task_id does not match requested task "
+            f"({manifest.get('task_id')!r} != {args.task_id!r})",
+            file=sys.stderr,
+        )
+        return 2
+
     required_manifest_fields = (
         "contract",
         "context",
         "context_sha256",
         "workspace_baseline",
+        "risk_level",
     )
     missing_fields = [
         field for field in required_manifest_fields
@@ -331,7 +364,7 @@ def finish(args) -> int:
         )
         return 2
 
-    bundle = pathlib.Path(args.bundle) if args.bundle else COMPLETION_ROOT / args.task_id
+    bundle = pathlib.Path(args.bundle) if args.bundle else confined_child(COMPLETION_ROOT, args.task_id)
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
@@ -381,12 +414,25 @@ def finish(args) -> int:
         str(ROOT),
         "--json",
     )
-    if args.require_ci:
-        command.append("--require-ci")
+    if args.require_ci_metadata:
+        command.append("--require-ci-metadata")
 
-    command.extend(["--contract", str(ROOT / manifest["contract"])])
-    command.extend(["--context", str(ROOT / manifest["context"])])
+    try:
+        contract_path = (ROOT / manifest["contract"]).resolve()
+        context_path = (ROOT / manifest["context"]).resolve()
+        contract_path.relative_to(ROOT.resolve())
+        context_path.relative_to(ROOT.resolve())
+    except (ValueError, TypeError) as exc:
+        print(
+            f"PACT task finish: prepared task path escapes repository: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    command.extend(["--contract", str(contract_path)])
+    command.extend(["--context", str(context_path)])
     command.extend(["--context-sha256", manifest["context_sha256"]])
+    command.extend(["--expected-risk", manifest["risk_level"]])
     if task_change.get("supported"):
         command.append("--check-change-coverage")
         for path in changed_files:
@@ -441,7 +487,12 @@ def finish(args) -> int:
 
 
 def task_status(args) -> int:
-    task_dir = TASK_ROOT / args.task_id
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id)
+    except ValueError as exc:
+        print(f"PACT task status: invalid task id: {exc}", file=sys.stderr)
+        return 2
     manifest_path = task_dir / "task.json"
     if not manifest_path.is_file():
         print(f"PACT task status: unknown task {args.task_id}", file=sys.stderr)
@@ -453,7 +504,7 @@ def task_status(args) -> int:
         print(f"PACT task status: invalid task manifest: {exc}", file=sys.stderr)
         return 2
 
-    bundle = COMPLETION_ROOT / args.task_id
+    bundle = confined_child(COMPLETION_ROOT, args.task_id)
     completion_files = {
         name: (bundle / filename).is_file()
         for name, filename in {
@@ -545,7 +596,7 @@ def main() -> int:
     finish_parser = sub.add_parser("finish", help="validate an existing task completion bundle")
     finish_parser.add_argument("task_id")
     finish_parser.add_argument("--bundle")
-    finish_parser.add_argument("--require-ci", action="store_true")
+    finish_parser.add_argument("--require-ci-metadata", action="store_true")
     finish_parser.add_argument("--json", action="store_true")
 
     status_parser = sub.add_parser("status", help="show one prepared task")

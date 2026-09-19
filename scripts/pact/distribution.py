@@ -92,6 +92,79 @@ def manifest_record(entry: dict, destination: pathlib.Path) -> dict:
     }
 
 
+def read_install_manifest(root: pathlib.Path) -> dict | None:
+    """Return a valid install manifest, None when absent, or raise when corrupt."""
+    path = root / ".pact" / "install.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid .pact/install.json: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+        raise ValueError("invalid .pact/install.json: expected object with files map")
+    if data.get("format_version") != 1:
+        raise ValueError("invalid .pact/install.json: unsupported format_version")
+    if not isinstance(data.get("runtime_version"), str) or not data["runtime_version"]:
+        raise ValueError("invalid .pact/install.json: missing runtime_version")
+
+    for relative, record in data["files"].items():
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or "\\" in relative
+            or ":" in relative
+            or "\x00" in relative
+            or pathlib.PurePosixPath(relative).is_absolute()
+            or ".." in pathlib.PurePosixPath(relative).parts
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: unsafe tracked path {relative!r}"
+            )
+        if not isinstance(record, dict):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid record for {relative!r}"
+            )
+        if record.get("management") not in {"framework", "seed"}:
+            raise ValueError(
+                f"invalid .pact/install.json: invalid management for {relative!r}"
+            )
+        installed_sha = record.get("installed_sha256")
+        if (
+            not isinstance(installed_sha, str)
+            or len(installed_sha) != 64
+            or any(ch not in "0123456789abcdef" for ch in installed_sha)
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid installed_sha256 for {relative!r}"
+            )
+
+        source_sha = record.get("source_sha256")
+        if source_sha is not None and (
+            not isinstance(source_sha, str)
+            or len(source_sha) != 64
+            or any(ch not in "0123456789abcdef" for ch in source_sha)
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid source_sha256 for {relative!r}"
+            )
+
+        source_path = record.get("source_path")
+        if source_path is not None and (
+            not isinstance(source_path, str)
+            or not source_path
+            or "\\" in source_path
+            or ":" in source_path
+            or "\x00" in source_path
+            or pathlib.PurePosixPath(source_path).is_absolute()
+            or ".." in pathlib.PurePosixPath(source_path).parts
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: unsafe source_path for {relative!r}"
+            )
+    return data
+
+
 def discovery_excluded_paths(root: pathlib.Path) -> set[str]:
     """Return installed PACT control-plane paths that are not project knowledge.
 
@@ -99,18 +172,10 @@ def discovery_excluded_paths(root: pathlib.Path) -> set[str]:
     excluded only while byte-identical to their installed default; once edited
     by the project they become discoverable project knowledge.
     """
-    manifest_path = root / ".pact" / "install.json"
-    if not manifest_path.is_file():
+    manifest = read_install_manifest(root)
+    if manifest is None:
         return set()
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return set()
-
-    files = manifest.get("files")
-    if not isinstance(files, dict):
-        return set()
+    files = manifest["files"]
 
     excluded: set[str] = set()
     for relative, record in files.items():

@@ -11,7 +11,7 @@ PACT avoids a single global "source of truth" ranking. Different questions have 
 | Why was a durable choice made? | `.agents/decisions/` |
 | What is this change trying to accomplish? | Active Task Contract / change/spec/plan |
 | What must this task demonstrably satisfy? | Task Contract acceptance criteria, bounded by confirmed Product Truth |
-| What was actually verified? | Evidence from tests/browser/runtime/CI |
+| What execution was recorded? | Execution-backed Evidence from tests/browser/runtime receipts |\n| What does that execution mean for the product? | Reviewed semantic assertion bounded by Product Truth and the exact Evidence claim |
 | How should a recurring task be performed today? | Skill/playbook |
 
 ## Rules

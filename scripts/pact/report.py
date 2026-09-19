@@ -70,7 +70,14 @@ def cross_validate(
         for claim in evidence.get("claims", [])
     }
 
+    for evidence_id in convergence.get("evidence", []):
+        if evidence_id not in claims_by_id:
+            errors.append(
+                f"convergence references unknown evidence id {evidence_id!r}"
+            )
+
     for item in owner.get("verification", []):
+        referenced_claims = []
         for evidence_id in item.get("evidence_ids", []):
             claim = claims_by_id.get(evidence_id)
             if claim is None:
@@ -78,11 +85,20 @@ def cross_validate(
                     f"owner verification references unknown evidence id '{evidence_id}'"
                 )
                 continue
+            referenced_claims.append(claim)
             if claim.get("status") != "pass":
                 errors.append(
                     f"owner verification references non-passing evidence id "
                     f"'{evidence_id}' (status={claim.get('status')!r})"
                 )
+        if referenced_claims and item.get("claim") not in {
+            claim.get("claim") for claim in referenced_claims
+        }:
+            errors.append(
+                "owner verification claim must exactly match at least one "
+                "referenced passing Evidence claim; owner-facing text cannot "
+                "expand the verified assertion"
+            )
 
     if validate_provenance:
         provenance_errors, policy_gaps, _ = provenance_review(evidence, root)

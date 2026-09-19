@@ -276,6 +276,11 @@ def main() -> int:
         "--root",
         help="repository root to validate; defaults to the repository containing this script",
     )
+    parser.add_argument(
+        "--artifact-only",
+        action="store_true",
+        help="validate PACT artifact metadata/IDs/lifecycle without repository Markdown-link checks",
+    )
     args = parser.parse_args()
 
     default_root = pathlib.Path(__file__).resolve().parents[2]
@@ -290,7 +295,8 @@ def main() -> int:
 
     artifacts, errors = discover(root)
     errors.extend(validate_artifacts(artifacts, root))
-    errors.extend(validate_links(root))
+    if not args.artifact_only:
+        errors.extend(validate_links(root))
 
     print(f"PACT: discovered {len(artifacts)} machine-readable artifact(s).")
 
