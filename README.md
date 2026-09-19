@@ -65,7 +65,9 @@ Start with the small task-oriented surface:
 python3 pact.py status
 
 # I remember the feature/business behavior, but not where or why it exists.
-python3 pact.py inspect "password reset"
+python3 pact.py inspect "password reset" \
+  --query "credential recovery reset token" \
+  --query "resetPassword auth service"
 
 # Prepare risk-adaptive context for implementation.
 python3 pact.py task prepare "fix province switching" \
@@ -214,6 +216,8 @@ These are intentionally separate:
 - **Context** answers: "What does this implementation task need to understand before changing behavior?"
 
 `explain` does not invent a final narrative. If no Decision Record exists, it explicitly reports that the durable reason is missing instead of fabricating one.
+
+`inspect` accepts repeatable `--query` values for business/canonical/code search hypotheses. The positional query remains the owner's remembered behavior; extra queries improve retrieval only and never become Product Truth. Use `--code-limit` when the default code candidate budget should be smaller than the knowledge limit.
 
 ## Framework updates do not overwrite project truth
 

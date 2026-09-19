@@ -6,6 +6,7 @@
   "required": [
     "version",
     "query",
+    "queries",
     "domains",
     "product_truth",
     "architecture",
@@ -18,40 +19,63 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
-    "query": { "type": "string", "minLength": 1 },
+    "version": {
+      "const": 1
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1
+    },
     "domains": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "product_truth": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "architecture": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "decisions": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "changes": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "drift": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "other": {
       "type": "array",
-      "items": { "$ref": "#/$defs/evidence" }
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
     },
     "gaps": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "followup": {
       "type": "array",
@@ -64,6 +88,15 @@
           "semantic-search",
           "owner-confirmation"
         ]
+      },
+      "uniqueItems": true
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
       },
       "uniqueItems": true
     }
@@ -81,17 +114,44 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "path": { "type": "string", "minLength": 1 },
-        "id": { "type": ["string", "null"] },
-        "artifact_type": { "type": "string", "minLength": 1 },
-        "status": { "type": ["string", "null"] },
-        "title": { "type": "string", "minLength": 1 },
-        "score": { "type": "integer", "minimum": 0 },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artifact_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        },
         "reasons": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "excerpt": { "type": "string" }
+        "excerpt": {
+          "type": "string"
+        }
       }
     }
   }
