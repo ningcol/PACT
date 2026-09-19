@@ -141,8 +141,8 @@ jobs:
             "before":"The pinned Flask checkout had no PACT scaffold.",
             "after":"PACT was added additively, code-aware context was produced, and upstream tests still pass.",
             "verification":[
-              {"claim":"Flask tests pass.","evidence_ids":["EV-FLASK-TESTS"]},
-              {"claim":"Python code-aware context was produced.","evidence_ids":["EV-FLASK-CONTEXT"]}
+              {"claim":"The pinned Flask test suite passes after additive PACT adoption.","evidence_ids":["EV-FLASK-TESTS"]},
+              {"claim":"PACT produced code-aware Flask request-context evidence.","evidence_ids":["EV-FLASK-CONTEXT"]}
             ],
             "consistency":{"status":"aligned","summary":"No tracked upstream file was modified."},
             "owner_decisions":[]
@@ -284,8 +284,8 @@ jobs:
             "before":"The pinned Pinia checkout had no PACT scaffold.",
             "after":"PACT was added additively, Vue/TypeScript context was produced, and typecheck/build still pass.",
             "verification":[
-              {"claim":"Pinia typecheck/build pass.","evidence_ids":["EV-PINIA-VERIFY"]},
-              {"claim":"Vue/TypeScript code-aware context was produced.","evidence_ids":["EV-PINIA-CONTEXT"]}
+              {"claim":"Pinia type checking and build pass after additive PACT adoption.","evidence_ids":["EV-PINIA-VERIFY"]},
+              {"claim":"PACT produced code-aware Vue/TypeScript context.","evidence_ids":["EV-PINIA-CONTEXT"]}
             ],
             "consistency":{"status":"aligned","summary":"No tracked upstream file was modified."},
             "owner_decisions":[]
@@ -434,8 +434,8 @@ jobs:
             "before":"The pinned Bubble Tea checkout had no PACT scaffold or Go code retrieval.",
             "after":"PACT was added additively, located tea.go through bounded lexical identifiers, did not fabricate Go structural relationships, and Go tests still pass.",
             "verification":[
-              {"claim":"Bubble Tea Go tests pass.","evidence_ids":["EV-BUBBLE-GO-TESTS"]},
-              {"claim":"Bounded Go lexical context was produced without structural fabrication.","evidence_ids":["EV-BUBBLE-GENERIC-CONTEXT"]}
+              {"claim":"Bubble Tea Go tests pass after additive PACT adoption.","evidence_ids":["EV-BUBBLE-GO-TESTS"]},
+              {"claim":"PACT located Go implementation candidates through bounded generic lexical identifiers without fabricating Go relationships.","evidence_ids":["EV-BUBBLE-GENERIC-CONTEXT"]}
             ],
             "consistency":{"status":"aligned","summary":"No tracked upstream file was modified; generic Go retrieval remained explicitly lexical-only."},
             "owner_decisions":[]
