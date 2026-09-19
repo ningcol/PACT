@@ -359,7 +359,12 @@ class TrustedCompletionTests(unittest.TestCase):
 
         result = self.run_complete()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("exit_code", result.stdout + result.stderr)
+        rendered = result.stdout + result.stderr
+        self.assertIn("run receipt", rendered)
+        self.assertTrue(
+            "status" in rendered or "exit_code" in rendered,
+            rendered,
+        )
 
     def test_owner_verification_cannot_expand_evidence_claim(self) -> None:
         evidence, convergence, owner = self.base_bundle("low")
