@@ -321,7 +321,7 @@ jobs:
     timeout-minutes: 20
     env:
       TARGET_DIR: /tmp/bubbletea
-      TARGET_REF: ${{ inputs.bubbletea_ref }}
+      TARGET_REF: ${{ inputs.bubbletea_ref || '657aaae216e3f87df09b60959a9fe5de7b2ca419' }}
       TASK_ID: EXT-BUBBLETEA-001
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
