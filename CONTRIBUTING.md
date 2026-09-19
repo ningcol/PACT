@@ -41,9 +41,10 @@ A change should add the smallest test that proves the boundary being changed.
 
 Relevant layers include:
 
+- **PACT Check** — the full Ubuntu/Python 3.12 correctness gate; it runs every `test_*.py` plus command/smoke/end-to-end checks;
 - deterministic unit tests;
 - temporary brownfield init/upgrade tests;
-- cross-platform core matrix;
+- **Core Matrix** — the 3 OS × 3 Python portability gate; keep it focused on bootstrap/runtime/distribution/stdlib/init/Git-path behavior instead of repeating the full semantic suite nine times;
 - external public-repository pilots when a change affects Discovery, installation, code maps, or unsupported-language behavior.
 
 Heavy external pilots are manual regressions and should not run on every pull request.
