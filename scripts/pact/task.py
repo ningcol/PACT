@@ -86,6 +86,19 @@ def prepare(args) -> int:
         )
         return 2
 
+    preflight = run(runtime_command("check"))
+    if preflight.returncode != 0:
+        print(
+            "PACT task prepare: deterministic repository checks failed; "
+            "fix machine-established repository errors before preparing work.",
+            file=sys.stderr,
+        )
+        if preflight.stdout:
+            print(preflight.stdout, end="", file=sys.stderr)
+        if preflight.stderr:
+            print(preflight.stderr, end="", file=sys.stderr)
+        return preflight.returncode
+
     acceptance_items = [
         ("outcome", text)
         for text in [args.success, *args.acceptance]
