@@ -24,9 +24,9 @@ git diff --name-only base_commit target_commit
 
 It keeps only source families that the current PACT Code Map supports and only files that already existed at the base commit. Newly-created source files are reported as unavailable-at-base rather than counted as retrieval misses.
 
-## Two retrieval modes
+## Retrieval modes
 
-Every case is replayed twice.
+Every case is replayed through direct, curated single-expanded, and curated split multi-query retrieval. All modes must use the same final code-artifact budget before recall is compared.
 
 ### Direct
 
@@ -53,7 +53,8 @@ The expanded query and its provenance are stored with each benchmark case so the
 Per case:
 
 - oracle source file count;
-- Context code artifact count;
+- configured final code-artifact budget;
+- Context code artifact output count;
 - matched/missing oracle files;
 - rank of matched oracle files;
 - retrieval recall;
@@ -62,7 +63,7 @@ Per case:
 
 The precision value is intentionally called a **proxy**. Files outside the historical diff can still be valid Context, so `matched / context-size` is not semantic precision.
 
-Aggregate output includes weighted direct/curated-expanded recall and the number of cases improved by the curated diagnostic.
+Aggregate output includes weighted direct/curated-expanded/multi-query recall, the configured final budgets, and mean Context output counts. The harness fails if modes use different budgets or any mode exceeds its configured final budget.
 
 ## Failure semantics
 
