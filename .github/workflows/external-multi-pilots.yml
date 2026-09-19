@@ -65,12 +65,13 @@ jobs:
         run: |
           python3 pact.py doctor --strict
           python3 pact.py discover "request context" --code --json | tee /tmp/flask-discover.json
-          python3 pact.py context "change request context behavior"             --success "Request context behavior remains correct"             --risk medium             --output /tmp/flask-context.json
+          mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change request context behavior"             --success "Request context behavior remains correct"             --risk medium             --output .pact/tmp/flask/.pact/tmp/flask-context.json
           python3 pact.py impact --files src/flask/ctx.py --risk medium --json | tee /tmp/flask-impact.json
           python3 - <<'PY'
           import json
           d=json.load(open("/tmp/flask-discover.json"))
-          c=json.load(open("/tmp/flask-context.json"))
+          c=json.load(open("/tmp/flask/.pact/tmp/flask/.pact/tmp/flask-context.json"))
           i=json.load(open("/tmp/flask-impact.json"))
           assert d["code_result_count"] > 0, d
           assert len(c["code_artifacts"]) > 0, c
@@ -115,7 +116,7 @@ jobs:
                 "claim":"PACT produced code-aware Flask request-context evidence.",
                 "required":true,
                 "status":"pass",
-                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/flask-context.json"}]
+                "evidence":[{"kind":"runtime","provenance":"pact-run","ref":".pact/runs/EXT-FLASK-001/context.json"}]
               }
             ],
             "limitations":[]
@@ -156,7 +157,7 @@ jobs:
           name: pilot-flask
           path: |
             /tmp/flask-discover.json
-            /tmp/flask-context.json
+            /tmp/flask/.pact/tmp/flask-context.json
             /tmp/flask-impact.json
             /tmp/flask-complete.json
             /tmp/flask/.pact/runs/
@@ -204,12 +205,13 @@ jobs:
         run: |
           python3 pact.py doctor --strict
           python3 pact.py discover "defineStore" --code --json | tee /tmp/pinia-discover.json
-          python3 pact.py context "change defineStore behavior"             --success "Store creation remains type-safe and behaviorally compatible"             --risk medium             --output /tmp/pinia-context.json
+          mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change defineStore behavior"             --success "Store creation remains type-safe and behaviorally compatible"             --risk medium             --output .pact/tmp/pinia/.pact/tmp/pinia-context.json
           python3 pact.py impact --files packages/pinia/src/store.ts --risk medium --json | tee /tmp/pinia-impact.json
           python3 - <<'PY'
           import json
           d=json.load(open("/tmp/pinia-discover.json"))
-          c=json.load(open("/tmp/pinia-context.json"))
+          c=json.load(open("/tmp/pinia/.pact/tmp/pinia/.pact/tmp/pinia-context.json"))
           i=json.load(open("/tmp/pinia-impact.json"))
           assert d["code_result_count"] > 0, d
           assert len(c["code_artifacts"]) > 0, c
@@ -257,7 +259,7 @@ jobs:
                 "claim":"PACT produced code-aware Vue/TypeScript context.",
                 "required":true,
                 "status":"pass",
-                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/pinia-context.json"}]
+                "evidence":[{"kind":"runtime","provenance":"pact-run","ref":".pact/runs/EXT-PINIA-001/context.json"}]
               }
             ],
             "limitations":[]
@@ -298,7 +300,7 @@ jobs:
           name: pilot-pinia
           path: |
             /tmp/pinia-discover.json
-            /tmp/pinia-context.json
+            /tmp/pinia/.pact/tmp/pinia-context.json
             /tmp/pinia-impact.json
             /tmp/pinia-complete.json
             /tmp/pinia/.pact/runs/
@@ -343,12 +345,13 @@ jobs:
         run: |
           python3 pact.py doctor --strict
           python3 pact.py discover "Elm Architecture" --json | tee /tmp/bubbletea-discover.json
-          python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --output /tmp/bubbletea-context.json
+          mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --output .pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json
           python3 pact.py impact --files tea.go --risk medium --json | tee /tmp/bubbletea-impact.json
           python3 - <<'PY'
           import json
           d=json.load(open("/tmp/bubbletea-discover.json"))
-          c=json.load(open("/tmp/bubbletea-context.json"))
+          c=json.load(open("/tmp/bubbletea/.pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json"))
           i=json.load(open("/tmp/bubbletea-impact.json"))
           assert d["result_count"] > 0, d
           assert c["risk_policy"]["code_context"] is True, c
@@ -391,7 +394,7 @@ jobs:
                 "claim":"PACT explicitly reported unsupported code-aware context instead of fabricating Go relationships.",
                 "required":true,
                 "status":"pass",
-                "evidence":[{"kind":"other","provenance":"file","ref":"/tmp/bubbletea-context.json"}]
+                "evidence":[{"kind":"runtime","provenance":"pact-run","ref":".pact/runs/EXT-BUBBLETEA-001/context.json"}]
               }
             ],
             "limitations":[
@@ -434,7 +437,7 @@ jobs:
           name: pilot-bubbletea
           path: |
             /tmp/bubbletea-discover.json
-            /tmp/bubbletea-context.json
+            /tmp/bubbletea/.pact/tmp/bubbletea-context.json
             /tmp/bubbletea-impact.json
             /tmp/bubbletea-complete.json
             /tmp/bubbletea/.pact/runs/
