@@ -97,44 +97,19 @@ def estimated_file_tokens(relative: str) -> int:
 
 
 def knowledge_priority(item: dict) -> tuple[int, bool]:
+    """Preserve retrieval ranking; authority only affects soft-budget treatment."""
     typ = item.get("artifact_type")
     status = item.get("status")
-    bonus = 0
-    mandatory = False
-
-    if typ == "rule" and status == "confirmed":
-        bonus += 140
-        mandatory = True
-    elif typ == "decision" and status == "implemented":
-        bonus += 120
-        mandatory = True
-    elif typ == "domain" and status == "confirmed":
-        bonus += 80
-    elif typ == "architecture" or str(item.get("path", "")).startswith(
-        "docs/architecture/"
-    ):
-        bonus += 70
-    elif typ == "drift" and status == "known":
-        bonus += 65
-    elif typ == "change" and status == "active":
-        bonus += 35
-
-    return int(item.get("score", 0)) + bonus, mandatory
+    mandatory = (
+        (typ == "rule" and status == "confirmed")
+        or (typ == "decision" and status == "implemented")
+    )
+    return int(item.get("score", 0)), mandatory
 
 
 def code_priority(item: dict) -> int:
-    score = int(item.get("score", 0))
-    if item.get("relation") == "direct-match":
-        score += 35
-    if item.get("is_test"):
-        score += 15
-    score += {
-        "direct": 15,
-        "relative-resolved": 10,
-        "ast-resolved": 8,
-        "heuristic": 0,
-    }.get(item.get("confidence"), 0)
-    return score
+    """Use the retrieval/fusion score as the canonical code ranking."""
+    return int(item.get("score", 0))
 
 
 def select_context_candidates(
@@ -148,7 +123,7 @@ def select_context_candidates(
     candidates: list[dict] = []
     candidate_tokens = 0
 
-    for original in knowledge:
+    for ordinal, original in enumerate(knowledge):
         item = dict(original)
         estimated = estimated_file_tokens(str(item.get("path", "")))
         item["estimated_tokens"] = estimated
@@ -160,9 +135,11 @@ def select_context_candidates(
             "estimated_tokens": estimated,
             "priority": priority,
             "mandatory": mandatory,
+            "ordinal": ordinal,
         })
 
-    for original in code:
+    knowledge_count = len(knowledge)
+    for ordinal, original in enumerate(code):
         item = dict(original)
         estimated = estimated_file_tokens(str(item.get("path", "")))
         item["estimated_tokens"] = estimated
@@ -173,13 +150,14 @@ def select_context_candidates(
             "estimated_tokens": estimated,
             "priority": code_priority(item),
             "mandatory": False,
+            "ordinal": knowledge_count + ordinal,
         })
 
     candidates.sort(
         key=lambda candidate: (
             -int(candidate["mandatory"]),
             -candidate["priority"],
-            candidate["estimated_tokens"],
+            candidate["ordinal"],
             candidate["item"].get("path", ""),
         )
     )
