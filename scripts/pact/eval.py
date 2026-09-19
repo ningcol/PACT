@@ -155,6 +155,143 @@ def aggregate(records: list[dict]) -> dict:
     }
 
 
+def nullable_mean(values: list[int | float | None]) -> float | None:
+    observed = [float(value) for value in values if value is not None]
+    return statistics.fmean(observed) if observed else None
+
+
+def summarize_observations(observations: list[dict]) -> dict:
+    def summarize(items: list[dict]) -> dict:
+        token_values = [
+            item["context"]["selected_estimated_tokens"]
+            for item in items
+        ]
+        token_budgets = [
+            item["context"]["token_budget"]
+            for item in items
+        ]
+        changed_values = [
+            item["task_change"]["changed_files"]
+            for item in items
+        ]
+        return {
+            "task_count": len(items),
+            "completed": sum(
+                item["completion"]["final_complete"] for item in items
+            ),
+            "verification_runs": sum(
+                item["runs"]["total"] for item in items
+            ),
+            "verification_run_failures": sum(
+                item["runs"]["failed"] for item in items
+            ),
+            "completion_attempts": sum(
+                item["completion"]["attempts"] for item in items
+            ),
+            "failed_completion_attempts": sum(
+                item["completion"]["failed_attempts"] for item in items
+            ),
+            "trust_blocks": {
+                "stale_workspace": sum(
+                    item["completion"]["stale_workspace_blocks"]
+                    for item in items
+                ),
+                "stale_task_contract": sum(
+                    item["completion"]["stale_contract_blocks"]
+                    for item in items
+                ),
+                "acceptance_gap": sum(
+                    item["completion"]["acceptance_gap_blocks"]
+                    for item in items
+                ),
+                "convergence_coverage": sum(
+                    item["completion"]["convergence_coverage_blocks"]
+                    for item in items
+                ),
+                "change_coverage": sum(
+                    item["completion"]["change_coverage_blocks"]
+                    for item in items
+                ),
+                "ci_requirement": sum(
+                    item["completion"]["ci_requirement_blocks"]
+                    for item in items
+                ),
+            },
+            "mean_knowledge_artifacts": (
+                statistics.fmean(
+                    item["context"]["knowledge_artifacts"]
+                    for item in items
+                )
+                if items
+                else None
+            ),
+            "mean_code_artifacts": (
+                statistics.fmean(
+                    item["context"]["code_artifacts"]
+                    for item in items
+                )
+                if items
+                else None
+            ),
+            "token_observed_tasks": sum(
+                value is not None for value in token_values
+            ),
+            "mean_selected_estimated_tokens": nullable_mean(token_values),
+            "mean_token_budget": nullable_mean(token_budgets),
+            "context_truncated_tasks": sum(
+                (
+                    item["context"]["dropped_candidates"] or 0
+                ) > 0
+                for item in items
+            ),
+            "task_change_observed_tasks": sum(
+                value is not None for value in changed_values
+            ),
+            "total_changed_files": sum(
+                int(value)
+                for value in changed_values
+                if value is not None
+            ),
+            "mean_changed_files": nullable_mean(changed_values),
+            "final_impact_tasks": sum(
+                item["task_change"]["final_impact"] is True
+                for item in items
+            ),
+        }
+
+    by_risk = {}
+    for risk in ("low", "medium", "high"):
+        items = [
+            item for item in observations
+            if item.get("risk_level") == risk
+        ]
+        if items:
+            by_risk[risk] = summarize(items)
+
+    return {
+        "task_count": len(observations),
+        "overall": summarize(observations),
+        "by_risk": by_risk,
+        "interpretation_note": (
+            "Machine-observed operational/trust metrics only. Human owner "
+            "interactions, comprehension, subjective overload, and overhead "
+            "remain separate observations; do not collapse these dimensions "
+            "into one score."
+        ),
+    }
+
+
+def discover_task_ids() -> list[str]:
+    task_root = ROOT / ".pact" / "tasks"
+    if not task_root.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in task_root.iterdir()
+        if path.is_dir() and (path / "task.json").is_file()
+    )
+
+
 def blocker_count(
     attempts: list[dict],
     code: str,
@@ -253,6 +390,52 @@ def derive_task(task_id: str) -> dict:
     claims = evidence.get("claims", []) if evidence else []
     findings = convergence.get("findings", []) if convergence else []
 
+    context_budget = (
+        context.get("context_budget", {})
+        if isinstance(context, dict)
+        else {}
+    )
+    risk_policy = (
+        context.get("risk_policy", {})
+        if isinstance(context, dict)
+        else {}
+    )
+
+    raw_task_change = manifest.get("task_change")
+    if isinstance(raw_task_change, dict):
+        task_change_supported = bool(raw_task_change.get("supported"))
+        if task_change_supported:
+            task_change_paths = list(raw_task_change.get("changed_files", []))
+            task_change = {
+                "supported": True,
+                "changed_files": len(task_change_paths),
+                "paths": task_change_paths,
+                "final_impact": bool(
+                    manifest.get("final_impact")
+                    and (ROOT / manifest["final_impact"]).is_file()
+                ),
+                "reason": None,
+            }
+        else:
+            task_change = {
+                "supported": False,
+                "changed_files": None,
+                "paths": None,
+                "final_impact": None,
+                "reason": str(
+                    raw_task_change.get("reason")
+                    or "exact task changed-file attribution unavailable"
+                ),
+            }
+    else:
+        task_change = {
+            "supported": False,
+            "changed_files": None,
+            "paths": None,
+            "final_impact": None,
+            "reason": "task changed-file attribution has not been observed yet",
+        }
+
     observation = {
         "version": 1,
         "task_id": task_id,
@@ -263,6 +446,21 @@ def derive_task(task_id: str) -> dict:
             "knowledge_artifacts": len(context.get("artifacts", [])) if context else 0,
             "code_artifacts": len(context.get("code_artifacts", [])) if context else 0,
             "known_unknowns": len(context.get("known_unknowns", [])) if context else 0,
+            "token_budget": (
+                context_budget.get("limit_tokens")
+                if context_budget
+                else risk_policy.get("materialization_token_budget")
+            ),
+            "selected_estimated_tokens": context_budget.get(
+                "selected_estimated_tokens"
+            ),
+            "candidate_estimated_tokens": context_budget.get(
+                "candidate_estimated_tokens"
+            ),
+            "dropped_candidates": context_budget.get("dropped_candidates"),
+            "authority_overage_tokens": context_budget.get(
+                "authority_overage_tokens"
+            ),
         },
         "runs": {
             "total": len(receipts),
@@ -297,6 +495,12 @@ def derive_task(task_id: str) -> dict:
                 "convergence-coverage",
                 "convergence coverage:",
             ),
+            "change_coverage_blocks": blocker_count(
+                attempts,
+                "change-coverage",
+                "change coverage:",
+                "Task changed file missing",
+            ),
             "ci_requirement_blocks": blocker_count(
                 attempts,
                 "ci-required",
@@ -304,6 +508,7 @@ def derive_task(task_id: str) -> dict:
             ),
             "final_complete": manifest.get("status") == "completed",
         },
+        "task_change": task_change,
         "evidence": {
             "claims": len(claims),
             "passed": sum(item.get("status") == "pass" for item in claims),
@@ -346,12 +551,53 @@ def main() -> int:
         "--task",
         help="derive machine-observed metrics from one prepared PACT task",
     )
+    parser.add_argument(
+        "--all-tasks",
+        action="store_true",
+        help="derive and summarize all local prepared task observations",
+    )
     parser.add_argument("--output")
     args = parser.parse_args()
 
+    if args.all_tasks:
+        if args.task or args.records or args.summary:
+            parser.error(
+                "--all-tasks cannot be combined with --task, record paths, "
+                "or --summary"
+            )
+
+        observations = []
+        failures = []
+        for task_id in discover_task_ids():
+            try:
+                observations.append(derive_task(task_id))
+            except Exception as exc:
+                failures.append({
+                    "task_id": task_id,
+                    "error": str(exc),
+                })
+
+        result = {
+            "summary": summarize_observations(observations),
+            "observations": observations,
+            "errors": failures,
+        }
+        rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            path = pathlib.Path(args.output)
+            if not path.is_absolute():
+                path = ROOT / path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(rendered, encoding="utf-8")
+            if not args.json:
+                print(f"PACT eval machine summary: {path}")
+        if args.json or not args.output:
+            print(rendered, end="")
+        return 0
+
     if args.task:
-        if args.records or args.summary:
-            parser.error("--task cannot be combined with record paths or --summary")
+        if args.records or args.summary or args.all_tasks:
+            parser.error("--task cannot be combined with record paths, --summary, or --all-tasks")
         try:
             result = derive_task(args.task)
         except Exception as exc:
@@ -372,7 +618,9 @@ def main() -> int:
         return 0
 
     if not args.records:
-        parser.error("provide evaluation record(s) or --task TASK-ID")
+        parser.error(
+            "provide evaluation record(s), --task TASK-ID, or --all-tasks"
+        )
 
     records = []
     failures = []

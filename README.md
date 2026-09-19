@@ -202,10 +202,12 @@ converge   validate semantic Convergence Reports
 evidence   validate source-backed Evidence Receipts
 report     render evidence-backed Owner Reports
 complete   validate Evidence + Convergence + Owner Report as one gate
-eval       validate/summarize optional pilot task records
+eval       validate/summarize pilot records or derive machine task observations
 ```
 
 The long list above is the advanced primitive layer, not the expected everyday interface.
+
+For local evidence-driven evaluation, `python pact.py eval --task <TASK-ID> --json` derives one machine observation and `python pact.py eval --all-tasks --json` summarizes all local prepared tasks. Human interaction/comprehension/overhead metrics remain explicitly outside machine inference.
 
 ## Discovery, Explain, and Context
 
