@@ -158,7 +158,6 @@ def select_context_candidates(
             "ordinal": int(item.get("_pool_ordinal", ordinal)),
         })
 
-    knowledge_count = len(knowledge)
     for ordinal, original in enumerate(code):
         item = dict(original)
         estimated = estimated_file_tokens(str(item.get("path", "")))
@@ -178,8 +177,8 @@ def select_context_candidates(
         key=lambda candidate: (
             -int(candidate["mandatory"]),
             candidate["pool_tier"],
-            -candidate["priority"],
             candidate["ordinal"],
+            0 if candidate["kind"] == "knowledge" else 1,
             candidate["item"].get("path", ""),
         )
     )
