@@ -153,6 +153,12 @@ def main() -> int:
                 f"({recorded_contract_sha!r} != {contract_sha256!r})"
             )
 
+    if context is not None and evidence.get("risk_level") != context.get("risk_level"):
+        errors.append(
+            "evidence.risk_level does not match Task Context risk "
+            f"({evidence.get('risk_level')!r} != {context.get('risk_level')!r})"
+        )
+
     if args.expected_risk:
         if evidence.get("risk_level") != args.expected_risk:
             errors.append(
