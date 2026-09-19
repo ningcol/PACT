@@ -77,6 +77,11 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ### Convergence Trust
 
+- prepared tasks record a Git-aware workspace baseline without requiring a clean worktree;
+- `task finish` derives the files whose final content changed relative to preparation, excluding generated PACT state;
+- actual task-changed files automatically feed a final Impact report;
+- Convergence `change_coverage` must review every task-changed path; missing/duplicate/stale coverage blocks completion;
+- pre-existing dirty files are not attributed to the task unless their content changed after preparation;
 - prepared Task Contexts now carry SHA256 binding into high-level completion;
 - selected knowledge artifacts carry prepared content fingerprints when available;
 - Convergence Reports can explicitly dispose every Task Context knowledge artifact;
