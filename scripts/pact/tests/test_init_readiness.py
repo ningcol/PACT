@@ -61,6 +61,35 @@ class InitReadinessTests(unittest.TestCase):
         self.assertEqual(data["stage"], "foundation-valid")
         self.assertIn("agent_bootstrap", data["pending_reviews"])
 
+    def test_init_uses_nested_control_plane_gitignore(self) -> None:
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        nested = self.target / ".pact" / ".gitignore"
+        self.assertTrue(nested.is_file())
+        self.assertFalse((self.target / ".gitignore").exists())
+        rules = set(nested.read_text(encoding="utf-8").splitlines())
+        self.assertTrue({
+            "cache/",
+            "tasks/",
+            "runs/",
+            "completions/",
+            "tmp/",
+        } <= rules)
+
+    def test_existing_root_gitignore_is_untouched(self) -> None:
+        self.target.mkdir(parents=True)
+        root_ignore = self.target / ".gitignore"
+        root_ignore.write_text("KEEP-ME\n", encoding="utf-8")
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            root_ignore.read_text(encoding="utf-8"),
+            "KEEP-ME\n",
+        )
+        self.assertTrue((self.target / ".pact" / ".gitignore").is_file())
+
     def test_fresh_status_is_healthy_with_baseline_advisory(self) -> None:
         result = self.run_init("--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

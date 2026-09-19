@@ -265,7 +265,7 @@ These durable knowledge locations are **lazy**: they may be absent until the pro
 - `docs/drift/` — known/resolved/accepted drift artifacts.
 - `.agents/skills/` — replaceable procedures.
 
-`.pact/cache/` remains disposable derived state. `scripts/pact/` is the source-checkout runtime used when developing PACT itself and is not copied into new minimal installs.
+`.pact/cache/`, `.pact/tasks/`, `.pact/runs/`, `.pact/completions/`, and `.pact/tmp/` are local generated control-plane state and are ignored by the nested `.pact/.gitignore`. They support execution/evaluation but are not durable project truth. `scripts/pact/` is the source-checkout runtime used when developing PACT itself and is not copied into new installs.
 
 ## Deterministic vs semantic
 

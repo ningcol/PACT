@@ -11,7 +11,7 @@ PACT has one supported installed layout. Fresh adoption installs only the contro
 - `.pact/VERSION`;
 - project-owned Owner config, baseline, and fitness seeds;
 - `AGENTS.md` when the project does not already have one, or merge guidance under `.pact/`;
-- `.gitignore` only when PACT must create one;
+- `.pact/.gitignore` for local generated control-plane state;
 - optional project CI workflow only when explicitly requested.
 
 Product Truth, Architecture, Decision, Change, Drift, and Skill directories are materialized only when real project knowledge needs a durable owner.
@@ -112,3 +112,19 @@ Adopted projects do not receive those schema files. The exact installed `pact.py
 ## No hidden package copy
 
 Future wrappers such as `uvx` may improve invocation, but they must not introduce a separately maintained copy of PACT governance/templates or protocol truth.
+
+
+## Local generated state
+
+PACT keeps execution/process state local rather than turning it into durable project knowledge.
+
+The nested `.pact/.gitignore` ignores:
+
+- `cache/`;
+- `tasks/`;
+- `runs/`;
+- `completions/`;
+- `tmp/`;
+- transient upgrade transaction directories.
+
+These files remain available locally for task status, evaluation, Evidence, and completion checks, but they do not belong in normal project commits. Durable knowledge belongs in Product Truth, Architecture, Decisions, Changes, Drift, and ordinary Git history.

@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 from task_contract import validate as validate_contract
@@ -22,6 +24,7 @@ from runtime_exec import runtime_command
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TASK_ROOT = ROOT / ".pact" / "tasks"
 COMPLETION_ROOT = ROOT / ".pact" / "completions"
+TMP_ROOT = ROOT / ".pact" / "tmp"
 
 
 def generated_task_id(task: str) -> str:
@@ -64,14 +67,16 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 def prepare(args) -> int:
     task_id = args.task_id or generated_task_id(args.task)
     task_dir = TASK_ROOT / task_id
-    if task_dir.exists() and not args.force:
+    completion_dir = COMPLETION_ROOT / task_id
+
+    if (task_dir.exists() or completion_dir.exists()) and not args.force:
+        existing = task_dir if task_dir.exists() else completion_dir
         print(
-            f"PACT task prepare: task already exists: {task_dir} "
-            "(use --force only to rebuild derived preparation files)",
+            f"PACT task prepare: generated task state already exists: {existing} "
+            "(use --force to rebuild preparation and invalidate old completion state)",
             file=sys.stderr,
         )
         return 2
-    task_dir.mkdir(parents=True, exist_ok=True)
 
     acceptance_items = [
         ("outcome", text)
@@ -96,92 +101,145 @@ def prepare(args) -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
-    contract_path = task_dir / "contract.json"
-    write_json(contract_path, contract)
-    contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+    TMP_ROOT.mkdir(parents=True, exist_ok=True)
+    TASK_ROOT.mkdir(parents=True, exist_ok=True)
+    COMPLETION_ROOT.mkdir(parents=True, exist_ok=True)
 
-    context_path = task_dir / "context.json"
-    context_cmd = runtime_command(
-        "context",
-        args.task,
-        "--success",
-        "; ".join(text for _, text in acceptance_items),
-        "--risk",
-        args.risk,
-        "--output",
-        str(context_path),
-    )
-    if args.goal:
-        context_cmd.extend(["--goal", args.goal])
-    for query in args.query:
-        context_cmd.extend(["--query", query])
-    if args.code is True:
-        context_cmd.append("--code")
-    elif args.code is False:
-        context_cmd.append("--no-code")
+    with tempfile.TemporaryDirectory(
+        prefix=".prepare-",
+        dir=TMP_ROOT,
+    ) as tmp:
+        transaction = pathlib.Path(tmp)
+        staged_task = transaction / "task"
+        staged_task.mkdir()
 
-    context_result = run(context_cmd)
-    if context_result.returncode != 0:
-        print(context_result.stdout, end="")
-        print(context_result.stderr, end="", file=sys.stderr)
-        return context_result.returncode
+        staged_contract = staged_task / "contract.json"
+        write_json(staged_contract, contract)
+        contract_sha256 = hashlib.sha256(
+            staged_contract.read_bytes()
+        ).hexdigest()
 
-    context_sha256 = hashlib.sha256(context_path.read_bytes()).hexdigest()
-
-    impact_path = None
-    impact_state = "deferred"
-    impact_cmd = None
-    if args.files or args.base:
-        impact_path = task_dir / "impact.json"
-        impact_cmd = runtime_command(
-            "impact",
+        staged_context = staged_task / "context.json"
+        context_cmd = runtime_command(
+            "context",
+            args.task,
+            "--success",
+            "; ".join(text for _, text in acceptance_items),
             "--risk",
             args.risk,
             "--output",
-            str(impact_path),
+            str(staged_context),
         )
-        if args.files:
-            impact_cmd.extend(["--files", *args.files])
-        else:
-            impact_cmd.extend(["--base", args.base, "--head", args.head])
+        if args.goal:
+            context_cmd.extend(["--goal", args.goal])
+        for query in args.query:
+            context_cmd.extend(["--query", query])
         if args.code is True:
-            impact_cmd.append("--code")
+            context_cmd.append("--code")
         elif args.code is False:
-            impact_cmd.append("--no-code")
+            context_cmd.append("--no-code")
 
-        impact_result = run(impact_cmd)
-        if impact_result.returncode != 0:
-            print(impact_result.stdout, end="")
-            print(impact_result.stderr, end="", file=sys.stderr)
-            return impact_result.returncode
-        impact_state = "prepared"
+        context_result = run(context_cmd)
+        if context_result.returncode != 0:
+            print(context_result.stdout, end="")
+            print(context_result.stderr, end="", file=sys.stderr)
+            return context_result.returncode
 
-    manifest = {
-        "version": 1,
-        "task_id": task_id,
-        "status": "prepared",
-        "task": args.task,
-        "goal": args.goal or args.task,
-        "observable_success": args.success,
-        "risk_level": args.risk,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "contract": contract_path.relative_to(ROOT).as_posix(),
-        "contract_sha256": contract_sha256,
-        "acceptance_criteria_count": len(contract["acceptance_criteria"]),
-        "context": context_path.relative_to(ROOT).as_posix(),
-        "context_sha256": context_sha256,
-        "impact": (
-            impact_path.relative_to(ROOT).as_posix()
-            if impact_path is not None
-            else None
-        ),
-        "impact_state": impact_state,
-        "completion_bundle": (
-            COMPLETION_ROOT / task_id
-        ).relative_to(ROOT).as_posix(),
-    }
-    manifest_path = task_dir / "task.json"
-    write_json(manifest_path, manifest)
+        context_sha256 = hashlib.sha256(
+            staged_context.read_bytes()
+        ).hexdigest()
+
+        staged_impact = None
+        impact_state = "deferred"
+        if args.files or args.base:
+            staged_impact = staged_task / "impact.json"
+            impact_cmd = runtime_command(
+                "impact",
+                "--risk",
+                args.risk,
+                "--output",
+                str(staged_impact),
+            )
+            if args.files:
+                impact_cmd.extend(["--files", *args.files])
+            else:
+                impact_cmd.extend(["--base", args.base, "--head", args.head])
+            if args.code is True:
+                impact_cmd.append("--code")
+            elif args.code is False:
+                impact_cmd.append("--no-code")
+
+            impact_result = run(impact_cmd)
+            if impact_result.returncode != 0:
+                print(impact_result.stdout, end="")
+                print(impact_result.stderr, end="", file=sys.stderr)
+                return impact_result.returncode
+            impact_state = "prepared"
+
+        final_contract = task_dir / "contract.json"
+        final_context = task_dir / "context.json"
+        final_impact = task_dir / "impact.json" if staged_impact else None
+        manifest = {
+            "version": 1,
+            "task_id": task_id,
+            "status": "prepared",
+            "task": args.task,
+            "goal": args.goal or args.task,
+            "observable_success": args.success,
+            "risk_level": args.risk,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "contract": final_contract.relative_to(ROOT).as_posix(),
+            "contract_sha256": contract_sha256,
+            "acceptance_criteria_count": len(contract["acceptance_criteria"]),
+            "context": final_context.relative_to(ROOT).as_posix(),
+            "context_sha256": context_sha256,
+            "impact": (
+                final_impact.relative_to(ROOT).as_posix()
+                if final_impact is not None
+                else None
+            ),
+            "impact_state": impact_state,
+            "completion_bundle": completion_dir.relative_to(ROOT).as_posix(),
+        }
+        write_json(staged_task / "task.json", manifest)
+
+        old_task = transaction / "old-task"
+        old_completion = transaction / "old-completion"
+        moved_task = False
+        moved_completion = False
+
+        try:
+            if task_dir.exists():
+                os.replace(task_dir, old_task)
+                moved_task = True
+            if completion_dir.exists():
+                os.replace(completion_dir, old_completion)
+                moved_completion = True
+
+            os.replace(staged_task, task_dir)
+        except Exception as exc:
+            if task_dir.exists() and not moved_task:
+                try:
+                    if task_dir.is_dir():
+                        import shutil
+                        shutil.rmtree(task_dir)
+                    else:
+                        task_dir.unlink()
+                except OSError:
+                    pass
+            if moved_task and old_task.exists() and not task_dir.exists():
+                os.replace(old_task, task_dir)
+            if (
+                moved_completion
+                and old_completion.exists()
+                and not completion_dir.exists()
+            ):
+                os.replace(old_completion, completion_dir)
+            print(
+                f"PACT task prepare: atomic publish failed: {exc}",
+                file=sys.stderr,
+            )
+            return 2
 
     result = {
         **manifest,
@@ -202,8 +260,14 @@ def prepare(args) -> int:
     else:
         print(f"PACT task prepared: {task_id}")
         print(f"- risk: {args.risk}")
-        print(f"- contract: {manifest['contract']} ({manifest['acceptance_criteria_count']} acceptance criteria)")
-        print(f"- context: {manifest['context']} (sha256={manifest['context_sha256'][:12]}...)")
+        print(
+            f"- contract: {manifest['contract']} "
+            f"({manifest['acceptance_criteria_count']} acceptance criteria)"
+        )
+        print(
+            f"- context: {manifest['context']} "
+            f"(sha256={manifest['context_sha256'][:12]}...)"
+        )
         print(f"- impact: {impact_state}")
         if impact_state == "deferred":
             print(
