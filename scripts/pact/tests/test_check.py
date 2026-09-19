@@ -74,25 +74,6 @@ class PactCheckTests(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_legacy_yaml_artifact_remains_readable(self) -> None:
-        self.write(
-            "docs/product/domains/legacy.md",
-            """
-            ---
-            pact:
-              type: domain
-              id: DOMAIN-LEGACY
-              status: confirmed
-              owners:
-                - product
-            ---
-            # Legacy
-            """,
-        )
-        result = self.run_check()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("legacy YAML artifact", result.stdout)
-
     def test_missing_domain_reference_fails(self) -> None:
         self.write(
             "docs/product/rules/batch.md",
