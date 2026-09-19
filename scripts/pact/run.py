@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from schema_validate import load_schema, validate_instance
 from security import redact_argv
 from workspace import workspace_snapshot
+from protocol_ids import validate_task_id
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -76,6 +77,12 @@ def main() -> int:
     )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+
+    try:
+        validate_task_id(args.task_id)
+    except ValueError as exc:
+        print(f"PACT run: invalid task id: {exc}", file=sys.stderr)
+        return 2
 
     command = list(args.command)
     if command and command[0] == "--":
