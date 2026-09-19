@@ -55,7 +55,7 @@ def completion_blockers(errors: list[str]) -> list[str]:
         ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
         ("convergence-coverage", ("convergence coverage:",)),
         ("change-coverage", ("change coverage:", "Task changed file missing")),
-        ("ci-required", ("CI-backed Evidence",)),
+        ("ci-required", ("CI-metadata Evidence",)),
     ]
     for code, needles in checks:
         if any(needle in text for needle in needles):
@@ -405,8 +405,8 @@ def finish(args) -> int:
         str(ROOT),
         "--json",
     )
-    if args.require_ci:
-        command.append("--require-ci")
+    if args.require_ci_metadata:
+        command.append("--require-ci-metadata")
 
     command.extend(["--contract", str(ROOT / manifest["contract"])])
     command.extend(["--context", str(ROOT / manifest["context"])])
@@ -575,7 +575,7 @@ def main() -> int:
     finish_parser = sub.add_parser("finish", help="validate an existing task completion bundle")
     finish_parser.add_argument("task_id")
     finish_parser.add_argument("--bundle")
-    finish_parser.add_argument("--require-ci", action="store_true")
+    finish_parser.add_argument("--require-ci-metadata", action="store_true")
     finish_parser.add_argument("--json", action="store_true")
 
     status_parser = sub.add_parser("status", help="show one prepared task")
