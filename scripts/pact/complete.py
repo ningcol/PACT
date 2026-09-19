@@ -23,6 +23,7 @@ from report import (
 )
 from task_contract import acceptance_review, validate as validate_contract
 from convergence_coverage import review as review_convergence_coverage
+from change_coverage import review as review_change_coverage
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -60,6 +61,17 @@ def main() -> int:
     parser.add_argument(
         "--context-sha256",
         help="expected SHA256 of the prepared Task Context",
+    )
+    parser.add_argument(
+        "--check-change-coverage",
+        action="store_true",
+        help="require Convergence coverage for the supplied task changed files",
+    )
+    parser.add_argument(
+        "--changed-file",
+        action="append",
+        default=[],
+        help="file changed by the prepared task; repeatable",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -145,6 +157,7 @@ def main() -> int:
     }
     acceptance_stats = None
     convergence_coverage_stats = None
+    change_coverage_stats = None
     if not errors:
         provenance_errors, policy_gaps, provenance_stats = provenance_review(
             evidence, root
@@ -181,6 +194,15 @@ def main() -> int:
             )
             errors.extend(
                 f"convergence coverage: {error}" for error in coverage_errors
+            )
+
+        if args.check_change_coverage:
+            change_errors, change_coverage_stats = review_change_coverage(
+                convergence,
+                args.changed_file,
+            )
+            errors.extend(
+                f"change coverage: {error}" for error in change_errors
             )
 
     risk = evidence.get("risk_level")
@@ -255,6 +277,8 @@ def main() -> int:
             else None
         ),
         "convergence_coverage": convergence_coverage_stats,
+        "changed_files": list(args.changed_file) if args.check_change_coverage else None,
+        "change_coverage": change_coverage_stats,
         "bundle": str(bundle),
     }
 
@@ -284,6 +308,12 @@ def main() -> int:
                 "- convergence coverage: "
                 f"{convergence_coverage_stats['covered_artifacts']}/"
                 f"{convergence_coverage_stats['required_artifacts']} context artifacts reviewed"
+            )
+        if change_coverage_stats is not None:
+            print(
+                "- changed-file coverage: "
+                f"{change_coverage_stats['covered_changed_files']}/"
+                f"{change_coverage_stats['required_changed_files']} task files reviewed"
             )
         if policy_gaps:
             print("Policy gaps:")
