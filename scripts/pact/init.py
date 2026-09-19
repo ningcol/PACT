@@ -14,11 +14,8 @@ import sys
 
 from distribution import (
     github_actions_entry,
-    legacy_seed_target,
     manifest_record,
-    minimal_source_manifest,
     runtime_version,
-    sha256_file,
     source_manifest,
 )
 from runtime_bundle import ensure_runtime_bundle
@@ -153,32 +150,10 @@ def generated_entry(path: str, management: str = "seed") -> dict:
 def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
-    existing_manifest = load_install_manifest(target)
-    install_profile = (
-        existing_manifest.get("install_profile")
-        if existing_manifest
-        else "minimal"
-    )
-    entries = (
-        minimal_source_manifest(SOURCE_ROOT)
-        if install_profile == "minimal"
-        else source_manifest(SOURCE_ROOT)
-    )
-
-    for entry in entries:
+    for entry in source_manifest(SOURCE_ROOT):
         destination = target / entry["target"]
-        legacy_rel = legacy_seed_target(entry["target"].as_posix())
-        legacy_destination = target / legacy_rel if legacy_rel else None
-
-        if destination.exists():
-            action = "skip"
-            reason = "already exists"
-        elif legacy_destination is not None and legacy_destination.exists():
-            action = "skip"
-            reason = f"legacy project seed preserved at {legacy_rel}"
-        else:
-            action = "create"
-            reason = "missing scaffold"
+        action = "skip" if destination.exists() else "create"
+        reason = "already exists" if destination.exists() else "missing scaffold"
 
         operations.append({
             "action": action,
@@ -190,14 +165,7 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
 
     agents = target / "AGENTS.md"
     if agents.exists():
-        # Fresh/minimal installs keep merge guidance in the control plane.
-        # Legacy/full installs retain the historical path so same-version
-        # re-init does not reinterpret their repository layout.
-        rel = pathlib.Path(
-            ".pact/AGENT_BOOTSTRAP.md"
-            if install_profile == "minimal"
-            else "docs/governance/PACT_AGENT_BOOTSTRAP.md"
-        )
+        rel = pathlib.Path(".pact/AGENT_BOOTSTRAP.md")
         destination = target / rel
         operations.append({
             "action": "skip" if destination.exists() else "create-generated",
@@ -307,10 +275,6 @@ def write_install_manifest(
         ),
         "files": files,
     }
-    install_profile = existing.get("install_profile") if existing else "minimal"
-    if install_profile:
-        manifest["install_profile"] = install_profile
-
     path = target / INSTALL_MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -338,10 +302,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             shutil.copy2(source, destination)
         elif op["path"] == "AGENTS.md":
             destination.write_text(TARGET_AGENTS, encoding="utf-8")
-        elif op["path"] in {
-            ".pact/AGENT_BOOTSTRAP.md",
-            "docs/governance/PACT_AGENT_BOOTSTRAP.md",
-        }:
+        elif op["path"] == ".pact/AGENT_BOOTSTRAP.md":
             destination.write_text(bootstrap_snippet(), encoding="utf-8")
         elif op["path"] == ".gitignore":
             destination.write_text(".pact/cache/\n", encoding="utf-8")

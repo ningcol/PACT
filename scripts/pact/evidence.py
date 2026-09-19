@@ -46,7 +46,6 @@ def verify_item(
         "machine_backed": False,
         "ci_backed": False,
         "workspace_bound": False,
-        "legacy_run": False,
         "pact_run": False,
     }
 
@@ -94,27 +93,23 @@ def verify_item(
                 f"fail claim references non-failing run receipt {ref}"
             )
 
-        version = run_receipt.get("version")
-        if version == 2:
-            recorded = run_receipt.get("workspace_after") or {}
-            recorded_sha = recorded.get("sha256")
-            current_sha = current_workspace.get("sha256")
-            if recorded_sha != current_sha:
-                errors.append(
-                    "stale pact-run receipt "
-                    f"{ref}: verified workspace {recorded_sha!r} "
-                    f"does not match current workspace {current_sha!r}"
-                )
-            elif recorded.get("kind") != current_workspace.get("kind"):
-                errors.append(
-                    f"workspace kind changed for run receipt {ref}: "
-                    f"{recorded.get('kind')!r} != "
-                    f"{current_workspace.get('kind')!r}"
-                )
-            else:
-                metrics["workspace_bound"] = True
+        recorded = run_receipt.get("workspace_after") or {}
+        recorded_sha = recorded.get("sha256")
+        current_sha = current_workspace.get("sha256")
+        if recorded_sha != current_sha:
+            errors.append(
+                "stale pact-run receipt "
+                f"{ref}: verified workspace {recorded_sha!r} "
+                f"does not match current workspace {current_sha!r}"
+            )
+        elif recorded.get("kind") != current_workspace.get("kind"):
+            errors.append(
+                f"workspace kind changed for run receipt {ref}: "
+                f"{recorded.get('kind')!r} != "
+                f"{current_workspace.get('kind')!r}"
+            )
         else:
-            metrics["legacy_run"] = True
+            metrics["workspace_bound"] = True
 
         metrics["ci_backed"] = bool(run_receipt.get("ci"))
         metrics["machine_backed"] = not errors
@@ -164,7 +159,6 @@ def provenance_review(
         ci_count = 0
         workspace_bound_count = 0
         pact_run_count = 0
-        legacy_run_count = 0
 
         for index, item in enumerate(refs):
             item_errors, metrics = verify_item(
@@ -182,7 +176,6 @@ def provenance_review(
             ci_count += int(metrics["ci_backed"])
             workspace_bound_count += int(metrics["workspace_bound"])
             pact_run_count += int(metrics["pact_run"])
-            legacy_run_count += int(metrics["legacy_run"])
 
         if machine_count:
             machine_backed_claims += 1
@@ -210,14 +203,8 @@ def provenance_review(
             and workspace_bound_count == 0
         ):
             policy_gaps.append(
-                f"{claim_id}: {risk}-risk pact-run evidence uses only legacy "
-                "receipts without exact workspace binding; rerun verification"
-            )
-
-        if legacy_run_count and risk == "low":
-            policy_gaps.append(
-                f"{claim_id}: legacy pact-run receipt is readable but not bound "
-                "to an exact workspace state"
+                f"{claim_id}: {risk}-risk pact-run evidence is not bound "
+                "to the current workspace; rerun verification"
             )
 
     return errors, policy_gaps, {

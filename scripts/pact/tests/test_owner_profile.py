@@ -29,37 +29,6 @@ progressive_disclosure = true
 decision_translation = "consequence_first"
 """
 
-LEGACY_YAML = """
-version: 1
-
-owner:
-  role: product_project_owner
-  language: zh-CN
-  technical_depth: product
-  communication:
-    prefer:
-      - user_behavior
-    hide_by_default:
-      - implementation_patterns
-    explain_consequence_before_technical_term: true
-    progressive_disclosure: true
-    decision_translation: consequence_first
-
-paths:
-  product_truth: docs/product
-risk:
-  levels:
-    - low
-    - medium
-    - high
-discovery:
-  use_canonical_vocabulary: true
-  derived_cache: .pact/cache
-convergence:
-  code_wins_product_truth: false
-  deterministic_fact_mismatch: fail
-  heuristic_drift: warn
-"""
 
 
 class OwnerProfileTests(unittest.TestCase):
@@ -92,13 +61,6 @@ class OwnerProfileTests(unittest.TestCase):
         self.assertIn('"language": "zh-CN"', result.stdout)
         self.assertIn('"technical_depth": "product"', result.stdout)
         self.assertIn('"source_format": "toml"', result.stdout)
-
-    def test_legacy_yaml_profile_remains_readable(self) -> None:
-        self.write(".pact/config.yaml", LEGACY_YAML)
-        result = self.run_owner("--strict", "--json")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('"source_format": "legacy-yaml"', result.stdout)
-        self.assertIn('"language": "zh-CN"', result.stdout)
 
     def test_invalid_toml_profile_is_rejected(self) -> None:
         invalid = VALID_TOML.replace('technical_depth = "product"', 'technical_depth = "magic"')

@@ -104,7 +104,7 @@ class CompactRuntimeTests(unittest.TestCase):
             manifest = json.loads(
                 (target / ".pact" / "install.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest.get("install_profile"), "minimal")
+            self.assertNotIn("install_profile", manifest)
             self.assertLessEqual(len(manifest["files"]), 8)
             self.assertEqual(
                 [
