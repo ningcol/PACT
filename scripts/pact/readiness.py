@@ -66,22 +66,18 @@ def derive_stage(foundation_valid: bool, reviews: dict | None) -> str:
     return "foundation-valid"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Report PACT adoption readiness")
-    parser.add_argument("--root", help="repository root; defaults to this script's repository")
-    parser.add_argument(
-        "--require-ready",
-        action="store_true",
-        help="return nonzero unless the project is PACT-ready",
-    )
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
-
-    default_root = pathlib.Path(__file__).resolve().parents[2]
-    root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
-
+def evaluate(
+    root: pathlib.Path,
+    *,
+    foundation_valid: bool | None = None,
+    foundation_detail: str | None = None,
+) -> dict:
     schema_path = root / ".pact" / "schema" / "baseline.schema.json"
-    foundation_valid, foundation_detail = doctor_state(root)
+
+    if foundation_valid is None:
+        foundation_valid, foundation_detail = doctor_state(root)
+    elif foundation_detail is None:
+        foundation_detail = "pass" if foundation_valid else "fail"
 
     baseline = None
     baseline_path = None
@@ -98,16 +94,15 @@ def main() -> int:
         baseline_errors.append(str(exc))
 
     reviews = baseline.get("reviews") if baseline and not baseline_errors else None
-    stage = derive_stage(foundation_valid, reviews)
-
+    stage = derive_stage(bool(foundation_valid), reviews)
     pending = [
         key for key in REVIEW_KEYS
         if reviews is not None and reviews.get(key) == "pending"
     ]
 
-    result = {
+    return {
         "stage": stage,
-        "foundation_valid": foundation_valid,
+        "foundation_valid": bool(foundation_valid),
         "foundation_detail": foundation_detail,
         "baseline_present": baseline_path is not None,
         "baseline_source": (
@@ -121,6 +116,28 @@ def main() -> int:
         "pending_reviews": pending,
         "errors": baseline_errors,
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Report PACT adoption readiness")
+    parser.add_argument("--root", help="repository root; defaults to this script's repository")
+    parser.add_argument(
+        "--require-ready",
+        action="store_true",
+        help="return nonzero unless the project is PACT-ready",
+    )
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    default_root = pathlib.Path(__file__).resolve().parents[2]
+    root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
+
+    result = evaluate(root)
+    stage = result["stage"]
+    foundation_valid = result["foundation_valid"]
+    baseline_format = result["baseline_format"]
+    pending = result["pending_reviews"]
+    baseline_errors = result["errors"]
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

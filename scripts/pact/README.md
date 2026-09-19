@@ -165,11 +165,10 @@ See `docs/design/distribution-upgrades.md`.
 ## Doctor vs Readiness
 
 - `doctor` answers whether PACT infrastructure/configuration is valid.
-- `readiness` answers whether the existing project's baseline was explicitly reviewed.
+- `readiness` answers whether the existing project's repository-wide baseline was explicitly reviewed.
+- `status` treats pending baseline review as an advisory, not an operational failure.
 
-A freshly minimally adopted project should normally be `foundation-valid`, not `pact-ready`.
-
-Use `readiness --require-ready` only when the project has chosen readiness as a gate.
+A freshly adopted project can therefore have `status=pass` while readiness remains `foundation-valid`. Use `readiness --require-ready` only when the project has explicitly chosen full baseline review as a governance gate. Task-level safety comes from the prepared Task Contract/Context and completion gates.
 
 ## Pilot evaluation
 
