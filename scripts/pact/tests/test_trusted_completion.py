@@ -181,7 +181,7 @@ class TrustedCompletionTests(unittest.TestCase):
             text=True,
         )
 
-    def test_medium_machine_backed_bundle_passes_on_same_workspace(self) -> None:
+    def test_medium_execution_backed_bundle_passes_on_same_workspace(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
         self.save_bundle(evidence, convergence, owner)
 
@@ -462,15 +462,15 @@ class TrustedCompletionTests(unittest.TestCase):
 
         evidence, convergence, owner = self.base_bundle("medium", run=run)
         self.save_bundle(evidence, convergence, owner)
-        result = self.run_complete("--require-ci-metadata-metadata")
+        result = self.run_complete("--require-ci-metadata")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["ci_metadata_claims"], 1)
 
-    def test_require_ci_blocks_local_only_completion(self) -> None:
+    def test_require_ci_metadata_blocks_local_only_completion(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
         self.save_bundle(evidence, convergence, owner)
 
-        result = self.run_complete("--require-ci-metadata-metadata")
+        result = self.run_complete("--require-ci-metadata")
         self.assertEqual(result.returncode, 1)
         self.assertIn("requires CI-metadata Evidence", result.stdout)
 
