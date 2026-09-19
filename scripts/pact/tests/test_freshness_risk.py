@@ -205,6 +205,18 @@ class FreshnessAndRiskTests(unittest.TestCase):
             high["risk_policy"]["code_limit"],
             medium["risk_policy"]["code_limit"],
         )
+        self.assertLess(
+            low["risk_policy"]["materialization_token_budget"],
+            medium["risk_policy"]["materialization_token_budget"],
+        )
+        self.assertLess(
+            medium["risk_policy"]["materialization_token_budget"],
+            high["risk_policy"]["materialization_token_budget"],
+        )
+        self.assertEqual(
+            medium["context_budget"]["limit_tokens"],
+            medium["risk_policy"]["materialization_token_budget"],
+        )
         self.assertTrue(
             any("High-risk task" in item for item in high["known_unknowns"])
         )
