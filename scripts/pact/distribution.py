@@ -52,6 +52,7 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
 
     add("pact.py")
     add(".pact/VERSION")
+    add(".pact/templates/control-plane.gitignore", ".pact/.gitignore")
 
     runtime_bundle = ensure_runtime_bundle(source_root)
     entries.append({
