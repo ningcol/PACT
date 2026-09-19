@@ -287,33 +287,27 @@ The rule is:
 
 ## Status
 
-**Runtime:** 0.3.0  
+**Main runtime:** 0.4.0-dev.1 (pre-release)  
+**Last release baseline:** 0.3.0  
 **Control-plane protocol:** v1
 
-PACT 0.3 includes the executable foundation for:
+Current `main` is the development line for the next minor release. It includes the 0.3 foundation plus:
 
-- brownfield initialization with explicit readiness state;
-- opt-in project CI integration;
-- validated project Owner Profiles for language/technical-depth communication;
-- Truth ownership and artifact lifecycle;
-- Project Discovery with optional generated code relationships;
-- Project Explanation evidence packets;
-- risk-adaptive Context Resolution;
-- freshness-aware, Git-aware incremental Project/Code maps;
-- conservative Impact Analysis with generated relationship confidence;
-- pluggable project-owned architecture fitness functions;
-- source-backed command run receipts;
-- Convergence Reports;
-- source-backed Evidence Receipts;
-- evidence-backed Owner Reports;
-- task-level completion gate;
-- deterministic checks, Doctor, and Audit.
+- compact single-file `.pact/pact.pyz` runtime with embedded protocol schemas;
+- minimal/lazy brownfield adoption (8 managed files in the real pilot);
+- stricter Evidence provenance and workspace-bound verification;
+- advisory daily readiness with explicit full-baseline gating;
+- atomic task preparation and local generated task/run/completion state;
+- deterministic multi-query retrieval with equal final code budgets;
+- risk-adaptive estimated materialization-token budgets;
+- multi-query remembered-feature `inspect`;
+- actual task changed-file attribution, final Impact, and Convergence change coverage;
+- generic lexical code retrieval for common unsupported structured languages without fabricated edges;
+- full correctness CI separated from the 3×3 portability matrix.
 
-PACT also includes an optional pilot scorecard so future framework changes can be driven by real-task evidence instead of framework size or intuition.
+This development version is **not** a GitHub Release or immutable release tag. For reproducible external adoption, prefer an exact commit until a formal release is cut.
 
-The only intentionally open validation work is the real brownfield pilot and evaluation with observed project data.
-
-The next iterations should be driven primarily by real brownfield pilot results: simplify or remove mechanisms that do not reduce owner cognitive load or improve engineering reliability.
+The remaining high-level validation work is ongoing evaluation with observed real tasks, plus the explicit owner decision on repository licensing.
 
 ## Project governance
 
