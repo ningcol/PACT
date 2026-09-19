@@ -11,6 +11,7 @@ import sys
 from collections import defaultdict
 
 from schema_validate import load_schema, validate_instance
+from protocol_ids import validate_task_id, confined_child
 from task_contract import acceptance_review
 
 
@@ -340,7 +341,8 @@ def run_receipts(task_id: str, evidence: dict | None) -> list[dict]:
 
 
 def derive_task(task_id: str) -> dict:
-    task_dir = ROOT / ".pact" / "tasks" / task_id
+    validate_task_id(task_id)
+    task_dir = confined_child(ROOT / ".pact" / "tasks", task_id)
     manifest = load_optional(task_dir / "task.json")
     if manifest is None:
         raise FileNotFoundError(f"task manifest not found for {task_id}")
