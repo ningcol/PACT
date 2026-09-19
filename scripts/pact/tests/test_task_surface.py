@@ -72,6 +72,62 @@ class TaskSurfaceTests(unittest.TestCase):
             1,
         )
 
+    def test_inspect_supports_multi_query_code_retrieval(self) -> None:
+        source = self.root / "McpServer" / "server.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(
+            "def round_robin_dispatch():\n    return 'ok'\n",
+            encoding="utf-8",
+        )
+
+        inspected = self.pact(
+            "inspect",
+            "multiple image clients",
+            "--query",
+            "round_robin_dispatch",
+            "--query",
+            "ROUND_ROBIN_DISPATCH",
+            "--code-limit",
+            "1",
+            "--json",
+        )
+        self.assertEqual(
+            inspected.returncode,
+            0,
+            inspected.stdout + inspected.stderr,
+        )
+        data = json.loads(inspected.stdout)
+        self.assertEqual(
+            data["queries"],
+            ["multiple image clients", "round_robin_dispatch"],
+        )
+        self.assertEqual(
+            data["explanation"]["queries"],
+            data["queries"],
+        )
+        self.assertLessEqual(
+            data["discovery"].get("code_result_count", 0),
+            1,
+        )
+        paths = {
+            item["path"]
+            for item in data["discovery"].get("code_results", [])
+        }
+        self.assertIn("McpServer/server.py", paths)
+
+    def test_inspect_propagates_project_index_failure(self) -> None:
+        bad = self.root / "docs" / "bad.md"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_bytes(b"\xff\xfe\x00\x80")
+
+        inspected = self.pact(
+            "inspect",
+            "password reset",
+            "--json",
+        )
+        self.assertNotEqual(inspected.returncode, 0)
+        self.assertIn("PACT inspect:", inspected.stderr)
+
     def test_generated_control_plane_state_is_git_ignored(self) -> None:
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
 
