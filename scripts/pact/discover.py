@@ -378,15 +378,13 @@ def fuse_ranked_results(
         key=lambda item: (-item["score"], item["path"]),
     )
 
-    # Reserve at most half the final budget for per-query representation.
-    # This is intentionally small: it prevents a specialized query from being
-    # completely starved while leaving at least half the budget for global RRF.
+    # When the final budget can represent every independent query, reserve at
+    # least one candidate per query. For larger budgets keep the diversity
+    # reservation bounded so global RRF still controls most of the result.
     query_count = len(query_results)
-    reserve_per_query = (
-        final_limit // (2 * query_count)
-        if query_count
-        else 0
-    )
+    reserve_per_query = 0
+    if query_count and final_limit >= query_count:
+        reserve_per_query = max(1, final_limit // (2 * query_count))
 
     selected_paths: set[str] = set()
     if reserve_per_query:
