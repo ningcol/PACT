@@ -30,7 +30,7 @@
     },
     "task_id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^TASK-[A-Z0-9]+(?:[._-][A-Z0-9]+)*$"
     },
     "argv": {
       "type": "array",
@@ -207,5 +207,45 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 0
+          }
+        },
+        "required": [
+          "exit_code"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "pass"
+          }
+        }
+      }
+    }
+  ]
 }
