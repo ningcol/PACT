@@ -75,6 +75,45 @@ def _hash_untracked_file(digest, root: pathlib.Path, relative: str) -> None:
         raise WorkspaceError(f"cannot fingerprint untracked file {relative}: {exc}") from exc
 
 
+def _git_index_file_state(root: pathlib.Path, relative: str) -> str:
+    try:
+        result = _run_git(
+            root,
+            ["ls-files", "--stage", "-z", "--", relative],
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(
+            f"cannot inspect staged file {relative}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        raise WorkspaceError(f"cannot inspect staged file {relative}")
+    if not result.stdout:
+        return "missing"
+    return "index-sha256:" + hashlib.sha256(result.stdout).hexdigest()
+
+
+def _git_name_set(
+    root: pathlib.Path,
+    args: list[str],
+    installed_exclusions: set[str],
+) -> set[str]:
+    try:
+        result = _run_git(root, args)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(
+            "cannot enumerate Git workspace paths: " + str(exc)
+        ) from exc
+    if result.returncode != 0:
+        raise WorkspaceError(
+            "Git workspace path enumeration failed: " + " ".join(args)
+        )
+    return {
+        path
+        for path in _decode_nul_paths(result.stdout)
+        if path and not _excluded(path, installed_exclusions)
+    }
+
+
 def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
     root = git_root(cwd)
     if root is None:
@@ -85,56 +124,55 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
     try:
         head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
         head = head_result.stdout.strip() if head_result.returncode == 0 else None
-
-        staged = _run_git(
-            root,
-            ["diff", "--cached", "--binary", "--no-ext-diff", "--"],
-        )
-        unstaged = _run_git(
-            root,
-            ["diff", "--binary", "--no-ext-diff", "--"],
-        )
-        untracked = _run_git(
-            root,
-            ["ls-files", "--others", "--exclude-standard", "-z"],
-        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise WorkspaceError(f"cannot inspect Git workspace: {exc}") from exc
 
-    if staged.returncode != 0 or unstaged.returncode != 0 or untracked.returncode != 0:
-        raise WorkspaceError("Git workspace fingerprint commands failed")
-
-    untracked_paths = [
-        item.decode("utf-8", errors="surrogateescape")
-        for item in untracked.stdout.split(b"\0")
-        if item
-    ]
-    relevant_untracked = sorted(
-        relative
-        for relative in untracked_paths
-        if not _excluded(relative, installed_exclusions)
+    staged_paths = _git_name_set(
+        root,
+        ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
+        installed_exclusions,
+    )
+    unstaged_paths = _git_name_set(
+        root,
+        ["diff", "--name-only", "--no-renames", "-z", "--"],
+        installed_exclusions,
+    )
+    untracked_paths = _git_name_set(
+        root,
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+        installed_exclusions,
     )
 
     digest = hashlib.sha256()
-    digest.update(b"PACT-WORKSPACE-V1\n")
+    digest.update(b"PACT-WORKSPACE-V2\n")
     digest.update(f"HEAD:{head or '<none>'}\n".encode())
-    digest.update(b"STAGED\n")
-    digest.update(staged.stdout)
-    digest.update(b"\nUNSTAGED\n")
-    digest.update(unstaged.stdout)
-    digest.update(b"\nUNTRACKED\n")
 
-    for relative in relevant_untracked:
+    for relative in sorted(staged_paths):
+        digest.update(b"STAGED\0")
+        digest.update(relative.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        digest.update(_git_index_file_state(root, relative).encode("ascii"))
+        digest.update(b"\n")
+
+    for relative in sorted(unstaged_paths):
+        digest.update(b"UNSTAGED\0")
+        digest.update(relative.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        digest.update(_working_file_state(root, relative).encode("ascii"))
+        digest.update(b"\n")
+
+    digest.update(b"UNTRACKED\n")
+    for relative in sorted(untracked_paths):
         _hash_untracked_file(digest, root, relative)
 
-    dirty = bool(staged.stdout or unstaged.stdout or relevant_untracked)
+    dirty = bool(staged_paths or unstaged_paths or untracked_paths)
 
     return {
         "kind": "git",
         "sha256": digest.hexdigest(),
         "git_head": head,
         "dirty": dirty,
-        "untracked_count": len(relevant_untracked),
+        "untracked_count": len(untracked_paths),
     }
 
 
@@ -227,12 +265,13 @@ def _working_file_state(root: pathlib.Path, relative: str) -> str:
 
     digest = hashlib.sha256()
     try:
+        mode = path.stat().st_mode & 0o111
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
     except OSError as exc:
         raise WorkspaceError(f"cannot hash workspace file {relative}: {exc}") from exc
-    return "sha256:" + digest.hexdigest()
+    return f"mode:{mode:o}:sha256:" + digest.hexdigest()
 
 
 def _git_ref_file_state(
