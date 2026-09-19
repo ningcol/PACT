@@ -116,6 +116,7 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
     path = norm(item.get("path", ""))
     name = norm(pathlib.PurePosixPath(item.get("path", "")).stem)
     symbols = [norm(x) for x in item.get("symbols", [])]
+    identifiers = [norm(x) for x in item.get("identifiers", [])]
     imports = [norm(x.get("raw", "")) for x in item.get("imports", [])]
 
     score = 0
@@ -139,6 +140,13 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
         score += 45
         reasons.append("import text contains query")
 
+    if q and q in identifiers:
+        score += 55
+        reasons.append("exact generic identifier")
+    elif q and any(q in identifier for identifier in identifiers):
+        score += 30
+        reasons.append("generic identifier contains query")
+
     matched = 0
     for term in ts:
         term_score = 0
@@ -148,6 +156,8 @@ def score_code_file(item: dict, query: str) -> tuple[int, list[str]]:
             term_score = max(term_score, 25)
         if any(term in raw for raw in imports):
             term_score = max(term_score, 10)
+        if any(term in identifier for identifier in identifiers):
+            term_score = max(term_score, 8)
         if term_score:
             matched += 1
             score += term_score
@@ -209,6 +219,8 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
                 "language": item["language"],
                 "is_test": item["is_test"],
                 "symbols": item.get("symbols", []),
+                "identifiers": item.get("identifiers", []),
+                "parser_mode": item.get("parser_mode", "structured"),
                 "relation": "direct-match",
                 "confidence": "direct",
             })
@@ -266,6 +278,8 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
             "language": item["language"],
             "is_test": item["is_test"],
             "symbols": item.get("symbols", []),
+            "identifiers": item.get("identifiers", []),
+            "parser_mode": item.get("parser_mode", "structured"),
             "relation": "import-neighbor",
             "confidence": next(
                 (
