@@ -351,9 +351,9 @@ jobs:
         working-directory: /tmp/bubbletea
         run: |
           python3 pact.py doctor --strict
-          python3 pact.py discover "Update" --code --code-limit 8 --json | tee /tmp/bubbletea-discover.json
+          python3 pact.py discover "NewProgram ProgramOption" --code --code-limit 8 --json | tee /tmp/bubbletea-discover.json
           mkdir -p ".pact/runs/$TASK_ID" .pact/tmp
-          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change Bubble Tea update behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --query "Update Model Cmd"             --code             --output .pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json
+          python3 pact.py run --task-id "$TASK_ID"             --output ".pact/runs/$TASK_ID/context.json"             --             python3 pact.py context "change Bubble Tea program construction behavior"             --success "Go tests still pass and behavior remains compatible"             --risk medium             --query "NewProgram ProgramOption"             --code             --output .pact/tmp/bubbletea/.pact/tmp/bubbletea-context.json
           python3 pact.py impact --files tea.go --risk medium --json | tee /tmp/bubbletea-impact.json
           python3 - <<'PY'
           import json
@@ -366,7 +366,8 @@ jobs:
           assert "tea.go" in paths, paths
           tea=next(item for item in code if item["path"] == "tea.go")
           assert tea["parser_mode"] == "generic-lexical", tea
-          assert "Update" in tea["identifiers"], tea
+          assert "NewProgram" in tea["identifiers"], tea
+          assert "ProgramOption" in tea["identifiers"], tea
           assert len(code) <= 8, len(code)
 
           context_paths={item["path"] for item in c["code_artifacts"]}
