@@ -53,6 +53,7 @@ jobs:
               "",
               f"- Cases: {summary['case_count']}",
               f"- Oracle source files: {summary['oracle_file_count']}",
+              f"- Final code budget(s): {summary['configured_final_code_budgets']}",
               f"- Direct weighted recall: {summary['direct_weighted_recall']:.3f}",
               f"- Curated expanded-query weighted recall: {summary['expanded_weighted_recall']:.3f}",
               f"- Curated multi-query weighted recall: {summary['multi_query_weighted_recall']:.3f}",
@@ -63,12 +64,13 @@ jobs:
               f"single-expanded={summary['mean_expanded_context_code_files']:.2f}, "
               f"multi-query={summary['mean_multi_query_context_code_files']:.2f}",
               "",
-              "| Case | Direct recall | Single expanded | Multi-query | Direct ctx | Single ctx | Multi ctx |",
-              "|---|---:|---:|---:|---:|---:|---:|",
+              "| Case | Budget | Direct recall | Single expanded | Multi-query | Direct ctx | Single ctx | Multi ctx |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|",
           ]
           for item in data["results"]:
               lines.append(
-                  f"| {item['id']} | {item['direct']['recall']:.3f} | "
+                  f"| {item['id']} | {item['configured_final_code_budget']} | "
+                  f"{item['direct']['recall']:.3f} | "
                   f"{item['expanded']['recall']:.3f} | "
                   f"{item['multi_query']['recall']:.3f} | "
                   f"{item['direct']['context_code_files']} | "
