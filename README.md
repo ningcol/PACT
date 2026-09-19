@@ -240,6 +240,8 @@ This prevents generated folders/templates from being mistaken for a reviewed Pro
 
 Only mark vocabulary, Product Truth, architecture, authority, Owner Profile, verification reality, and Known Drift as reviewed (or explicitly not applicable) after they were actually inspected.
 
+Pending global baseline review is **advisory** in normal `pact status`. A fresh project can be operationally healthy while its repository-wide baseline is still incomplete. Use `pact readiness --require-ready` only when the project intentionally chooses full baseline review as a governance gate. Task safety remains enforced through Task Contract, Context, Evidence, Convergence, and completion policy.
+
 ## Repository structure
 
 Fresh adopted projects start with the control-plane nucleus only:
