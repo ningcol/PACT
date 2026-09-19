@@ -69,6 +69,16 @@ STRUCTURED_LANGUAGES = {
     "vue",
 }
 
+JS_RESOLVE_EXTENSIONS = (
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".vue",
+)
+
 GENERIC_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
 GENERIC_IDENTIFIER_LIMIT = 256
 GENERIC_STOPWORDS = {
@@ -272,10 +282,10 @@ def resolve_relative_js(
     base = (source.parent / spec).resolve()
     candidates = [base]
 
-    for ext in EXTENSIONS:
+    for ext in JS_RESOLVE_EXTENSIONS:
         candidates.append(pathlib.Path(str(base) + ext))
 
-    for ext in EXTENSIONS:
+    for ext in JS_RESOLVE_EXTENSIONS:
         candidates.append(base / ("index" + ext))
 
     for candidate in candidates:
