@@ -206,11 +206,11 @@ jobs:
             "after": "PACT was added only as ephemeral additive scaffold; discovery/context/impact checks ran and the original application still built and served backend/frontend.",
             "verification": [
               {
-                "claim": "The external application ran successfully after PACT adoption.",
+                "claim": "The pinned external application builds, initializes its database, starts the backend, and serves both health and frontend endpoints.",
                 "evidence_ids": ["EV-EXT-APP-SMOKE"]
               },
               {
-                "claim": "PACT generated code-aware task context from the real external source tree.",
+                "claim": "PACT produced a medium-risk task context from the external project's real source tree.",
                 "evidence_ids": ["EV-EXT-CONTEXT"]
               }
             ],
