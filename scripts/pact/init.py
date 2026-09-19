@@ -17,6 +17,7 @@ from distribution import (
     manifest_record,
     runtime_version,
     source_manifest,
+    read_install_manifest,
 )
 from runtime_bundle import ensure_runtime_bundle
 
@@ -218,23 +219,12 @@ def operation_entry(op: dict) -> dict:
     return generated_entry(op["path"], management=op["management"])
 
 
-def load_install_manifest(target: pathlib.Path) -> dict | None:
-    path = target / INSTALL_MANIFEST
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def write_install_manifest(
     target: pathlib.Path,
     operations: list[dict],
     created_paths: set[str],
 ) -> None:
-    existing = load_install_manifest(target)
+    existing = read_install_manifest(target)
     files = dict(existing.get("files", {})) if existing else {}
 
     for op in operations:
@@ -310,9 +300,14 @@ def main() -> int:
         print("PACT init: target must be a directory", file=sys.stderr)
         return 2
 
+    try:
+        existing_manifest = read_install_manifest(target)
+    except ValueError as exc:
+        print(f"PACT init: {exc}", file=sys.stderr)
+        return 2
+
     operations = plan(target, github_actions=args.github_actions)
 
-    existing_manifest = load_install_manifest(target)
     if args.apply and existing_manifest:
         installed_version = existing_manifest.get("runtime_version", "unknown")
         source_version = runtime_version(SOURCE_ROOT)
