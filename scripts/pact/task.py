@@ -55,7 +55,7 @@ def completion_blockers(errors: list[str]) -> list[str]:
         ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
         ("convergence-coverage", ("convergence coverage:",)),
         ("change-coverage", ("change coverage:", "Task changed file missing")),
-        ("ci-required", ("CI-metadata Evidence",)),
+        ("ci-metadata-required", ("CI-metadata Evidence",)),
     ]
     for code, needles in checks:
         if any(needle in text for needle in needles):
