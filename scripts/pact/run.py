@@ -31,6 +31,7 @@ def _pump_stream(
     stream,
     digest,
     output,
+    errors: list[BaseException],
 ) -> None:
     try:
         for chunk in iter(lambda: stream.read(64 * 1024), b""):
@@ -38,6 +39,8 @@ def _pump_stream(
             if output is not None:
                 output.write(chunk)
                 output.flush()
+    except BaseException as exc:
+        errors.append(exc)
     finally:
         stream.close()
 
@@ -63,15 +66,16 @@ def run_streamed(
     stdout_target = None if quiet else sys.stdout.buffer
     stderr_target = None if quiet else sys.stderr.buffer
 
+    pump_errors: list[BaseException] = []
     threads = [
         threading.Thread(
             target=_pump_stream,
-            args=(process.stdout, stdout_digest, stdout_target),
+            args=(process.stdout, stdout_digest, stdout_target, pump_errors),
             daemon=True,
         ),
         threading.Thread(
             target=_pump_stream,
-            args=(process.stderr, stderr_digest, stderr_target),
+            args=(process.stderr, stderr_digest, stderr_target, pump_errors),
             daemon=True,
         ),
     ]
@@ -81,6 +85,8 @@ def run_streamed(
     returncode = process.wait()
     for thread in threads:
         thread.join()
+    if pump_errors:
+        raise OSError(f"command output streaming failed: {pump_errors[0]}")
 
     return (
         int(returncode),
