@@ -26,8 +26,16 @@ def validate(receipt: dict) -> list[str]:
 
 
 def resolve_ref(root: pathlib.Path, ref: str) -> pathlib.Path:
-    path = pathlib.Path(ref).expanduser()
-    return path.resolve() if path.is_absolute() else (root / path).resolve()
+    root = root.resolve()
+    raw = pathlib.Path(ref).expanduser()
+    path = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"evidence ref escapes repository root: {ref}"
+        ) from exc
+    return path
 
 
 def verify_item(
@@ -46,7 +54,6 @@ def verify_item(
         "machine_backed": False,
         "ci_backed": False,
         "workspace_bound": False,
-        "pact_run": False,
     }
 
     if provenance == "manual":
@@ -56,18 +63,22 @@ def verify_item(
             )
         return errors, metrics
 
-    path = resolve_ref(root, ref)
+    try:
+        path = resolve_ref(root, ref)
+    except ValueError as exc:
+        return [str(exc)], metrics
+
     if not path.exists() or not path.is_file():
         return [f"evidence ref does not exist as a file: {ref}"], metrics
 
     if provenance == "file":
         if kind == "manual":
             errors.append("manual evidence kind cannot use file provenance")
-        metrics["machine_backed"] = not errors
+        # A repository file is source/static evidence. Its existence does not
+        # prove that observable behavior was executed successfully.
         return errors, metrics
 
     if provenance == "pact-run":
-        metrics["pact_run"] = True
         try:
             run_receipt = load(path)
         except Exception as exc:
@@ -158,7 +169,6 @@ def provenance_review(
         machine_count = 0
         ci_count = 0
         workspace_bound_count = 0
-        pact_run_count = 0
 
         for index, item in enumerate(refs):
             item_errors, metrics = verify_item(
@@ -175,7 +185,6 @@ def provenance_review(
             machine_count += int(metrics["machine_backed"])
             ci_count += int(metrics["ci_backed"])
             workspace_bound_count += int(metrics["workspace_bound"])
-            pact_run_count += int(metrics["pact_run"])
 
         if machine_count:
             machine_backed_claims += 1
@@ -188,23 +197,11 @@ def provenance_review(
             claim.get("required")
             and status == "pass"
             and risk in {"medium", "high"}
-            and machine_count == 0
-        ):
-            policy_gaps.append(
-                f"{claim_id}: {risk}-risk required pass claim needs at least "
-                "one machine-backed pact-run/file evidence source"
-            )
-
-        if (
-            claim.get("required")
-            and status == "pass"
-            and risk in {"medium", "high"}
-            and pact_run_count
             and workspace_bound_count == 0
         ):
             policy_gaps.append(
-                f"{claim_id}: {risk}-risk pact-run evidence is not bound "
-                "to the current workspace; rerun verification"
+                f"{claim_id}: {risk}-risk required pass claim needs at least "
+                "one passing pact-run receipt bound to the current workspace"
             )
 
     return errors, policy_gaps, {
