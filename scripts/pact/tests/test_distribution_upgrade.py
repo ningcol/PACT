@@ -184,6 +184,27 @@ class DistributionUpgradeTests(unittest.TestCase):
             root_entry.read_text(encoding="utf-8"),
         )
 
+    def test_unsafe_install_manifest_path_is_rejected(self) -> None:
+        manifest = self.scaffold()
+        manifest["files"]["../../outside"] = {
+            "management": "framework",
+            "source_path": "pact.py",
+            "source_sha256": "0" * 64,
+            "installed_sha256": "0" * 64,
+        }
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+
+        reinit = self.run_init("--apply")
+        self.assertEqual(reinit.returncode, 2)
+        self.assertIn("unsafe tracked path", reinit.stderr)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("unsafe tracked path", upgrade.stderr)
+
     def test_reinit_from_different_runtime_is_rejected(self) -> None:
         manifest = self.scaffold()
         manifest["runtime_version"] = "0.0.other"
