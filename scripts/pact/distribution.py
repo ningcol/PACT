@@ -103,8 +103,39 @@ def read_install_manifest(root: pathlib.Path) -> dict | None:
         raise ValueError(f"invalid .pact/install.json: {exc}") from exc
     if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
         raise ValueError("invalid .pact/install.json: expected object with files map")
+    if data.get("format_version") != 1:
+        raise ValueError("invalid .pact/install.json: unsupported format_version")
     if not isinstance(data.get("runtime_version"), str) or not data["runtime_version"]:
         raise ValueError("invalid .pact/install.json: missing runtime_version")
+
+    for relative, record in data["files"].items():
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or "\\" in relative
+            or pathlib.PurePosixPath(relative).is_absolute()
+            or ".." in pathlib.PurePosixPath(relative).parts
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: unsafe tracked path {relative!r}"
+            )
+        if not isinstance(record, dict):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid record for {relative!r}"
+            )
+        if record.get("management") not in {"framework", "seed"}:
+            raise ValueError(
+                f"invalid .pact/install.json: invalid management for {relative!r}"
+            )
+        installed_sha = record.get("installed_sha256")
+        if (
+            not isinstance(installed_sha, str)
+            or len(installed_sha) != 64
+            or any(ch not in "0123456789abcdef" for ch in installed_sha)
+        ):
+            raise ValueError(
+                f"invalid .pact/install.json: invalid installed_sha256 for {relative!r}"
+            )
     return data
 
 
