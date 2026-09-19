@@ -180,7 +180,7 @@ See `docs/evaluation/pilot-scorecard.md`.
 
 ## Safety boundary
 
-`init` is dry-run by default and never overwrites existing files. Fresh adoption uses the minimal install profile: executable/control-plane files are installed immediately, while empty Product/Architecture/Decision/Change/Drift/Skill scaffold is left unmaterialized. An existing `AGENTS.md` is preserved; PACT creates merge guidance under `.pact/` instead.
+`init` is dry-run by default and never overwrites existing files. Fresh adoption installs only the compact executable/control-plane surface, while empty Product/Architecture/Decision/Change/Drift/Skill scaffold is left unmaterialized. An existing `AGENTS.md` is preserved; PACT creates merge guidance under `.pact/` instead.
 
 ## Local task state
 
