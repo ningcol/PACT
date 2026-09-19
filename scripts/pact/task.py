@@ -134,6 +134,8 @@ def prepare(args) -> int:
             context_cmd.extend(["--goal", args.goal])
         for query in args.query:
             context_cmd.extend(["--query", query])
+        if args.token_budget is not None:
+            context_cmd.extend(["--token-budget", str(args.token_budget)])
         if args.code is True:
             context_cmd.append("--code")
         elif args.code is False:
@@ -458,6 +460,11 @@ def main() -> int:
         default=[],
         help="discovery query; repeat to fuse business/code vocabulary",
     )
+    prep.add_argument(
+        "--token-budget",
+        type=int,
+        help="override soft estimated materialization token budget",
+    )
     prep.add_argument("--task-id")
     prep.add_argument("--files", nargs="+")
     prep.add_argument("--base")
@@ -484,6 +491,8 @@ def main() -> int:
     if args.command == "prepare":
         if args.files and args.base:
             parser.error("--files and --base are mutually exclusive")
+        if args.token_budget is not None and args.token_budget < 0:
+            parser.error("--token-budget must be >= 0")
         return prepare(args)
     if args.command == "finish":
         return finish(args)
