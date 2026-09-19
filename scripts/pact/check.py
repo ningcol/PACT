@@ -300,13 +300,6 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    legacy = sum(a.metadata_format == "legacy-yaml" for a in artifacts)
-    if legacy:
-        print(
-            f"PACT: {legacy} legacy YAML artifact(s) remain readable; "
-            "new/edited artifacts should use TOML front matter."
-        )
-
     print("PACT: deterministic checks passed.")
     return 0
 
