@@ -80,6 +80,17 @@ JS_RESOLVE_EXTENSIONS = (
 )
 
 GENERIC_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
+GENERIC_C_LIKE_NONCODE = re.compile(
+    r'''(?:
+        //[^
+]* |
+        /\*.*?\*/ |
+        "(?:\\.|[^"\\])*" |
+        '(?:\\.|[^'\\])*' |
+        `(?:\\.|[^`\\])*`
+    )''',
+    re.DOTALL | re.VERBOSE,
+)
 GENERIC_IDENTIFIER_LIMIT = 256
 GENERIC_STOPWORDS = {
     "break", "case", "catch", "class", "const", "continue", "default",
@@ -217,11 +228,16 @@ def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
 
 
 def parse_generic_identifiers(path: pathlib.Path) -> list[str]:
-    """Bounded lexical fallback; no AST/import semantics are implied."""
+    """Bounded code-like lexical fallback; no AST/import semantics are implied."""
     try:
         text = path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
         return []
+
+    # Remove common C/Go/Java/Swift-style comments and quoted strings so
+    # prose/examples do not dominate the bounded identifier budget. This is a
+    # lexical noise filter, not a language parser.
+    text = GENERIC_C_LIKE_NONCODE.sub(" ", text)
 
     seen: set[str] = set()
     identifiers: list[str] = []
