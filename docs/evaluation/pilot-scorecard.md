@@ -83,9 +83,11 @@ Machine-observed dimensions include:
 
 - acceptance criteria and owner-visible Evidence coverage;
 - Context knowledge/code artifact counts and known unknowns;
+- Context token budget, selected/candidate estimated tokens, dropped candidates, and authority overage when available;
 - verification run count/pass/fail/workspace-change counts;
 - completion attempts and failed attempts;
-- stale-workspace, stale-Task-Contract, acceptance-gap, and CI-requirement blocks;
+- stale-workspace, stale-Task-Contract, acceptance-gap, Convergence-coverage, changed-file-coverage, and CI-requirement blocks;
+- task changed-file count/path attribution and final Impact presence when available;
 - Evidence claim states;
 - Convergence finding/owner-decision counts.
 
@@ -99,6 +101,16 @@ PACT deliberately leaves human-only dimensions in `human_required` instead of fa
 - PACT-specific overhead time.
 
 The machine observation complements the pilot evaluation record; it does not replace owner-observed data.
+
+To summarize all local prepared tasks without fabricating human metrics:
+
+```bash
+python pact.py eval --all-tasks --json
+```
+
+The machine summary reports overall and per-risk counts/means for verification, completion blockers, Context size/token use, and task changed files. Invalid local task state is returned in an `errors` collection rather than silently dropped.
+
+There is deliberately no combined 0–100 score. A lower Context size is not automatically better, and more trust blockers are not automatically worse: a blocker may represent a useful false-completion catch.
 
 ## Historical retrieval replay
 
