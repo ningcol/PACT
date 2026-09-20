@@ -195,6 +195,10 @@ def prepare(args) -> int:
         )
         if args.goal:
             context_cmd.extend(["--goal", args.goal])
+        # High-level task preparation always preserves the owner's task wording
+        # as primary retrieval intent. Repeatable --query values are additional
+        # search hypotheses, matching the recommended inspect surface.
+        context_cmd.extend(["--query", args.task])
         for query in args.query:
             context_cmd.extend(["--query", query])
         if args.token_budget is not None:
@@ -635,7 +639,7 @@ def main() -> int:
         "--query",
         action="append",
         default=[],
-        help="discovery query; repeat to fuse business/code vocabulary",
+        help="additional discovery query; repeat to fuse business/code vocabulary while preserving the task wording",
     )
     prep.add_argument(
         "--token-budget",
