@@ -1,0 +1,130 @@
+name: Temporary Context Query Latency
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-context-latency
+  TARGET_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TASK_TEXT: "optimize Feishu import image handling performance/UX: parallel image upload, download timeout/retry, loading progress, API image stats/results, better toast feedback"
+  SUCCESS_TEXT: "Feishu image import is faster and reports progress and failures clearly"
+
+jobs:
+  latency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned project and adopt PACT
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Warm disposable indexes
+        working-directory: /tmp/ziliu-context-latency
+        run: |
+          python3 pact.py map --ensure
+          python3 pact.py code-map --ensure
+
+      - name: Measure warm Context orchestration
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import statistics
+          import subprocess
+          import time
+
+          root = pathlib.Path(os.environ["TARGET_DIR"])
+          task = os.environ["TASK_TEXT"]
+          success = os.environ["SUCCESS_TEXT"]
+          extras = [
+              "parseFeishuContent processImagesInHtml uploadImageFromUrl",
+              "feishu-import-dialog loading progress toast",
+              "image-service uploadImageFromUrl retry timeout",
+          ]
+
+          def command(kind, index):
+              output = pathlib.Path("/tmp") / f"latency-{kind}-{index}.json"
+              argv = [
+                  "python3", "pact.py", "context", task,
+                  "--success", success,
+                  "--risk", "medium",
+                  "--code",
+                  "--code-limit", "12",
+                  "--token-budget", "40000",
+                  "--query", task,
+                  "--output", str(output),
+              ]
+              if kind == "supplemental":
+                  for query in extras:
+                      argv.extend(["--query", query])
+              return argv, output
+
+          samples = {"direct": [], "supplemental": []}
+          outputs = {}
+          rounds = 6
+          for index in range(rounds):
+              order = ["direct", "supplemental"] if index % 2 == 0 else ["supplemental", "direct"]
+              for kind in order:
+                  argv, output = command(kind, index)
+                  started = time.perf_counter()
+                  result = subprocess.run(
+                      argv, cwd=root, capture_output=True, text=True,
+                  )
+                  elapsed = time.perf_counter() - started
+                  if result.returncode != 0:
+                      raise SystemExit(result.stdout + result.stderr)
+                  samples[kind].append(elapsed)
+                  outputs[kind] = json.loads(output.read_text(encoding="utf-8"))
+
+          def stats(values):
+              return {
+                  "samples_seconds": [round(v, 4) for v in values],
+                  "median_seconds": round(statistics.median(values), 4),
+                  "mean_seconds": round(statistics.fmean(values), 4),
+                  "min_seconds": round(min(values), 4),
+                  "max_seconds": round(max(values), 4),
+              }
+
+          direct = stats(samples["direct"])
+          supplemental = stats(samples["supplemental"])
+          ratio = supplemental["median_seconds"] / direct["median_seconds"] if direct["median_seconds"] else None
+          absolute = supplemental["median_seconds"] - direct["median_seconds"]
+
+          report = {
+              "measurement": "warm-context-wall-clock",
+              "rounds_per_arm": rounds,
+              "direct": direct,
+              "supplemental": supplemental,
+              "median_ratio": round(ratio, 3) if ratio is not None else None,
+              "median_added_seconds": round(absolute, 4),
+              "selected_code_files_direct": len(outputs["direct"].get("code_artifacts", [])),
+              "selected_code_files_supplemental": len(outputs["supplemental"].get("code_artifacts", [])),
+              "selected_tokens_direct": outputs["direct"].get("context_budget", {}).get("selected_estimated_tokens"),
+              "selected_tokens_supplemental": outputs["supplemental"].get("context_budget", {}).get("selected_estimated_tokens"),
+              "fallback_hint_count": len(outputs["supplemental"].get("code_candidate_hints", [])),
+              "note": "Machine wall-clock on one hosted runner with warm indexes; not human PACT overhead minutes.",
+          }
+          rendered = json.dumps(report, ensure_ascii=False, indent=2)
+          print(rendered)
+          with pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write("# Warm Context Query Latency\n\n")
+              handle.write(f"- Direct median: **{direct['median_seconds']:.4f}s**\n")
+              handle.write(f"- Supplemental median: **{supplemental['median_seconds']:.4f}s**\n")
+              handle.write(f"- Added median: **{absolute:.4f}s**\n")
+              handle.write(f"- Median ratio: **{ratio:.3f}x**\n")
+              handle.write("\nMachine runtime only; does not measure owner cognitive/process overhead.\n")
+          PY
