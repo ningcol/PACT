@@ -85,6 +85,10 @@ The Context Envelope records:
 - candidates dropped by token budget vs count limits;
 - explicit authority overage.
 
+For task-primary Context with supplemental Agent queries, PACT may also expose up to five `code_candidate_hints`. These are metadata-only fallback candidates that ranked outside the selected canonical `code_artifacts` because the normal Context budget was already consumed. A hint includes the path, language, relation/confidence, retrieval reasons, and estimated file cost.
+
+Hints are **not selected Context**. They do not increase `selected_estimated_tokens`, do not participate in Convergence coverage/completion gates, and should not be auto-materialized. They are a bounded signal for selective follow-up when a candidate could materially change the task. If a hinted file is actually needed, inspect it deliberately or rerun Context with an explicit budget/limit change.
+
 Use `--token-budget` on `context` or `task prepare` only when the default risk budget should be overridden.
 
 ## 5. Risk adaptation

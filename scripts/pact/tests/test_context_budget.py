@@ -162,6 +162,57 @@ class ContextBudgetTests(unittest.TestCase):
             [0, 0, 1, 1],
         )
 
+    def test_code_candidate_hints_are_bounded_unselected_fallbacks(self) -> None:
+        for name, size in [
+            ("primary.ts", 400),
+            ("supplemental-a.ts", 800),
+            ("supplemental-b.ts", 1200),
+            ("supplemental-c.ts", 1600),
+        ]:
+            self.write_bytes(f"src/{name}", size)
+
+        def code(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "reasons": [f"matched {path}"],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        merged = context.compose_primary_preserving_pool(
+            [code("src/primary.ts", 10)],
+            [
+                code("src/supplemental-a.ts", 1000),
+                code("src/supplemental-b.ts", 900),
+            ],
+            [code("src/supplemental-c.ts", 800)],
+        )
+        selected = [merged[0], merged[1]]
+
+        hints = context.build_code_candidate_hints(
+            merged,
+            selected,
+            limit=2,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in hints],
+            ["src/supplemental-b.ts", "src/supplemental-c.ts"],
+        )
+        self.assertNotIn("src/primary.ts", [item["path"] for item in hints])
+        self.assertNotIn("src/supplemental-a.ts", [item["path"] for item in hints])
+        self.assertEqual(hints[0]["relation"], "direct-match")
+        self.assertEqual(hints[0]["confidence"], "direct")
+        self.assertEqual(hints[0]["reasons"], ["matched src/supplemental-b.ts"])
+        self.assertEqual(
+            hints[0]["estimated_tokens"],
+            context.estimated_file_tokens("src/supplemental-b.ts"),
+        )
+
     def test_supplemental_candidates_fill_remaining_primary_capacity(self) -> None:
         self.write_bytes("src/primary.ts", 400)
         self.write_bytes("src/supplemental.ts", 400)

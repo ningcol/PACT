@@ -96,6 +96,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 - high-level `task prepare` now preserves the task wording as primary retrieval intent and treats repeatable `--query` values as additional search hypotheses, matching recommended `inspect` behavior;
 - task-primary Context selection now preserves the files selected by the owner/task wording under the same count/token budgets before supplemental Agent queries fill remaining capacity; peer low-level multi-query fusion remains symmetric;
+- task-primary Context may expose up to five metadata-only `code_candidate_hints` for high-ranked fallback code paths that did not fit the selected canonical Context; hints do not change selected artifacts, token accounting, or completion coverage;
 - Python Code Map structured symbols now include direct class methods (without recursively indexing local nested functions), and generated Code Map/parse-cache versions are bumped so existing caches rebuild under the new retrieval semantics;
 - Code Map adds a bounded `generic-lexical` fallback for Go, Swift, Kotlin, Java, Rust, C/C++, C#, Ruby, and PHP;
 - generic fallback stores at most 256 lexical identifiers per file and creates no import/AST edges;
