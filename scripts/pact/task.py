@@ -524,7 +524,14 @@ def finish(args) -> int:
             "--files",
             *changed_files,
         )
-        impact_result = run_impact_atomically(impact_cmd, final_impact)
+        try:
+            impact_result = run_impact_atomically(impact_cmd, final_impact)
+        except (OSError, ValueError) as exc:
+            print(
+                f"PACT task finish: cannot publish final Impact: {exc}",
+                file=sys.stderr,
+            )
+            return 2
         if impact_result.returncode != 0:
             print(impact_result.stdout, end="")
             print(impact_result.stderr, end="", file=sys.stderr)
