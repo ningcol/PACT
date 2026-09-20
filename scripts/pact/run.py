@@ -22,6 +22,7 @@ from protocol_ids import validate_task_id
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "run-receipt.schema.json"
+DIRECT_CHILD_TERMINATE_GRACE_SECONDS = 2.0
 
 
 def now_iso() -> str:
@@ -44,6 +45,33 @@ def _pump_stream(
         errors.append(exc)
     finally:
         stream.close()
+
+
+def _terminate_direct_child(
+    process: subprocess.Popen,
+    *,
+    grace_seconds: float = DIRECT_CHILD_TERMINATE_GRACE_SECONDS,
+) -> None:
+    """Best-effort bounded cleanup for the direct verification child."""
+    if process.poll() is not None:
+        return
+
+    try:
+        process.terminate()
+    except OSError:
+        if process.poll() is not None:
+            return
+        raise
+
+    try:
+        process.wait(timeout=grace_seconds)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if process.poll() is None:
+        process.kill()
+    process.wait()
 
 
 def run_streamed(
@@ -83,7 +111,16 @@ def run_streamed(
     for thread in threads:
         thread.start()
 
-    returncode = process.wait()
+    try:
+        returncode = process.wait()
+    except BaseException:
+        try:
+            _terminate_direct_child(process)
+        finally:
+            for thread in threads:
+                thread.join()
+        raise
+
     for thread in threads:
         thread.join()
     if pump_errors:
@@ -200,6 +237,9 @@ def main() -> int:
             cwd=cwd,
             quiet=args.quiet,
         )
+    except KeyboardInterrupt:
+        print("PACT run: interrupted", file=sys.stderr)
+        return 130
     except OSError as exc:
         print(f"PACT run: cannot execute command: {exc}", file=sys.stderr)
         return 2
