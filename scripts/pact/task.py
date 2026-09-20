@@ -650,6 +650,15 @@ def finish(args) -> int:
     return completed.returncode
 
 
+def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
+    value = manifest.get(
+        "completion_bundle",
+        f".pact/completions/{task_id}",
+    )
+    bundle = pathlib.Path(value).expanduser()
+    return bundle if bundle.is_absolute() else ROOT / bundle
+
+
 def task_status(args) -> int:
     try:
         validate_task_id(args.task_id)
@@ -667,7 +676,7 @@ def task_status(args) -> int:
         print(f"PACT task status: {exc}", file=sys.stderr)
         return 2
 
-    bundle = confined_child(COMPLETION_ROOT, args.task_id)
+    bundle = completion_bundle_path(manifest, args.task_id)
     completion_files = {
         name: (bundle / filename).is_file()
         for name, filename in {
