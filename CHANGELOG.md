@@ -86,6 +86,8 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - fresh init uses nested `.pact/.gitignore` instead of touching the project root `.gitignore`;
 - cache/tasks/runs/completions/tmp are explicit local generated control-plane state;
 - `task prepare` stages all preparation artifacts under `.pact/tmp` and atomically publishes the task only after Context/Impact succeed;
+- task/completion state IDs must resolve to real direct children rather than symlink/junction aliases;
+- canonical `task.json` reads reject leaf symlinks, and task manifest updates are staged, fsynced, and atomically replaced so interrupted finish writes preserve the previous recoverable state;
 - failed preparation leaves no half-created visible task;
 - `--force` preserves the old task/completion until replacement preparation succeeds, then invalidates stale completion state.
 
