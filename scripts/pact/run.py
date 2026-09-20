@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import datetime, timezone
 
@@ -93,6 +94,31 @@ def run_streamed(
         stdout_digest.hexdigest(),
         stderr_digest.hexdigest(),
     )
+
+
+def publish_receipt(output: pathlib.Path, receipt: dict) -> None:
+    """Atomically publish a validated run receipt without following a leaf symlink."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(receipt, ensure_ascii=False, indent=2) + "\n"
+
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.pact-run-",
+        suffix=".tmp",
+        dir=output.parent,
+    )
+    temporary = pathlib.Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, output)
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
 
 
 def ci_provenance() -> dict | None:
@@ -220,13 +246,13 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    print(f"PACT run receipt: {output}", file=sys.stderr)
+    try:
+        publish_receipt(output, receipt)
+    except OSError as exc:
+        print(f"PACT run: cannot publish receipt: {exc}", file=sys.stderr)
+        return 2
 
+    print(f"PACT run receipt: {output}", file=sys.stderr)
     return returncode
 
 

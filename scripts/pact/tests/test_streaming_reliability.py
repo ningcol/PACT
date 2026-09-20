@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -23,6 +24,14 @@ spec = importlib.util.spec_from_file_location(
 workspace = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(workspace)
+
+run_spec = importlib.util.spec_from_file_location(
+    "pact_run_reliability",
+    RUN,
+)
+run_module = importlib.util.module_from_spec(run_spec)
+assert run_spec.loader is not None
+run_spec.loader.exec_module(run_module)
 
 
 class StreamingReliabilityTests(unittest.TestCase):
@@ -147,6 +156,64 @@ class StreamingReliabilityTests(unittest.TestCase):
 
         self.assertEqual(second["file_count"], 1)
         self.assertNotEqual(first["sha256"], second["sha256"])
+
+    def test_atomic_receipt_replaces_leaf_symlink_without_following_target(self) -> None:
+        receipt = self.root / ".pact" / "runs" / "TASK-SYMLINK" / "run.json"
+        receipt.parent.mkdir(parents=True)
+        outside = pathlib.Path(self.temp.name) / "outside-receipt.json"
+        outside.write_text("KEEP-OUTSIDE\n", encoding="utf-8")
+        try:
+            os.symlink(outside, receipt)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(RUN),
+                "--task-id",
+                "TASK-SYMLINK",
+                "--output",
+                str(receipt),
+                "--cwd",
+                str(self.root),
+                "--quiet",
+                "--",
+                sys.executable,
+                "-c",
+                "print('ok')",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(receipt.is_symlink())
+        self.assertEqual(outside.read_text(encoding="utf-8"), "KEEP-OUTSIDE\n")
+        self.assertEqual(json.loads(receipt.read_text(encoding="utf-8"))["status"], "pass")
+
+    def test_atomic_receipt_preserves_existing_file_when_commit_fails(self) -> None:
+        receipt = self.root / ".pact" / "runs" / "TASK-ATOMIC" / "run.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("ORIGINAL\n", encoding="utf-8")
+        candidate = {
+            "version": 2,
+            "task_id": "TASK-ATOMIC",
+        }
+
+        with mock.patch.object(
+            run_module.os,
+            "replace",
+            side_effect=OSError("simulated atomic commit failure"),
+        ):
+            with self.assertRaisesRegex(OSError, "simulated atomic commit failure"):
+                run_module.publish_receipt(receipt, candidate)
+
+        self.assertEqual(receipt.read_text(encoding="utf-8"), "ORIGINAL\n")
+        self.assertEqual(
+            list(receipt.parent.glob(".run.json.pact-run-*.tmp")),
+            [],
+        )
 
 
 if __name__ == "__main__":
