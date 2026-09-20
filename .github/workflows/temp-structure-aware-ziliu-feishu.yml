@@ -1,0 +1,167 @@
+name: Temporary Structure-aware Blind Query Evaluation - Ziliu Feishu
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-feishu-blind
+  BASE_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TARGET_REF: a900bd01d8dcb1098adb151a0eff2a32e908c58b
+  TASK_TEXT: "optimize Feishu import image handling performance/UX: parallel image upload, download timeout/retry, loading progress, API image stats/results, better toast feedback"
+  SUCCESS_TEXT: "Feishu image import is faster and reports progress and failures clearly"
+
+jobs:
+  structure-aware-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned pre-change project
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_REF"
+
+      - name: Fresh adopt current PACT source
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Generate direct frozen-task Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --output /tmp/ziliu-direct-context.json
+
+      - name: Generate structure-aware frozen-query Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --output /tmp/ziliu-structure-context.json
+
+      - name: Reveal historical oracle after Contexts are frozen
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path(os.environ["TARGET_DIR"])
+          base = os.environ["BASE_REF"]
+          target = os.environ["TARGET_REF"]
+          supported = {".py", ".js", ".jsx", ".ts", ".tsx", ".vue", ".go", ".swift", ".kt", ".kts", ".java", ".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php"}
+          changed = subprocess.run(
+              ["git", "diff", "--name-only", "--no-renames", base, target, "--"],
+              cwd=root, check=True, capture_output=True, text=True,
+          ).stdout.splitlines()
+          oracle = []
+          for rel in changed:
+              if pathlib.PurePosixPath(rel).suffix.lower() not in supported:
+                  continue
+              exists = subprocess.run(
+                  ["git", "cat-file", "-e", f"{base}:{rel}"],
+                  cwd=root, capture_output=True,
+              )
+              if exists.returncode == 0:
+                  oracle.append(rel)
+          if len(oracle) < 2:
+              raise SystemExit(f"expected multi-file source oracle, found {oracle}")
+          pathlib.Path("/tmp/ziliu-oracle.json").write_text(
+              json.dumps({"changed": changed, "oracle": oracle}, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print("Revealed oracle:", oracle)
+          PY
+
+      - name: Compare direct and structure-aware retrieval
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          direct = json.loads(pathlib.Path("/tmp/ziliu-direct-context.json").read_text(encoding="utf-8"))
+          aware = json.loads(pathlib.Path("/tmp/ziliu-structure-context.json").read_text(encoding="utf-8"))
+          oracle = json.loads(pathlib.Path("/tmp/ziliu-oracle.json").read_text(encoding="utf-8"))["oracle"]
+          task = os.environ["TASK_TEXT"]
+          frozen = [
+              "parseFeishuContent processImagesInHtml uploadImageFromUrl",
+              "feishu-import-dialog loading progress toast",
+              "image-service uploadImageFromUrl retry timeout",
+          ]
+          if direct.get("discovery_queries") != [task]:
+              raise SystemExit(f"direct query discipline changed: {direct.get('discovery_queries')}")
+          if aware.get("discovery_queries") != frozen:
+              raise SystemExit(f"structure-aware query discipline changed: {aware.get('discovery_queries')}")
+
+          def metrics(context):
+              paths = [item["path"] for item in context.get("code_artifacts", [])]
+              matched = [path for path in oracle if path in paths]
+              budget = context.get("context_budget") or {}
+              return {
+                  "queries": context.get("discovery_queries", []),
+                  "code_files": len(paths),
+                  "paths": paths,
+                  "oracle_files": oracle,
+                  "matched_oracle_files": matched,
+                  "missing_oracle_files": [path for path in oracle if path not in paths],
+                  "recall": len(matched) / len(oracle),
+                  "known_unknowns": len(context.get("known_unknowns", [])),
+                  "token_budget": budget.get("limit_tokens"),
+                  "selected_estimated_tokens": budget.get("selected_estimated_tokens"),
+                  "candidate_estimated_tokens": budget.get("candidate_estimated_tokens"),
+                  "dropped_candidates": budget.get("dropped_candidates"),
+                  "dropped_for_token_budget": budget.get("dropped_for_token_budget"),
+                  "dropped_for_count_limit": budget.get("dropped_for_count_limit"),
+                  "authority_overage_tokens": budget.get("authority_overage_tokens"),
+              }
+
+          report = {
+              "version": 1,
+              "evaluation": "structure-aware-blind-agent-query-generation",
+              "repository": "ningcol/ziliu",
+              "base_commit": os.environ["BASE_REF"],
+              "target_commit": os.environ["TARGET_REF"],
+              "task": task,
+              "query_provenance": "frozen-on-issue-123-after-prechange-only-structure-stage",
+              "limitation": "Frozen task summary omitted simple-editor deletion and Vercel timeout details present in the original historical commit message.",
+              "direct": metrics(direct),
+              "structure_aware_agent": metrics(aware),
+          }
+          rendered = json.dumps(report, ensure_ascii=False, indent=2)
+          print(rendered)
+          pathlib.Path("/tmp/ziliu-structure-aware-report.json").write_text(rendered + "\n", encoding="utf-8")
+
+          with pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write("# Structure-aware Blind Query Evaluation\n\n")
+              handle.write(f"- Oracle files: `{oracle}`\n")
+              handle.write(f"- Direct recall: **{report['direct']['recall']:.3f}** ({report['direct']['matched_oracle_files']})\n")
+              handle.write(f"- Structure-aware recall: **{report['structure_aware_agent']['recall']:.3f}** ({report['structure_aware_agent']['matched_oracle_files']})\n")
+              handle.write(f"- Direct Context: {report['direct']['code_files']} files / {report['direct']['selected_estimated_tokens']} estimated tokens\n")
+              handle.write(f"- Structure-aware Context: {report['structure_aware_agent']['code_files']} files / {report['structure_aware_agent']['selected_estimated_tokens']} estimated tokens\n")
+              handle.write("\nKnown limitation: frozen task summary omitted some details from the original commit message; do not over-interpret misses for those omitted details.\n")
+          PY
