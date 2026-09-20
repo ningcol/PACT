@@ -44,6 +44,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Reliability hardening
 
+- `task finish` now atomically publishes completion-attempt history and stages Final Impact before replacing its canonical path, so persistence failures preserve prior valid derived state and do not follow leaf symlinks;
 - `pact init --apply` now rejects parent-directory symlink escapes and treats existing leaf symlinks, including broken symlinks, as occupied paths under no-overwrite semantics;
 - `pact upgrade` now applies the same repository confinement during planning/provenance reads, rejecting symlinked install manifests and framework-managed leaf symlinks before hashing or mutation;
 - non-Git workspace fingerprints now include directory symlink identity/target without traversing linked directories, so retargeting invalidates workspace-bound Evidence;
