@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -147,6 +148,48 @@ class AdoptedDiscoveryOwnershipTests(unittest.TestCase):
         code = self.run_code_map()
         code_paths = {item["path"] for item in code["files"]}
         self.assertNotIn("scripts/pact/runtime.py", code_paths)
+
+    def make_external_symlinks(self) -> tuple[pathlib.Path, pathlib.Path]:
+        outside_root = pathlib.Path(self.temp.name).parent / (
+            pathlib.Path(self.temp.name).name + "-outside"
+        )
+        outside_root.mkdir(exist_ok=True)
+        self.addCleanup(shutil.rmtree, outside_root, True)
+        outside_doc = outside_root / "secret.md"
+        outside_code = outside_root / "secret.py"
+        outside_doc.write_text("# Outside secret\nDO-NOT-INDEX\n", encoding="utf-8")
+        outside_code.write_text(
+            "def outside_secret_symbol():\n    return 'DO-NOT-INDEX'\n",
+            encoding="utf-8",
+        )
+
+        doc_link = self.root / "docs" / "external.md"
+        code_link = self.root / "src" / "external.py"
+        try:
+            os.symlink(outside_doc, doc_link)
+            os.symlink(outside_code, code_link)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+        return doc_link, code_link
+
+    def assert_external_symlinks_not_indexed(self) -> None:
+        project = self.run_map()
+        project_paths = {item["path"] for item in project["documents"]}
+        self.assertNotIn("docs/external.md", project_paths)
+
+        code = self.run_code_map()
+        code_paths = {item["path"] for item in code["files"]}
+        self.assertNotIn("src/external.py", code_paths)
+
+    def test_filesystem_discovery_does_not_follow_external_file_symlinks(self) -> None:
+        self.make_external_symlinks()
+        self.assert_external_symlinks_not_indexed()
+
+    def test_git_discovery_does_not_follow_external_file_symlinks(self) -> None:
+        self.make_external_symlinks()
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        self.assert_external_symlinks_not_indexed()
 
 
 if __name__ == "__main__":
