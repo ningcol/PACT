@@ -335,6 +335,53 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(task_manifest.read_bytes(), original_manifest)
         self.assertTrue(marker.is_file())
 
+    def test_task_status_uses_manifest_custom_completion_bundle(self) -> None:
+        task_id = "TASK-CUSTOM-BUNDLE"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "custom completion bundle status",
+            "--success",
+            "Status follows the manifest bundle path",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+
+        default_bundle = self.root / ".pact" / "completions" / task_id
+        self.assertFalse(default_bundle.exists())
+
+        custom_relative = pathlib.Path("custom-completions") / task_id
+        custom_bundle = self.root / custom_relative
+        custom_bundle.mkdir(parents=True)
+        for name in ("evidence.json", "convergence.json", "owner-report.json"):
+            (custom_bundle / name).write_text("{}\n", encoding="utf-8")
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["status"] = "completed"
+        manifest["completion_bundle"] = custom_relative.as_posix()
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        status = self.pact("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        data = json.loads(status.stdout)
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(
+            data["completion_files"],
+            {
+                "evidence": True,
+                "convergence": True,
+                "owner_report": True,
+            },
+        )
+
     def test_task_prepare_forwards_token_budget(self) -> None:
         task_id = "TASK-TOKEN-BUDGET"
         prepared = self.pact(
