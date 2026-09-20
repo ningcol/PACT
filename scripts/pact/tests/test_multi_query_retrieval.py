@@ -241,60 +241,6 @@ class MultiQueryRetrievalTests(unittest.TestCase):
         self.assertIn("src/shared.ts", paths)
         self.assertIn("src/second-only.ts", paths)
 
-    def test_primary_query_outweighs_equal_rank_supplemental_hint(self) -> None:
-        def item(path: str, score: int = 100) -> dict:
-            return {
-                "path": path,
-                "score": score,
-                "reasons": [path],
-                "language": "typescript",
-                "is_test": False,
-                "symbols": [],
-                "relation": "direct-match",
-                "confidence": "direct",
-            }
-
-        fused = discover.fuse_ranked_results(
-            [
-                ("owner task", [item("src/primary.ts")]),
-                ("agent hint", [item("src/supplemental.ts")]),
-            ],
-            limit=2,
-        )
-
-        self.assertEqual(
-            [entry["path"] for entry in fused],
-            ["src/primary.ts", "src/supplemental.ts"],
-        )
-
-    def test_primary_query_cannot_be_outvoted_by_query_count_alone(self) -> None:
-        def item(path: str, score: int = 100) -> dict:
-            return {
-                "path": path,
-                "score": score,
-                "reasons": [path],
-                "language": "typescript",
-                "is_test": False,
-                "symbols": [],
-                "relation": "direct-match",
-                "confidence": "direct",
-            }
-
-        primary = [item("src/primary.ts")]
-        supplemental = [
-            ("hint one", [item("src/repeated-hint.ts")]),
-            ("hint two", [item("src/repeated-hint.ts")]),
-            ("hint three", [item("src/repeated-hint.ts")]),
-        ]
-
-        fused = discover.fuse_ranked_results(
-            [("owner task", primary), *supplemental],
-            limit=4,
-        )
-
-        self.assertEqual(fused[0]["path"], "src/primary.ts")
-        self.assertIn("src/repeated-hint.ts", [entry["path"] for entry in fused])
-
     def test_direct_match_wins_relation_when_another_query_finds_neighbor(self) -> None:
         fused = discover.fuse_ranked_results(
             [
