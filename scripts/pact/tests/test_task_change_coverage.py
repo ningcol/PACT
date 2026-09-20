@@ -168,6 +168,49 @@ class TaskChangedFileTests(unittest.TestCase):
         project_change = workspace.task_changed_files(self.root, baseline)
         self.assertEqual(project_change["changed_files"], [".pact/config.toml"])
 
+    def test_filesystem_fallback_excludes_install_provenance_only(self) -> None:
+        nongit = pathlib.Path(self.temp.name) / "nongit-project"
+        nongit.mkdir()
+        (nongit / "README.md").write_text("# Demo\n", encoding="utf-8")
+
+        init = subprocess.run(
+            [
+                sys.executable,
+                str(INIT),
+                "--target",
+                str(nongit),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+
+        snapshot = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertEqual(snapshot["file_count"], 1)
+
+        manifest_path = nongit / ".pact" / "install.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=4) + "\n",
+            encoding="utf-8",
+        )
+        after_manifest_change = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertEqual(
+            after_manifest_change["sha256"],
+            snapshot["sha256"],
+        )
+        self.assertEqual(after_manifest_change["file_count"], 1)
+
+        config = nongit / ".pact" / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8") + "\n# project-owned customization\n",
+            encoding="utf-8",
+        )
+        customized = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertNotEqual(customized["sha256"], snapshot["sha256"])
+        self.assertEqual(customized["file_count"], 2)
+
     def test_high_level_finish_requires_changed_file_convergence_coverage(self) -> None:
         (self.root / "README.md").write_text(
             "# Demo\n\nFeature behavior.\n",
