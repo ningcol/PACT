@@ -12,7 +12,7 @@ env:
   TARGET_DIR: /tmp/doubao
   TARGET_REF: 78aaedd030bc2e24d71e34598326e45cb5cf8127
   TASK_ID: REAL-DOUBAO-LIFECYCLE-001
-  PACT_REF: ${{ github.event.pull_request.head.sha }}
+  PACT_REF: 58bf0168d7ea6155c7d7c050c14a5440c6a74f82
 
 jobs:
   lifecycle:
@@ -66,6 +66,27 @@ jobs:
             --query "round_robin_index get_idle_client" \
             --task-id "$TASK_ID" \
             --json | tee /tmp/doubao-prepare.json
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          prep = json.load(open("/tmp/doubao-prepare.json", encoding="utf-8"))
+          context = json.loads(pathlib.Path(prep["context"]).read_text(encoding="utf-8"))
+          expected_task = "Document round-robin dispatch without changing behavior"
+          assert context["discovery_queries"][0] == expected_task, context["discovery_queries"]
+          assert "round_robin_index get_idle_client" in context["discovery_queries"], context["discovery_queries"]
+          code_paths = {item["path"] for item in context.get("code_artifacts", [])}
+          assert "McpServer/server.py" in code_paths, {
+              "queries": context["discovery_queries"],
+              "code_paths": sorted(code_paths),
+              "budget": context.get("context_budget"),
+          }
+          print(
+              "Prepared Context contains McpServer/server.py",
+              context["discovery_queries"],
+              sorted(code_paths),
+          )
+          PY
 
       - name: Make one real non-behavioral source change
         working-directory: /tmp/doubao
