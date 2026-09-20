@@ -44,6 +44,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 ### Reliability hardening
 
 - `pact init --apply` now rejects parent-directory symlink escapes and treats existing leaf symlinks, including broken symlinks, as occupied paths under no-overwrite semantics;
+- `pact upgrade` now applies the same repository confinement during planning/provenance reads, rejecting symlinked install manifests and framework-managed leaf symlinks before hashing or mutation;
 - non-Git workspace fingerprints now include directory symlink identity/target without traversing linked directories, so retargeting invalidates workspace-bound Evidence;
 - `pact init --apply` now stages all would-be-created files before target mutation, publishes them atomically, commits install provenance last, and rolls back transaction-created files/manifest state on failure;
 - Project Map and Code Map freshness fingerprints now include source-content SHA256 instead of relying on size/mtime;
