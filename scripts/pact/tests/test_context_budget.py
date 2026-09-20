@@ -162,6 +162,41 @@ class ContextBudgetTests(unittest.TestCase):
             [0, 0, 1, 1],
         )
 
+    def test_supplemental_candidates_fill_remaining_primary_capacity(self) -> None:
+        self.write_bytes("src/primary.ts", 400)
+        self.write_bytes("src/supplemental.ts", 400)
+
+        def code(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        merged = context.compose_primary_preserving_pool(
+            [code("src/primary.ts", 10)],
+            [code("src/supplemental.ts", 1000)],
+            [],
+        )
+
+        _, selected, budget = context.select_context_candidates(
+            [],
+            merged,
+            token_budget=500,
+            knowledge_limit=8,
+            code_limit=2,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in selected],
+            ["src/primary.ts", "src/supplemental.ts"],
+        )
+        self.assertEqual(budget["dropped_candidates"], 0)
+
     def test_supplemental_candidates_do_not_displace_selected_primary_under_token_pressure(self) -> None:
         self.write_bytes("src/primary-a.ts", 400)
         self.write_bytes("src/primary-b.ts", 400)
