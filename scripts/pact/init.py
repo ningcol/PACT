@@ -150,13 +150,33 @@ def generated_entry(path: str, management: str = "seed") -> dict:
     }
 
 
+def path_present(path: pathlib.Path) -> bool:
+    """Treat any leaf symlink, including a broken one, as an existing path."""
+    return path.exists() or path.is_symlink()
+
+
+def safe_init_target(target: pathlib.Path, relative: str) -> pathlib.Path:
+    """Return an init destination without following a parent symlink outside target."""
+    pure = pathlib.PurePosixPath(relative)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise RuntimeError(f"unsafe init path: {relative!r}")
+
+    target_root = target.resolve()
+    destination = target / pathlib.Path(*pure.parts)
+    parent = destination.parent.resolve()
+    if parent != target_root and target_root not in parent.parents:
+        raise RuntimeError(f"init path escapes target through symlink: {relative!r}")
+    return destination
+
+
 def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     operations: list[dict] = []
 
     for entry in source_manifest(SOURCE_ROOT):
-        destination = target / entry["target"]
-        action = "skip" if destination.exists() else "create"
-        reason = "already exists" if destination.exists() else "missing scaffold"
+        destination = safe_init_target(target, entry["target"].as_posix())
+        present = path_present(destination)
+        action = "skip" if present else "create"
+        reason = "already exists" if present else "missing scaffold"
 
         operations.append({
             "action": action,
@@ -166,12 +186,12 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
             "reason": reason,
         })
 
-    agents = target / "AGENTS.md"
-    if agents.exists():
+    agents = safe_init_target(target, "AGENTS.md")
+    if path_present(agents):
         rel = pathlib.Path(".pact/AGENT_BOOTSTRAP.md")
-        destination = target / rel
+        destination = safe_init_target(target, rel.as_posix())
         operations.append({
-            "action": "skip" if destination.exists() else "create-generated",
+            "action": "skip" if path_present(destination) else "create-generated",
             "path": rel.as_posix(),
             "source": None,
             "management": "seed",
@@ -189,15 +209,15 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
     if github_actions:
         entry = github_actions_entry(SOURCE_ROOT)
         if entry:
-            destination = target / entry["target"]
+            destination = safe_init_target(target, entry["target"].as_posix())
             operations.append({
-                "action": "skip" if destination.exists() else "create",
+                "action": "skip" if path_present(destination) else "create",
                 "path": entry["target"].as_posix(),
                 "source": entry["source_path"],
                 "management": entry["management"],
                 "reason": (
                     "existing PACT workflow preserved"
-                    if destination.exists()
+                    if path_present(destination)
                     else "opt-in PACT project CI integration"
                 ),
             })
@@ -232,7 +252,7 @@ def build_install_manifest(
     for op in operations:
         if op["path"] not in created_paths:
             continue
-        destination = target / op["path"]
+        destination = safe_init_target(target, op["path"])
         if not destination.is_file():
             raise RuntimeError(f"created init file missing before manifest commit: {op['path']}")
         entry = operation_entry(op)
@@ -288,7 +308,9 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
     target_parent = target.parent
     target_parent.mkdir(parents=True, exist_ok=True)
 
-    manifest_path = target / INSTALL_MANIFEST
+    manifest_path = safe_init_target(target, INSTALL_MANIFEST.as_posix())
+    if manifest_path.is_symlink():
+        raise RuntimeError("init install manifest path must not be a symlink")
     manifest_existed = manifest_path.is_file()
     manifest_backup = (
         manifest_path.read_bytes()
@@ -319,8 +341,8 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             target.mkdir(parents=True, exist_ok=True)
             for op in create_ops:
                 relative = op["path"]
-                destination = target / relative
-                if destination.exists():
+                destination = safe_init_target(target, relative)
+                if path_present(destination):
                     # Re-check at publish time to preserve no-overwrite semantics
                     # if another process created the path after planning.
                     continue
@@ -330,7 +352,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 temp_destination = destination.parent / (
                     f".{destination.name}.pact-init-tmp"
                 )
-                if temp_destination.exists():
+                if path_present(temp_destination):
                     temp_destination.unlink()
                 shutil.copy2(staged, temp_destination)
                 os.replace(temp_destination, destination)
@@ -358,7 +380,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             # Validate the final recorded hashes after manifest commit.
             for relative in created:
                 record = manifest["files"].get(relative)
-                destination = target / relative
+                destination = safe_init_target(target, relative)
                 if not record or not destination.is_file():
                     raise RuntimeError(
                         f"init final state missing recorded file: {relative}"
@@ -380,7 +402,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             # Manifest was committed last, so rollback only removes files this
             # transaction created and restores the prior manifest if any.
             for relative in reversed(created):
-                destination = target / relative
+                destination = safe_init_target(target, relative)
                 try:
                     if destination.is_file() or destination.is_symlink():
                         destination.unlink()
@@ -394,7 +416,7 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                     restore = txn / "restore-install.json"
                     restore.write_bytes(manifest_backup)
                     os.replace(restore, manifest_path)
-                elif manifest_path.exists():
+                elif path_present(manifest_path):
                     manifest_path.unlink()
                     cleanup_empty_parents(manifest_path.parent, target)
             except OSError:
@@ -426,6 +448,9 @@ def main() -> int:
         return 2
 
     try:
+        manifest_path = safe_init_target(target, INSTALL_MANIFEST.as_posix())
+        if manifest_path.is_symlink():
+            raise ValueError("invalid .pact/install.json: path must not be a symlink")
         existing_manifest = read_install_manifest(target)
     except ValueError as exc:
         print(f"PACT init: {exc}", file=sys.stderr)
