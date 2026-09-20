@@ -5,9 +5,11 @@ import importlib.util
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -15,6 +17,7 @@ from unittest import mock
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUNTIME = PROJECT_ROOT / "scripts" / "pact"
 RUN = RUNTIME / "run.py"
+PACT = RUNTIME / "pact.py"
 sys.path.insert(0, str(RUNTIME))
 
 spec = importlib.util.spec_from_file_location(
@@ -156,6 +159,89 @@ class StreamingReliabilityTests(unittest.TestCase):
 
         self.assertEqual(second["file_count"], 1)
         self.assertNotEqual(first["sha256"], second["sha256"])
+
+    def test_direct_child_cleanup_terminates_process_portably(self) -> None:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import time; time.sleep(30)",
+            ]
+        )
+        try:
+            run_module._terminate_direct_child(process, grace_seconds=0.2)
+            self.assertIsNotNone(process.poll())
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
+    @unittest.skipIf(
+        os.name == "nt" or not hasattr(os, "killpg"),
+        "POSIX process-group signal integration",
+    )
+    def test_interrupt_terminates_sigint_ignoring_direct_child(self) -> None:
+        receipt = self.root / ".pact" / "runs" / "TASK-INTERRUPT" / "run.json"
+        ready = pathlib.Path(self.temp.name) / "child-ready.txt"
+        survived = pathlib.Path(self.temp.name) / "child-survived.txt"
+        child_code = (
+            "import pathlib,signal,time;"
+            "signal.signal(signal.SIGINT, signal.SIG_IGN);"
+            f"pathlib.Path({str(ready)!r}).write_text('ready\\n', encoding='utf-8');"
+            "time.sleep(2.0);"
+            f"pathlib.Path({str(survived)!r}).write_text('survived\\n', encoding='utf-8')"
+        )
+
+        wrapper = subprocess.Popen(
+            [
+                sys.executable,
+                str(PACT),
+                "run",
+                "--task-id",
+                "TASK-INTERRUPT",
+                "--output",
+                str(receipt),
+                "--cwd",
+                str(self.root),
+                "--quiet",
+                "--",
+                sys.executable,
+                "-c",
+                child_code,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                if wrapper.poll() is not None:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(ready.exists(), "verification child did not become ready")
+
+            os.killpg(wrapper.pid, signal.SIGINT)
+            stdout, stderr = wrapper.communicate(timeout=5)
+
+            self.assertEqual(wrapper.returncode, 130, stdout + stderr)
+            self.assertIn("PACT run: interrupted", stderr)
+            self.assertNotIn("Traceback", stderr)
+            self.assertFalse(receipt.exists())
+
+            time.sleep(2.2)
+            self.assertFalse(
+                survived.exists(),
+                "SIGINT-ignoring direct child continued after pact run exited",
+            )
+        finally:
+            if wrapper.poll() is None:
+                try:
+                    os.killpg(wrapper.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                wrapper.wait(timeout=5)
 
     def test_atomic_receipt_replaces_leaf_symlink_without_following_target(self) -> None:
         receipt = self.root / ".pact" / "runs" / "TASK-SYMLINK" / "run.json"
