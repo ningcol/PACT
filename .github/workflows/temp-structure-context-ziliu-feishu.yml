@@ -1,0 +1,61 @@
+name: Temporary Pre-change Structure Context - Ziliu Feishu
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-structure-context
+  BASE_CANDIDATE: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+
+jobs:
+  prechange-structure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Clone candidate pre-change project only
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_CANDIDATE"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_CANDIDATE"
+
+      - name: Show bounded task-relevant source paths
+        run: |
+          cd "$TARGET_DIR"
+          git ls-files | python3 - <<'PY'
+          import re
+          import sys
+
+          keywords = re.compile(r"(feishu|image|editor|upload|import|toast|loading|progress|api)", re.I)
+          suffixes = (".py", ".js", ".jsx", ".ts", ".tsx", ".vue")
+          paths = [line.strip() for line in sys.stdin if line.strip()]
+          selected = [p for p in paths if p.lower().endswith(suffixes) and keywords.search(p)]
+          for path in selected[:160]:
+              print(path)
+          print(f"STRUCTURE_PATH_COUNT={len(selected)}")
+          PY
+
+      - name: Show bounded pre-change vocabulary hints
+        run: |
+          cd "$TARGET_DIR"
+          git grep -n -I -E "Feishu|feishu|image|upload|toast|loading|progress|retry|timeout|import" -- src > /tmp/ziliu-prechange-grep.txt || true
+          python3 - <<'PY'
+          import pathlib
+
+          path = pathlib.Path("/tmp/ziliu-prechange-grep.txt")
+          lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.exists() else []
+          for line in lines[:180]:
+              print(line)
+          print(f"VOCAB_HINT_COUNT={len(lines)}")
+          PY
+
+      - name: Record discipline
+        run: |
+          echo "This workflow contains no target commit and computes no future diff/oracle."
+          echo "Its only purpose is to expose bounded pre-change repository context before Agent queries are frozen on issue #123."
