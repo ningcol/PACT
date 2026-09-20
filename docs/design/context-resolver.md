@@ -61,7 +61,9 @@ only after judging that it understands:
 
 ## 4. Multi-query and materialization budgets
 
-Each query is retrieved independently. PACT deduplicates and fuses the ranked lists, then applies the final risk-adaptive Context budgets.
+Each query is retrieved independently. PACT deduplicates and fuses peer query lists, then applies the final risk-adaptive Context budgets.
+
+When the first explicit query is the original task wording and later queries are Agent-generated search hypotheses (the recommended high-level `task prepare` pattern), PACT first resolves the task-only Context under the same count/token budgets. Files already selected for that primary task remain canonical; fused supplemental queries may fill remaining capacity but do not silently evict the task-selected Context. This is deliberately different from low-level peer multi-query retrieval, where callers may supply several equal retrieval intents.
 
 Two independent controls are used:
 

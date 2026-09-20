@@ -90,6 +90,26 @@ def extend_candidate_pool(primary: list[dict], wider: list[dict]) -> list[dict]:
     return merged
 
 
+def preserves_task_as_primary(task: str, queries: list[str]) -> bool:
+    """Whether explicit queries preserve the original task as primary intent."""
+    return (
+        len(queries) > 1
+        and queries[0].strip().casefold() == task.strip().casefold()
+    )
+
+
+def compose_primary_preserving_pool(
+    primary_selected: list[dict] | None,
+    fused: list[dict],
+    wider: list[dict],
+) -> list[dict]:
+    """Keep already-selected primary context canonical; append fused fallback."""
+    fused_pool = extend_candidate_pool(fused, wider)
+    if primary_selected is None:
+        return fused_pool
+    return extend_candidate_pool(primary_selected, fused_pool)
+
+
 def repo_file(relative: str) -> pathlib.Path | None:
     path = (ROOT / relative).resolve()
     try:
@@ -315,6 +335,8 @@ def main() -> int:
     knowledge_pool_limit = max(knowledge_limit * 3, knowledge_limit + 8)
     code_pool_limit = max(code_limit * 3, code_limit + 8)
 
+    preserve_primary = preserves_task_as_primary(args.task, queries)
+
     try:
         discovery = run_discovery(
             queries,
@@ -328,16 +350,53 @@ def main() -> int:
             code=code_enabled,
             code_limit=code_pool_limit,
         )
+
+        primary_selected_results = None
+        primary_selected_code_results = None
+        if preserve_primary:
+            primary_discovery = run_discovery(
+                [queries[0]],
+                knowledge_limit,
+                code=code_enabled,
+                code_limit=code_limit,
+            )
+            primary_wider_discovery = run_discovery(
+                [queries[0]],
+                knowledge_pool_limit,
+                code=code_enabled,
+                code_limit=code_pool_limit,
+            )
+            primary_candidate_results = extend_candidate_pool(
+                primary_discovery.get("results", []),
+                primary_wider_discovery.get("results", []),
+            )
+            primary_candidate_code_results = extend_candidate_pool(
+                primary_discovery.get("code_results", []),
+                primary_wider_discovery.get("code_results", []),
+            )
+            (
+                primary_selected_results,
+                primary_selected_code_results,
+                _,
+            ) = select_context_candidates(
+                primary_candidate_results,
+                primary_candidate_code_results,
+                token_budget=token_budget,
+                knowledge_limit=knowledge_limit,
+                code_limit=code_limit,
+            )
     except Exception as exc:
         print(f"PACT context: discovery failed: {exc}", file=sys.stderr)
         return 2
 
     queries = discovery.get("queries", queries)
-    candidate_results = extend_candidate_pool(
+    candidate_results = compose_primary_preserving_pool(
+        primary_selected_results,
         discovery.get("results", []),
         wider_discovery.get("results", []),
     )
-    candidate_code_results = extend_candidate_pool(
+    candidate_code_results = compose_primary_preserving_pool(
+        primary_selected_code_results,
         discovery.get("code_results", []),
         wider_discovery.get("code_results", []),
     )

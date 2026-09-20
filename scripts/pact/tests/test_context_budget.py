@@ -109,6 +109,133 @@ class ContextBudgetTests(unittest.TestCase):
             ["src/a.ts", "src/b.ts"],
         )
 
+    def test_task_wording_is_only_primary_when_explicitly_preserved(self) -> None:
+        self.assertTrue(
+            context.preserves_task_as_primary(
+                "owner task",
+                [" owner task ", "code symbol"],
+            )
+        )
+        self.assertFalse(
+            context.preserves_task_as_primary(
+                "owner task",
+                ["code symbol", "owner task"],
+            )
+        )
+        self.assertFalse(
+            context.preserves_task_as_primary(
+                "owner task",
+                ["owner task"],
+            )
+        )
+
+    def test_primary_selected_context_precedes_fused_fallback(self) -> None:
+        primary = [
+            {"path": "src/primary-a.ts", "score": 10},
+            {"path": "src/primary-b.ts", "score": 9},
+        ]
+        fused = [
+            {"path": "src/supplemental.ts", "score": 1000},
+            {"path": "src/primary-a.ts", "score": 999},
+        ]
+        wider = [
+            {"path": "src/wider.ts", "score": 5000},
+        ]
+
+        merged = context.compose_primary_preserving_pool(
+            primary,
+            fused,
+            wider,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in merged],
+            [
+                "src/primary-a.ts",
+                "src/primary-b.ts",
+                "src/supplemental.ts",
+                "src/wider.ts",
+            ],
+        )
+        self.assertEqual(
+            [item["_pool_tier"] for item in merged],
+            [0, 0, 1, 1],
+        )
+
+    def test_supplemental_candidates_fill_remaining_primary_capacity(self) -> None:
+        self.write_bytes("src/primary.ts", 400)
+        self.write_bytes("src/supplemental.ts", 400)
+
+        def code(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        merged = context.compose_primary_preserving_pool(
+            [code("src/primary.ts", 10)],
+            [code("src/supplemental.ts", 1000)],
+            [],
+        )
+
+        _, selected, budget = context.select_context_candidates(
+            [],
+            merged,
+            token_budget=500,
+            knowledge_limit=8,
+            code_limit=2,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in selected],
+            ["src/primary.ts", "src/supplemental.ts"],
+        )
+        self.assertEqual(budget["dropped_candidates"], 0)
+
+    def test_supplemental_candidates_do_not_displace_selected_primary_under_token_pressure(self) -> None:
+        self.write_bytes("src/primary-a.ts", 400)
+        self.write_bytes("src/primary-b.ts", 400)
+        self.write_bytes("src/supplemental.ts", 400)
+
+        def code(path: str, score: int) -> dict:
+            return {
+                "path": path,
+                "score": score,
+                "language": "typescript",
+                "is_test": False,
+                "symbols": [],
+                "relation": "direct-match",
+                "confidence": "direct",
+            }
+
+        merged = context.compose_primary_preserving_pool(
+            [
+                code("src/primary-a.ts", 10),
+                code("src/primary-b.ts", 9),
+            ],
+            [code("src/supplemental.ts", 100000)],
+            [],
+        )
+
+        _, selected, budget = context.select_context_candidates(
+            [],
+            merged,
+            token_budget=200,
+            knowledge_limit=8,
+            code_limit=3,
+        )
+
+        self.assertEqual(
+            [item["path"] for item in selected],
+            ["src/primary-a.ts", "src/primary-b.ts"],
+        )
+        self.assertEqual(budget["dropped_for_token_budget"], 1)
+
     def test_large_low_priority_candidate_can_be_skipped_for_smaller_useful_file(self) -> None:
         self.write_bytes("src/huge.ts", 40_000)
         self.write_bytes("src/small.ts", 800)
