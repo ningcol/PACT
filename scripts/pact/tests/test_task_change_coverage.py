@@ -168,6 +168,29 @@ class TaskChangedFileTests(unittest.TestCase):
         project_change = workspace.task_changed_files(self.root, baseline)
         self.assertEqual(project_change["changed_files"], [".pact/config.toml"])
 
+    def test_corrupt_install_provenance_still_fails_workspace_closed(self) -> None:
+        (self.root / "README.md").write_text("# Demo\n", encoding="utf-8")
+        self.commit_all("baseline")
+
+        init = subprocess.run(
+            [
+                sys.executable,
+                str(INIT),
+                "--target",
+                str(self.root),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+
+        manifest_path = self.root / ".pact" / "install.json"
+        manifest_path.write_text("{ not valid json\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "invalid .pact/install.json"):
+            workspace.git_workspace_snapshot(self.root)
+
     def test_filesystem_fallback_excludes_install_provenance_only(self) -> None:
         nongit = pathlib.Path(self.temp.name) / "nongit-project"
         nongit.mkdir()
