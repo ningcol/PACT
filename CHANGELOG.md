@@ -37,6 +37,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 - bootstrap ZIP extraction now limits archive file count, per-file expanded size, total expanded size, local archive size, and suspicious compression ratios before extraction;
 - tag releases are blocked on the same 3 OS × 3 Python portability coverage used for normal development;
+- normal PR CI and tag publication now use the same release-asset builder and run a fresh offline bootstrap smoke against the exact `pact-bootstrap.py` / `pact.pyz` / `SHA256SUMS` package before publication;
 - prerelease version suffixes publish as GitHub prereleases instead of stable releases while exact tag/VERSION equality remains required;
 - non-Git high-level task completion now surfaces that exact changed-file attribution is unavailable instead of silently providing a weaker guarantee;
 - stale version-specific Python requirement messages were replaced with the protocol-level Python 3.11+ requirement.

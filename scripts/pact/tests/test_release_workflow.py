@@ -37,6 +37,23 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertIn("release:\n    needs:", text)
         self.assertIn("contents: write", text)
 
+    def test_release_builds_and_smokes_exact_assets_before_publish(self) -> None:
+        text = RELEASE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "python scripts/release/release_assets.py --output-dir dist --smoke",
+            text,
+        )
+        self.assertNotIn(
+            "python scripts/pact/runtime_bundle.py --output dist/pact.pyz",
+            text,
+        )
+        publish_index = text.index("gh release create")
+        smoke_index = text.index(
+            "python scripts/release/release_assets.py --output-dir dist --smoke"
+        )
+        self.assertLess(smoke_index, publish_index)
+
 
 if __name__ == "__main__":
     unittest.main()

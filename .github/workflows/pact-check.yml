@@ -117,6 +117,9 @@ jobs:
           python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json
           python scripts/pact/pact.py eval .pact/examples/pilot-evaluation.example.json --summary --json
 
+      - name: Build and smoke-test release assets
+        run: python scripts/release/release_assets.py --output-dir /tmp/pact-release-assets --smoke
+
       - name: End-to-end brownfield scaffold
         run: |
           rm -rf /tmp/pact-adopted
