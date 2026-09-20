@@ -38,7 +38,37 @@ class UpgradeApplyError(RuntimeError):
         self.rolled_back = rolled_back
 
 
+def path_present(path: pathlib.Path) -> bool:
+    """Treat any leaf symlink, including a broken one, as an existing path."""
+    return path.exists() or path.is_symlink()
+
+
+def safe_relative_target(
+    target: pathlib.Path,
+    relative: str,
+    *,
+    allow_leaf_symlink: bool = False,
+) -> pathlib.Path:
+    pure = pathlib.PurePosixPath(relative)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise RuntimeError(f"unsafe upgrade path: {relative!r}")
+
+    target_root = target.resolve()
+    destination = target / pathlib.Path(*pure.parts)
+    parent = destination.parent.resolve()
+    if parent != target_root and target_root not in parent.parents:
+        raise RuntimeError(f"upgrade path escapes target through symlink: {relative!r}")
+    if destination.is_symlink() and not allow_leaf_symlink:
+        raise RuntimeError(f"upgrade path is a symlink: {relative!r}")
+    return destination
+
+
 def load_manifest(target: pathlib.Path) -> dict:
+    manifest_path = safe_relative_target(target, INSTALL_MANIFEST.as_posix())
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            "missing .pact/install.json; initialize the project with PACT first"
+        )
     data = read_install_manifest(target)
     if data is None:
         raise FileNotFoundError(
@@ -52,7 +82,12 @@ def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: d
 
     workflow_path = ".github/workflows/pact-project-check.yml"
     tracked = manifest.get("files", {}).get(workflow_path)
-    if tracked or (target / workflow_path).exists():
+    workflow_target = safe_relative_target(
+        target,
+        workflow_path,
+        allow_leaf_symlink=True,
+    )
+    if tracked or path_present(workflow_target):
         workflow = github_actions_entry(source_root)
         if workflow:
             entries.append(workflow)
@@ -70,13 +105,17 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
     notices: list[dict] = []
 
     for path, entry in sorted(desired_by_path.items()):
-        destination = target / path
+        destination = safe_relative_target(
+            target,
+            path,
+            allow_leaf_symlink=entry["management"] == "seed",
+        )
         source = pathlib.Path(entry["source"])
         source_sha = sha256_file(source)
         record = tracked.get(path)
 
         if entry["management"] == "seed":
-            if not destination.exists():
+            if not path_present(destination):
                 operations.append({
                     "action": "create-seed",
                     "path": path,
@@ -107,7 +146,7 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
                 })
             continue
 
-        if not destination.exists():
+        if not path_present(destination):
             operations.append({
                 "action": "create-framework",
                 "path": path,
@@ -198,8 +237,8 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
         if record.get("management") != "framework" or path in desired_paths:
             continue
 
-        destination = target / path
-        if not destination.exists():
+        destination = safe_relative_target(target, path)
+        if not path_present(destination):
             operations.append({
                 "action": "remove-framework",
                 "path": path,
@@ -267,17 +306,6 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
     }
 
 
-def safe_relative_target(target: pathlib.Path, relative: str) -> pathlib.Path:
-    pure = pathlib.PurePosixPath(relative)
-    if pure.is_absolute() or ".." in pure.parts:
-        raise RuntimeError(f"unsafe upgrade path: {relative!r}")
-    destination = (target / pathlib.Path(*pure.parts)).resolve()
-    target_root = target.resolve()
-    if destination != target_root and target_root not in destination.parents:
-        raise RuntimeError(f"upgrade path escapes target: {relative!r}")
-    return destination
-
-
 def validate_new_manifest(
     target: pathlib.Path,
     new_manifest: dict,
@@ -288,7 +316,7 @@ def validate_new_manifest(
     if errors:
         raise RuntimeError("new install manifest is invalid: " + "; ".join(errors))
 
-    version_path = target / ".pact" / "VERSION"
+    version_path = safe_relative_target(target, ".pact/VERSION")
     actual_version = (
         version_path.read_text(encoding="utf-8").strip()
         if version_path.exists()
@@ -343,9 +371,9 @@ def apply_upgrade(
     }
     files = dict(manifest.get("files", {}))
 
-    pact_dir = target / ".pact"
+    pact_dir = safe_relative_target(target, ".pact")
     pact_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = target / INSTALL_MANIFEST
+    manifest_path = safe_relative_target(target, INSTALL_MANIFEST.as_posix())
 
     mutating_ops = [
         op for op in plan["operations"]
@@ -420,7 +448,7 @@ def apply_upgrade(
                     temp_destination = destination.parent / (
                         f".{destination.name}.pact-upgrade-tmp"
                     )
-                    if temp_destination.exists():
+                    if path_present(temp_destination):
                         temp_destination.unlink()
                     shutil.copy2(staged[path], temp_destination)
                     os.replace(temp_destination, destination)
@@ -491,7 +519,7 @@ def apply_upgrade(
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         os.replace(backup, destination)
                     else:
-                        if destination.exists():
+                        if path_present(destination):
                             destination.unlink()
                         cleanup_empty_parents(destination.parent, target)
                 except Exception as rollback_exc:
