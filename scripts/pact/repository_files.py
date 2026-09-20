@@ -26,6 +26,17 @@ DEFAULT_PRUNE_DIRS = {
 }
 
 
+def confined_regular_file(root: pathlib.Path, candidate: pathlib.Path) -> bool:
+    """Return True only for files whose resolved content remains under root."""
+    try:
+        root_resolved = root.resolve()
+        resolved = candidate.resolve()
+        resolved.relative_to(root_resolved)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return candidate.is_file()
+
+
 def git_visible_files(root: pathlib.Path) -> list[pathlib.Path] | None:
     """Return tracked + visible untracked files, or None when Git is unavailable."""
     try:
@@ -57,7 +68,7 @@ def git_visible_files(root: pathlib.Path) -> list[pathlib.Path] | None:
             continue
         relative = raw.decode("utf-8", errors="surrogateescape")
         candidate = root / pathlib.Path(relative)
-        if candidate.is_file():
+        if confined_regular_file(root, candidate):
             paths.add(candidate)
 
     return sorted(paths, key=lambda p: p.relative_to(root).as_posix())
@@ -86,7 +97,7 @@ def walk_visible_files(
 
         for name in files:
             path = current_path / name
-            if path.is_file():
+            if confined_regular_file(root, path):
                 paths.append(path)
 
     return sorted(paths, key=lambda p: p.relative_to(root).as_posix())
