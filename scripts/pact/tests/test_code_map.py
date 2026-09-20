@@ -51,13 +51,25 @@ class CodeMapTests(unittest.TestCase):
         self.write("pkg/b.py", "def helper():\n    return 1\n")
         self.write(
             "pkg/a.py",
-            "import pkg.b\n\nclass Service:\n    pass\n\ndef run():\n    return pkg.b.helper()\n",
+            "import pkg.b\n\n"
+            "class Service:\n"
+            "    def dispatch(self):\n"
+            "        def local_helper():\n"
+            "            return 1\n"
+            "        return local_helper()\n\n"
+            "    async def refresh(self):\n"
+            "        return 2\n\n"
+            "def run():\n"
+            "    return pkg.b.helper()\n",
         )
 
         data = self.build()
         by_path = {item["path"]: item for item in data["files"]}
 
         self.assertIn("Service", by_path["pkg/a.py"]["symbols"])
+        self.assertIn("dispatch", by_path["pkg/a.py"]["symbols"])
+        self.assertIn("refresh", by_path["pkg/a.py"]["symbols"])
+        self.assertNotIn("local_helper", by_path["pkg/a.py"]["symbols"])
         self.assertIn("run", by_path["pkg/a.py"]["symbols"])
         edge = next(
             edge for edge in data["edges"]

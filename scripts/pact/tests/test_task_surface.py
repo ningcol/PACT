@@ -398,7 +398,11 @@ class TaskSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(
             context["discovery_queries"],
-            ["password reset", "credentials"],
+            [
+                "change password reset behavior",
+                "password reset",
+                "credentials",
+            ],
         )
         coverage = [
             {

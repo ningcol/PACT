@@ -25,7 +25,7 @@ Generic lexical fallback source families:
 - Ruby;
 - PHP.
 
-Structured files may provide top-level symbols, import statements, resolved local import edges, and test-file classification.
+Structured files may provide top-level symbols, direct Python class-method symbols, import statements, resolved local import edges, and test-file classification.
 
 Generic files provide only:
 
@@ -87,7 +87,7 @@ Future adapters may add project-specific resolvers. Until then, generic lexical 
 - raw import names;
 - lower-weight bounded generic identifiers for unsupported structured languages.
 
-Structured top-level symbol matches rank above generic identifier matches. Direct lexical matches are ranked ahead of one-hop import neighbors.
+Structured symbol matches (including direct Python class methods) rank above generic identifier matches. Direct lexical matches are ranked ahead of one-hop import neighbors.
 
 ## Impact
 
