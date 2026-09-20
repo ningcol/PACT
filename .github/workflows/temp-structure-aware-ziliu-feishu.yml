@@ -62,6 +62,21 @@ jobs:
             --query "image-service uploadImageFromUrl retry timeout" \
             --output /tmp/ziliu-structure-context.json
 
+      - name: Generate frozen-input fusion Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "$TASK_TEXT" \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --output /tmp/ziliu-fusion-context.json
+
       - name: Reveal historical oracle after Contexts are frozen
         run: |
           python3 - <<'PY'
@@ -106,6 +121,7 @@ jobs:
 
           direct = json.loads(pathlib.Path("/tmp/ziliu-direct-context.json").read_text(encoding="utf-8"))
           aware = json.loads(pathlib.Path("/tmp/ziliu-structure-context.json").read_text(encoding="utf-8"))
+          fusion = json.loads(pathlib.Path("/tmp/ziliu-fusion-context.json").read_text(encoding="utf-8"))
           oracle = json.loads(pathlib.Path("/tmp/ziliu-oracle.json").read_text(encoding="utf-8"))["oracle"]
           task = os.environ["TASK_TEXT"]
           frozen = [
@@ -117,6 +133,9 @@ jobs:
               raise SystemExit(f"direct query discipline changed: {direct.get('discovery_queries')}")
           if aware.get("discovery_queries") != frozen:
               raise SystemExit(f"structure-aware query discipline changed: {aware.get('discovery_queries')}")
+          fusion_queries = [task, *frozen]
+          if fusion.get("discovery_queries") != fusion_queries:
+              raise SystemExit(f"fusion query discipline changed: {fusion.get('discovery_queries')}")
 
           def metrics(context):
               paths = [item["path"] for item in context.get("code_artifacts", [])]
@@ -151,6 +170,8 @@ jobs:
               "limitation": "Frozen task summary omitted simple-editor deletion and Vercel timeout details present in the original historical commit message.",
               "direct": metrics(direct),
               "structure_aware_agent": metrics(aware),
+              "frozen_input_fusion": metrics(fusion),
+              "fusion_provenance": "Combination strategy selected after initial result; all query strings were frozen before oracle inspection and match recommended high-level task-prepare composition.",
           }
           rendered = json.dumps(report, ensure_ascii=False, indent=2)
           print(rendered)
@@ -161,7 +182,9 @@ jobs:
               handle.write(f"- Oracle files: `{oracle}`\n")
               handle.write(f"- Direct recall: **{report['direct']['recall']:.3f}** ({report['direct']['matched_oracle_files']})\n")
               handle.write(f"- Structure-aware recall: **{report['structure_aware_agent']['recall']:.3f}** ({report['structure_aware_agent']['matched_oracle_files']})\n")
+              handle.write(f"- Frozen-input fusion recall: **{report['frozen_input_fusion']['recall']:.3f}** ({report['frozen_input_fusion']['matched_oracle_files']})\n")
               handle.write(f"- Direct Context: {report['direct']['code_files']} files / {report['direct']['selected_estimated_tokens']} estimated tokens\n")
               handle.write(f"- Structure-aware Context: {report['structure_aware_agent']['code_files']} files / {report['structure_aware_agent']['selected_estimated_tokens']} estimated tokens\n")
+              handle.write(f"- Fusion Context: {report['frozen_input_fusion']['code_files']} files / {report['frozen_input_fusion']['selected_estimated_tokens']} estimated tokens\n")
               handle.write("\nKnown limitation: frozen task summary omitted some details from the original commit message; do not over-interpret misses for those omitted details.\n")
           PY
