@@ -328,11 +328,19 @@ def fuse_ranked_results(
     query_results: list[tuple[str, list[dict]]],
     limit: int,
 ) -> list[dict]:
-    """Fuse ranked lists with deterministic RRF plus bounded query diversity."""
+    """Fuse ranked lists while keeping the primary intent stronger than hints."""
     final_limit = max(limit, 1)
     fused: dict[str, dict] = {}
 
-    for query, results in query_results:
+    # The positional/first query is the primary owner/task intent; later
+    # queries are supplemental search hypotheses. Give primary evidence enough
+    # RRF weight that adding more hypotheses cannot outvote the task merely by
+    # query count. Per-query reservation below still guarantees bounded
+    # representation for specialized supplemental queries when capacity allows.
+    primary_weight = max(len(query_results), 1)
+
+    for query_index, (query, results) in enumerate(query_results):
+        query_weight = primary_weight if query_index == 0 else 1
         for rank, item in enumerate(results, start=1):
             path = item.get("path")
             if not path:
@@ -349,7 +357,9 @@ def fuse_ranked_results(
                 }
                 fused[path] = entry
 
-            entry["_rrf"] += round(1_000_000 / (RRF_K + rank))
+            entry["_rrf"] += query_weight * round(
+                1_000_000 / (RRF_K + rank)
+            )
             entry["_max_score"] = max(
                 entry["_max_score"],
                 int(item.get("score", 0)),
