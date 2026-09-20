@@ -32,7 +32,7 @@ This prevents relevant project knowledge from disappearing between implementatio
 
 For a prepared task in a Git worktree, PACT records the prepare-time Git HEAD plus the content state of paths that were already dirty before the task. It does **not** require a clean workspace.
 
-At `task finish`, PACT derives the paths whose final content differs from that prepared baseline. This includes uncommitted and committed additions, modifications, and deletions while excluding generated PACT control-plane state.
+At `task finish`, PACT derives the paths whose final content differs from that prepared baseline. This includes uncommitted and committed additions, modifications, and deletions while excluding generated/installed PACT control-plane state such as local task/run/cache state and `.pact/install.json`. Project-owned seed files re-enter project state once customized.
 
 Completion then:
 

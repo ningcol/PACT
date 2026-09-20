@@ -110,6 +110,130 @@ class TaskChangedFileTests(unittest.TestCase):
         )
         self.assertNotIn(".pact/tasks/TASK-X/task.json", delta["changed_files"])
 
+    def test_fresh_adoption_control_plane_is_not_project_workspace_dirty(self) -> None:
+        (self.root / "README.md").write_text("# Demo\n", encoding="utf-8")
+        self.commit_all("baseline")
+
+        init = subprocess.run(
+            [
+                sys.executable,
+                str(INIT),
+                "--target",
+                str(self.root),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+
+        # Git still exposes the uncommitted PACT scaffold to the owner, but
+        # PACT's filtered project workspace must not call its own pristine
+        # control-plane installation a product change.
+        native_status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=self.root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("?? .pact/", native_status.stdout)
+
+        snapshot = workspace.git_workspace_snapshot(self.root)
+        self.assertIsNotNone(snapshot)
+        self.assertFalse(snapshot["dirty"])
+        self.assertEqual(snapshot["untracked_count"], 0)
+
+        baseline = workspace.task_workspace_baseline(self.root)
+        self.assertEqual(baseline["dirty_files"], {})
+
+        manifest_path = self.root / ".pact" / "install.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # Re-render valid install provenance so its bytes change without
+        # changing the project's product/source state.
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=4) + "\n",
+            encoding="utf-8",
+        )
+        control_plane_only = workspace.task_changed_files(self.root, baseline)
+        self.assertEqual(control_plane_only["changed_files"], [])
+        self.assertEqual(control_plane_only["candidate_count"], 0)
+
+        # Project-owned seeds remain part of project state once customized.
+        config = self.root / ".pact" / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8") + "\n# project-owned customization\n",
+            encoding="utf-8",
+        )
+        project_change = workspace.task_changed_files(self.root, baseline)
+        self.assertEqual(project_change["changed_files"], [".pact/config.toml"])
+
+    def test_corrupt_install_provenance_still_fails_workspace_closed(self) -> None:
+        (self.root / "README.md").write_text("# Demo\n", encoding="utf-8")
+        self.commit_all("baseline")
+
+        init = subprocess.run(
+            [
+                sys.executable,
+                str(INIT),
+                "--target",
+                str(self.root),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+
+        manifest_path = self.root / ".pact" / "install.json"
+        manifest_path.write_text("{ not valid json\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "invalid .pact/install.json"):
+            workspace.git_workspace_snapshot(self.root)
+
+    def test_filesystem_fallback_excludes_install_provenance_only(self) -> None:
+        nongit = pathlib.Path(self.temp.name) / "nongit-project"
+        nongit.mkdir()
+        (nongit / "README.md").write_text("# Demo\n", encoding="utf-8")
+
+        init = subprocess.run(
+            [
+                sys.executable,
+                str(INIT),
+                "--target",
+                str(nongit),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+
+        snapshot = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertEqual(snapshot["file_count"], 1)
+
+        manifest_path = nongit / ".pact" / "install.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=4) + "\n",
+            encoding="utf-8",
+        )
+        after_manifest_change = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertEqual(
+            after_manifest_change["sha256"],
+            snapshot["sha256"],
+        )
+        self.assertEqual(after_manifest_change["file_count"], 1)
+
+        config = nongit / ".pact" / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8") + "\n# project-owned customization\n",
+            encoding="utf-8",
+        )
+        customized = workspace.filesystem_workspace_snapshot(nongit)
+        self.assertNotEqual(customized["sha256"], snapshot["sha256"])
+        self.assertEqual(customized["file_count"], 2)
+
     def test_high_level_finish_requires_changed_file_convergence_coverage(self) -> None:
         (self.root / "README.md").write_text(
             "# Demo\n\nFeature behavior.\n",
