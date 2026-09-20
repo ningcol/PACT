@@ -410,7 +410,8 @@ class DistributionUpgradeTests(unittest.TestCase):
 
         reinit = self.run_init("--apply")
         self.assertEqual(reinit.returncode, 2)
-        self.assertIn("install manifest", reinit.stderr)
+        self.assertIn(".pact/install.json", reinit.stderr)
+        self.assertIn("must not be a symlink", reinit.stderr)
         self.assertTrue(manifest_path.is_symlink())
         self.assertEqual(outside.read_bytes(), original)
 
