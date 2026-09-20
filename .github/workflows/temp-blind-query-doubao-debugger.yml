@@ -62,21 +62,6 @@ jobs:
             --query "image extraction debugger" \
             --output /tmp/doubao-debugger-blind.json
 
-      - name: Generate post-oracle vocabulary diagnostic
-        run: |
-          cd "$TARGET_DIR"
-          python3 pact.py context "$TASK_TEXT" \
-            --success "$SUCCESS_TEXT" \
-            --risk medium \
-            --code \
-            --code-limit 12 \
-            --token-budget 40000 \
-            --query "debugger EventStream image URL" \
-            --query "clear cookies settings" \
-            --query "image extraction debugger" \
-            --query "options settings storage" \
-            --output /tmp/doubao-debugger-hindsight.json
-
       - name: Reveal historical oracle after Contexts are frozen
         run: |
           python3 - <<'PY'
@@ -111,6 +96,21 @@ jobs:
           )
           print("Revealed oracle:", oracle)
           PY
+
+      - name: Generate post-oracle vocabulary diagnostic
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "debugger EventStream image URL" \
+            --query "clear cookies settings" \
+            --query "image extraction debugger" \
+            --query "options settings storage" \
+            --output /tmp/doubao-debugger-hindsight.json
 
       - name: Compare direct and blind-Agent retrieval
         run: |
