@@ -395,6 +395,50 @@ class DistributionUpgradeTests(unittest.TestCase):
         kinds = {notice["kind"] for notice in json.loads(result.stdout)["notices"]}
         self.assertIn("seed-update-available", kinds)
 
+    def test_symlinked_install_manifest_is_rejected_by_reinit_and_upgrade(self) -> None:
+        self.scaffold()
+        manifest_path = self.target / ".pact" / "install.json"
+        outside = self.root / "outside-install.json"
+        outside.write_bytes(manifest_path.read_bytes())
+        manifest_path.unlink()
+        try:
+            os.symlink(outside, manifest_path)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        original = outside.read_bytes()
+
+        reinit = self.run_init("--apply")
+        self.assertEqual(reinit.returncode, 2)
+        self.assertIn("install manifest", reinit.stderr)
+        self.assertTrue(manifest_path.is_symlink())
+        self.assertEqual(outside.read_bytes(), original)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("upgrade path is a symlink", upgrade.stderr)
+        self.assertTrue(manifest_path.is_symlink())
+        self.assertEqual(outside.read_bytes(), original)
+
+    def test_upgrade_plan_rejects_framework_leaf_symlink(self) -> None:
+        self.scaffold()
+        framework = self.target / "pact.py"
+        outside = self.root / "outside-pact.py"
+        outside.write_bytes(framework.read_bytes())
+        framework.unlink()
+        try:
+            os.symlink(outside, framework)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        original = outside.read_bytes()
+        result = self.run_upgrade("--apply")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("upgrade path is a symlink: 'pact.py'", result.stderr)
+        self.assertTrue(framework.is_symlink())
+        self.assertEqual(outside.read_bytes(), original)
+
 
 if __name__ == "__main__":
     unittest.main()
