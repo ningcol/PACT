@@ -16,8 +16,8 @@ from repository_files import repository_files
 from schema_validate import load_schema, validate_instance
 
 
-FORMAT_VERSION = 3
-PARSE_CACHE_VERSION = 2
+FORMAT_VERSION = 4
+PARSE_CACHE_VERSION = 3
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -200,8 +200,15 @@ def parse_python(path: pathlib.Path) -> tuple[list[str], list[tuple[str, int]]]:
     imports: list[tuple[str, int]] = []
 
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             symbols.append(node.name)
+        elif isinstance(node, ast.ClassDef):
+            symbols.append(node.name)
+            # Direct class methods are stable retrieval handles (for example
+            # Service.dispatch) without recursively indexing local closures.
+            for member in node.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    symbols.append(member.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 imports.append((alias.name, 0))
