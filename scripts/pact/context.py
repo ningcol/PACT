@@ -19,6 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
+CODE_CANDIDATE_HINT_LIMIT = 5
 
 
 def run_discovery(
@@ -108,6 +109,43 @@ def compose_primary_preserving_pool(
     if primary_selected is None:
         return fused_pool
     return extend_candidate_pool(primary_selected, fused_pool)
+
+
+def build_code_candidate_hints(
+    candidates: list[dict],
+    selected_code: list[dict],
+    *,
+    limit: int = CODE_CANDIDATE_HINT_LIMIT,
+) -> list[dict]:
+    """Expose bounded fallback metadata without changing materialized Context."""
+    if limit <= 0:
+        return []
+
+    selected_paths = {
+        str(item.get("path") or "")
+        for item in selected_code
+        if item.get("path")
+    }
+    hints: list[dict] = []
+    for item in candidates:
+        if int(item.get("_pool_tier", 0)) <= 0:
+            continue
+        path = str(item.get("path") or "")
+        if not path or path in selected_paths:
+            continue
+
+        hints.append({
+            "path": path,
+            "language": str(item.get("language") or "unknown"),
+            "relation": str(item.get("relation") or "direct-match"),
+            "confidence": str(item.get("confidence") or "heuristic"),
+            "reasons": list(item.get("reasons", [])),
+            "estimated_tokens": estimated_file_tokens(path),
+        })
+        if len(hints) >= limit:
+            break
+
+    return hints
 
 
 def repo_file(relative: str) -> pathlib.Path | None:
@@ -407,6 +445,11 @@ def main() -> int:
         knowledge_limit=knowledge_limit,
         code_limit=code_limit,
     )
+    code_candidate_hints = (
+        build_code_candidate_hints(candidate_code_results, code_results)
+        if preserve_primary
+        else []
+    )
 
     domains = sorted({
         domain
@@ -470,6 +513,12 @@ def main() -> int:
             f"Context budgets omitted {budget['dropped_candidates']} lower-priority "
             "candidate(s); increase --token-budget/--limit/--code-limit if they "
             "could materially change the task."
+        )
+    if code_candidate_hints:
+        unknowns.append(
+            f"{len(code_candidate_hints)} non-materialized fallback code candidate "
+            "hint(s) are available; inspect them selectively when they could "
+            "materially change the task before expanding Context budgets."
         )
     if budget["authority_candidates_dropped"]:
         unknowns.append(
@@ -562,6 +611,9 @@ def main() -> int:
         "verification_targets": verification,
         "known_unknowns": unknowns,
     }
+
+    if code_candidate_hints:
+        envelope["code_candidate_hints"] = code_candidate_hints
 
     errors = validate(envelope)
     if errors:
