@@ -1,0 +1,163 @@
+name: Temporary Blind Query Evaluation - DouBao Debugger
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/doubao-blind-debugger
+  BASE_REF: f4edad8ea7b49a2f0e92da2aac599350ed042c32
+  TARGET_REF: 9ca173e37341e4e1a80cadc427737510a3a1eaa5
+  TASK_TEXT: "优化图片获取方式并添加Cookie清除功能：使用debugger监听EventStream获取图片URL，添加清除Cookie功能及设置选项，优化代码结构"
+  SUCCESS_TEXT: "图片URL获取和Cookie清除设置按任务意图工作"
+
+jobs:
+  blind-query-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned pre-change project
+        run: |
+          git clone https://github.com/ningcol/DouBaoFreeImageGen.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_REF"
+
+      - name: Fresh adopt current PACT source
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Generate direct owner-language Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --output /tmp/doubao-debugger-direct.json
+
+      - name: Generate frozen blind-Agent Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "debugger EventStream image URL" \
+            --query "clear cookies settings" \
+            --query "image extraction debugger" \
+            --output /tmp/doubao-debugger-blind.json
+
+      - name: Reveal historical oracle after Contexts are frozen
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path(os.environ["TARGET_DIR"])
+          base = os.environ["BASE_REF"]
+          target = os.environ["TARGET_REF"]
+          supported = {".py", ".js", ".jsx", ".ts", ".tsx", ".vue", ".go", ".swift", ".kt", ".kts", ".java", ".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php"}
+          changed = subprocess.run(
+              ["git", "diff", "--name-only", "--no-renames", base, target, "--"],
+              cwd=root, check=True, capture_output=True, text=True,
+          ).stdout.splitlines()
+          oracle = []
+          for rel in changed:
+              if pathlib.PurePosixPath(rel).suffix.lower() not in supported:
+                  continue
+              exists = subprocess.run(
+                  ["git", "cat-file", "-e", f"{base}:{rel}"],
+                  cwd=root, capture_output=True,
+              )
+              if exists.returncode == 0:
+                  oracle.append(rel)
+          if len(oracle) < 2:
+              raise SystemExit(f"expected a multi-file source oracle, found {oracle}")
+          pathlib.Path("/tmp/doubao-debugger-oracle.json").write_text(
+              json.dumps({"changed": changed, "oracle": oracle}, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print("Revealed oracle:", oracle)
+          PY
+
+      - name: Compare direct and blind-Agent retrieval
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          direct = json.loads(pathlib.Path("/tmp/doubao-debugger-direct.json").read_text(encoding="utf-8"))
+          blind = json.loads(pathlib.Path("/tmp/doubao-debugger-blind.json").read_text(encoding="utf-8"))
+          oracle = json.loads(pathlib.Path("/tmp/doubao-debugger-oracle.json").read_text(encoding="utf-8"))["oracle"]
+          frozen = ["debugger EventStream image URL", "clear cookies settings", "image extraction debugger"]
+          task = os.environ["TASK_TEXT"]
+
+          if direct.get("discovery_queries") != [task]:
+              raise SystemExit(f"direct query discipline changed: {direct.get('discovery_queries')}")
+          if blind.get("discovery_queries") != frozen:
+              raise SystemExit(f"blind query discipline changed: {blind.get('discovery_queries')}")
+
+          def metrics(context):
+              paths = [item["path"] for item in context.get("code_artifacts", [])]
+              matched = [path for path in oracle if path in paths]
+              budget = context.get("context_budget") or {}
+              return {
+                  "queries": context.get("discovery_queries", []),
+                  "code_files": len(paths),
+                  "paths": paths,
+                  "oracle_files": oracle,
+                  "matched_oracle_files": matched,
+                  "missing_oracle_files": [path for path in oracle if path not in paths],
+                  "recall": len(matched) / len(oracle),
+                  "known_unknowns": len(context.get("known_unknowns", [])),
+                  "token_budget": budget.get("limit_tokens"),
+                  "selected_estimated_tokens": budget.get("selected_estimated_tokens"),
+                  "candidate_estimated_tokens": budget.get("candidate_estimated_tokens"),
+                  "dropped_candidates": budget.get("dropped_candidates"),
+                  "dropped_for_token_budget": budget.get("dropped_for_token_budget"),
+                  "dropped_for_count_limit": budget.get("dropped_for_count_limit"),
+                  "authority_overage_tokens": budget.get("authority_overage_tokens"),
+              }
+
+          report = {
+              "version": 1,
+              "evaluation": "blind-agent-query-generation",
+              "repository": "ningcol/DouBaoFreeImageGen",
+              "base_commit": os.environ["BASE_REF"],
+              "target_commit": os.environ["TARGET_REF"],
+              "task": task,
+              "query_provenance": "frozen-on-issue-123-before-oracle-inspection",
+              "direct": metrics(direct),
+              "blind_agent": metrics(blind),
+          }
+          rendered = json.dumps(report, ensure_ascii=False, indent=2)
+          pathlib.Path("/tmp/doubao-debugger-report.json").write_text(rendered + "\n", encoding="utf-8")
+          print(rendered)
+
+          with pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write("# Blind Agent Query Evaluation — Multi-file\n\n")
+              handle.write(f"- Oracle files: `{oracle}`\n")
+              handle.write(f"- Direct recall: **{report['direct']['recall']:.3f}** ({report['direct']['matched_oracle_files']})\n")
+              handle.write(f"- Blind-Agent recall: **{report['blind_agent']['recall']:.3f}** ({report['blind_agent']['matched_oracle_files']})\n")
+              handle.write(f"- Direct Context: {report['direct']['code_files']} files / {report['direct']['selected_estimated_tokens']} estimated tokens / {report['direct']['dropped_candidates']} dropped\n")
+              handle.write(f"- Blind Context: {report['blind_agent']['code_files']} files / {report['blind_agent']['selected_estimated_tokens']} estimated tokens / {report['blind_agent']['dropped_candidates']} dropped\n")
+              handle.write("\nLow recall is evaluation evidence and does not fail this harness.\n")
+          PY
