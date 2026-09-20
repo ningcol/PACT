@@ -40,3 +40,5 @@ PACT aims to:
 - pin GitHub Actions used by PACT CI to immutable commit SHAs.
 
 PACT local receipts are execution/provenance records, not tamper-proof cryptographic attestations. GitHub Actions metadata recorded in a receipt is provenance metadata only; local environment variables can imitate it and PACT does not remotely attest the run. Stronger assurance requires repository protections and an independent remote/signed attestation layer.
+
+When an in-progress `pact run` is interrupted, PACT makes a bounded best-effort to terminate its **direct** verification child and publishes no receipt for that interrupted execution. PACT does not claim portable ownership of arbitrary grandchildren or detached processes created by the verification command; project commands that deliberately daemonize remain responsible for their own process lifecycle.
