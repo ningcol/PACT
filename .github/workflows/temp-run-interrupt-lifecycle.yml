@@ -1,0 +1,92 @@
+name: Temporary pact run Interrupt Lifecycle
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  interrupt-repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Reproduce child surviving group SIGINT
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import signal
+          import subprocess
+          import sys
+          import tempfile
+          import time
+
+          with tempfile.TemporaryDirectory(prefix="pact-interrupt-") as tmp:
+              root = pathlib.Path(tmp) / "project"
+              root.mkdir()
+              subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+              subprocess.run(["git", "config", "user.email", "pact-test@example.invalid"], cwd=root, check=True)
+              subprocess.run(["git", "config", "user.name", "PACT Test"], cwd=root, check=True)
+              (root / "README.md").write_text("# interrupt repro\n", encoding="utf-8")
+              subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+              subprocess.run(["git", "commit", "-q", "-m", "baseline"], cwd=root, check=True)
+
+              sentinel = pathlib.Path(tmp) / "child-survived.txt"
+              receipt = pathlib.Path(tmp) / "run.json"
+              child_code = (
+                  "import pathlib,signal,time;"
+                  "signal.signal(signal.SIGINT, signal.SIG_IGN);"
+                  "time.sleep(2.0);"
+                  f"pathlib.Path({str(sentinel)!r}).write_text('survived\\n', encoding='utf-8')"
+              )
+              argv = [
+                  sys.executable, "scripts/pact/pact.py", "run",
+                  "--task-id", "INTERRUPT-REPRO",
+                  "--output", str(receipt),
+                  "--cwd", str(root),
+                  "--quiet", "--",
+                  sys.executable, "-c", child_code,
+              ]
+
+              wrapper = subprocess.Popen(
+                  argv,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  start_new_session=True,
+              )
+              time.sleep(0.6)
+              os.killpg(wrapper.pid, signal.SIGINT)
+              try:
+                  stdout, stderr = wrapper.communicate(timeout=5)
+              except subprocess.TimeoutExpired:
+                  os.killpg(wrapper.pid, signal.SIGKILL)
+                  stdout, stderr = wrapper.communicate(timeout=5)
+                  raise SystemExit("PACT wrapper did not exit after SIGINT")
+
+              time.sleep(2.2)
+              report = {
+                  "wrapper_returncode": wrapper.returncode,
+                  "receipt_exists": receipt.exists(),
+                  "child_survival_sentinel": sentinel.exists(),
+                  "stdout_tail": stdout[-500:],
+                  "stderr_tail": stderr[-1500:],
+              }
+              print(json.dumps(report, indent=2))
+
+              # This is a reproduction, not a pass/fail product gate. The
+              # current suspected behavior is that the child survives.
+              if not sentinel.exists():
+                  print("Observed behavior changed: child did not survive SIGINT.")
+              else:
+                  print("REPRODUCED: child ignored SIGINT and continued after pact run exited.")
+          PY
