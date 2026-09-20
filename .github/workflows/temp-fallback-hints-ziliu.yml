@@ -1,0 +1,97 @@
+name: Temporary Fallback Hint Ziliu Reproduction
+
+on:
+  pull_request:
+    branches:
+      - feat/fallback-code-hints
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-fallback-hints
+  BASE_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TASK_TEXT: "optimize Feishu import image handling performance/UX: parallel image upload, download timeout/retry, loading progress, API image stats/results, better toast feedback"
+  SUCCESS_TEXT: "Feishu image import is faster and reports progress and failures clearly"
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned pre-change project
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+
+      - name: Adopt candidate PACT
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Build direct Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --output /tmp/direct.json
+
+      - name: Build task-primary Context with supplemental queries
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "$TASK_TEXT" \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --output /tmp/hinted.json
+
+      - name: Assert selected Context is unchanged and hint exposes missing path
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          direct = json.loads(pathlib.Path("/tmp/direct.json").read_text(encoding="utf-8"))
+          hinted = json.loads(pathlib.Path("/tmp/hinted.json").read_text(encoding="utf-8"))
+          direct_paths = [item["path"] for item in direct.get("code_artifacts", [])]
+          hinted_paths = [item["path"] for item in hinted.get("code_artifacts", [])]
+          direct_tokens = direct["context_budget"]["selected_estimated_tokens"]
+          hinted_tokens = hinted["context_budget"]["selected_estimated_tokens"]
+          hints = hinted.get("code_candidate_hints", [])
+          hint_paths = [item["path"] for item in hints]
+
+          assert hinted_paths == direct_paths, (direct_paths, hinted_paths)
+          assert len(hinted_paths) == 12, hinted_paths
+          assert hinted_tokens == direct_tokens == 36518, (direct_tokens, hinted_tokens)
+          assert len(hints) <= 5, hints
+          assert "src/components/editor/editor-layout.tsx" in hint_paths, hints
+          assert set(hint_paths).isdisjoint(hinted_paths), (hint_paths, hinted_paths)
+
+          target = next(item for item in hints if item["path"] == "src/components/editor/editor-layout.tsx")
+          assert target["relation"] == "direct-match", target
+          assert target["confidence"] == "direct", target
+          assert target["estimated_tokens"] == 1588, target
+          assert any("feishu-import-dialog loading progress toast" in reason for reason in target["reasons"]), target
+
+          print(json.dumps({
+              "selected_paths": hinted_paths,
+              "selected_estimated_tokens": hinted_tokens,
+              "hint_paths": hint_paths,
+              "editor_layout_hint": target,
+          }, ensure_ascii=False, indent=2))
+          PY
