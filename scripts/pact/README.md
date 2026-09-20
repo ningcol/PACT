@@ -234,6 +234,8 @@ This makes silent knowledge omission a completion error while keeping semantic j
 
 `discover`, `context`, and high-level `task prepare` support repeatable discovery queries.
 
+For high-level `task prepare`, the task wording is always retained as the primary retrieval query; repeatable `--query` values add business/canonical/code hypotheses. Low-level `context` remains available when an advanced caller intentionally wants to supply the entire query set.
+
 ```bash
 python pact.py context "fix province switching" \
   --success "displayed data follows the selected province" \
