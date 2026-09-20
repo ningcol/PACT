@@ -10,6 +10,10 @@ import subprocess
 from distribution import discovery_excluded_paths
 
 
+CONTROL_PLANE_EXACT_PATHS = {
+    ".pact/install.json",
+}
+
 GENERATED_PREFIXES = (
     ".pact/cache/",
     ".pact/runs/",
@@ -46,6 +50,8 @@ def git_root(cwd: pathlib.Path) -> pathlib.Path | None:
 
 def _excluded(relative: str, installed_exclusions: set[str]) -> bool:
     normalized = relative.replace("\\", "/")
+    if normalized in CONTROL_PLANE_EXACT_PATHS:
+        return True
     if normalized in installed_exclusions:
         return True
     return any(
