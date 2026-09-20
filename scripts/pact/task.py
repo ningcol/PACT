@@ -36,8 +36,41 @@ def generated_task_id(task: str) -> str:
 
 
 def write_json(path: pathlib.Path, data: dict) -> None:
+    """Atomically publish JSON state without following an existing leaf symlink."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.pact-task-",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = pathlib.Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+
+
+def read_task_manifest(path: pathlib.Path) -> dict:
+    if path.is_symlink():
+        raise ValueError(f"task manifest path must not be a symlink: {path}")
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid task manifest JSON: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid task manifest object: {path}")
+    return data
 
 
 def append_jsonl(path: pathlib.Path, data: dict) -> None:
@@ -323,18 +356,17 @@ def finish(args) -> int:
         print(f"PACT task finish: invalid task id: {exc}", file=sys.stderr)
         return 2
     manifest_path = task_dir / "task.json"
-    if not manifest_path.is_file():
+    try:
+        manifest = read_task_manifest(manifest_path)
+    except FileNotFoundError:
         print(
             f"PACT task finish: task was not prepared: {args.task_id}. "
             "Use 'pact task prepare' first.",
             file=sys.stderr,
         )
         return 2
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        print(f"PACT task finish: invalid task manifest: {manifest_path}", file=sys.stderr)
+    except ValueError as exc:
+        print(f"PACT task finish: {exc}", file=sys.stderr)
         return 2
 
     if manifest.get("task_id") != args.task_id:
@@ -415,7 +447,14 @@ def finish(args) -> int:
         if final_impact is not None
         else None
     )
-    write_json(manifest_path, manifest)
+    try:
+        write_json(manifest_path, manifest)
+    except OSError as exc:
+        print(
+            f"PACT task finish: cannot persist task change state: {exc}",
+            file=sys.stderr,
+        )
+        return 2
 
     command = runtime_command(
         "complete",
@@ -485,7 +524,15 @@ def finish(args) -> int:
         except ValueError:
             bundle_display = str(bundle)
         manifest["completion_bundle"] = bundle_display
-        write_json(manifest_path, manifest)
+        try:
+            write_json(manifest_path, manifest)
+        except OSError as exc:
+            print(
+                f"PACT task finish: completion gate passed but completed task state "
+                f"could not be persisted: {exc}",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.json and output is not None:
         print(json.dumps(output, ensure_ascii=False, indent=2))
@@ -508,14 +555,13 @@ def task_status(args) -> int:
         print(f"PACT task status: invalid task id: {exc}", file=sys.stderr)
         return 2
     manifest_path = task_dir / "task.json"
-    if not manifest_path.is_file():
+    try:
+        manifest = read_task_manifest(manifest_path)
+    except FileNotFoundError:
         print(f"PACT task status: unknown task {args.task_id}", file=sys.stderr)
         return 2
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        print(f"PACT task status: invalid task manifest: {exc}", file=sys.stderr)
+    except ValueError as exc:
+        print(f"PACT task status: {exc}", file=sys.stderr)
         return 2
 
     bundle = confined_child(COMPLETION_ROOT, args.task_id)

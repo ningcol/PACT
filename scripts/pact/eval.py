@@ -343,7 +343,12 @@ def run_receipts(task_id: str, evidence: dict | None) -> list[dict]:
 def derive_task(task_id: str) -> dict:
     validate_task_id(task_id)
     task_dir = confined_child(ROOT / ".pact" / "tasks", task_id)
-    manifest = load_optional(task_dir / "task.json")
+    manifest_path = task_dir / "task.json"
+    if manifest_path.is_symlink():
+        raise ValueError(
+            f"task manifest path must not be a symlink: {manifest_path}"
+        )
+    manifest = load_optional(manifest_path)
     if manifest is None:
         raise FileNotFoundError(f"task manifest not found for {task_id}")
 
