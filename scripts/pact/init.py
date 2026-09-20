@@ -452,11 +452,10 @@ def main() -> int:
         if manifest_path.is_symlink():
             raise ValueError("invalid .pact/install.json: path must not be a symlink")
         existing_manifest = read_install_manifest(target)
-    except ValueError as exc:
+        operations = plan(target, github_actions=args.github_actions)
+    except (ValueError, RuntimeError) as exc:
         print(f"PACT init: {exc}", file=sys.stderr)
         return 2
-
-    operations = plan(target, github_actions=args.github_actions)
 
     if args.apply and existing_manifest:
         installed_version = existing_manifest.get("runtime_version", "unknown")
