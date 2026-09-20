@@ -62,6 +62,21 @@ jobs:
             --query "image extraction debugger" \
             --output /tmp/doubao-debugger-blind.json
 
+      - name: Generate post-oracle vocabulary diagnostic
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "debugger EventStream image URL" \
+            --query "clear cookies settings" \
+            --query "image extraction debugger" \
+            --query "options settings storage" \
+            --output /tmp/doubao-debugger-hindsight.json
+
       - name: Reveal historical oracle after Contexts are frozen
         run: |
           python3 - <<'PY'
@@ -106,6 +121,7 @@ jobs:
 
           direct = json.loads(pathlib.Path("/tmp/doubao-debugger-direct.json").read_text(encoding="utf-8"))
           blind = json.loads(pathlib.Path("/tmp/doubao-debugger-blind.json").read_text(encoding="utf-8"))
+          hindsight = json.loads(pathlib.Path("/tmp/doubao-debugger-hindsight.json").read_text(encoding="utf-8"))
           oracle = json.loads(pathlib.Path("/tmp/doubao-debugger-oracle.json").read_text(encoding="utf-8"))["oracle"]
           frozen = ["debugger EventStream image URL", "clear cookies settings", "image extraction debugger"]
           task = os.environ["TASK_TEXT"]
@@ -147,6 +163,7 @@ jobs:
               "query_provenance": "frozen-on-issue-123-before-oracle-inspection",
               "direct": metrics(direct),
               "blind_agent": metrics(blind),
+              "post_oracle_diagnostic": metrics(hindsight),
           }
           rendered = json.dumps(report, ensure_ascii=False, indent=2)
           pathlib.Path("/tmp/doubao-debugger-report.json").write_text(rendered + "\n", encoding="utf-8")
@@ -157,6 +174,7 @@ jobs:
               handle.write(f"- Oracle files: `{oracle}`\n")
               handle.write(f"- Direct recall: **{report['direct']['recall']:.3f}** ({report['direct']['matched_oracle_files']})\n")
               handle.write(f"- Blind-Agent recall: **{report['blind_agent']['recall']:.3f}** ({report['blind_agent']['matched_oracle_files']})\n")
+              handle.write(f"- Post-oracle diagnostic recall: **{report['post_oracle_diagnostic']['recall']:.3f}** ({report['post_oracle_diagnostic']['matched_oracle_files']})\n")
               handle.write(f"- Direct Context: {report['direct']['code_files']} files / {report['direct']['selected_estimated_tokens']} estimated tokens / {report['direct']['dropped_candidates']} dropped\n")
               handle.write(f"- Blind Context: {report['blind_agent']['code_files']} files / {report['blind_agent']['selected_estimated_tokens']} estimated tokens / {report['blind_agent']['dropped_candidates']} dropped\n")
               handle.write("\nLow recall is evaluation evidence and does not fail this harness.\n")
