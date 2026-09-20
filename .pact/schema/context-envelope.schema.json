@@ -328,6 +328,54 @@
           "const": "utf8-bytes-div-4"
         }
       }
+    },
+    "code_candidate_hints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "language",
+          "relation",
+          "confidence",
+          "reasons",
+          "estimated_tokens"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confidence": {
+            "enum": [
+              "direct",
+              "relative-resolved",
+              "ast-resolved",
+              "heuristic"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "estimated_tokens": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
     }
   }
 }
