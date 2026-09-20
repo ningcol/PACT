@@ -1,0 +1,256 @@
+name: Temporary DouBao Real Lifecycle Pilot
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/doubao
+  TARGET_REF: 78aaedd030bc2e24d71e34598326e45cb5cf8127
+  TASK_ID: REAL-DOUBAO-LIFECYCLE-001
+  PACT_REF: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned DouBaoFreeImageGen
+        run: |
+          git clone https://github.com/ningcol/DouBaoFreeImageGen.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+
+      - name: Fresh adopt exact PACT PR head
+        run: |
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF"
+          python3 bootstrap.py init --target "$TARGET_DIR" --ref "$PACT_REF" --apply
+          test -z "$(git -C "$TARGET_DIR" diff --name-only)"
+
+      - name: Inspect remembered round-robin behavior
+        working-directory: /tmp/doubao
+        run: |
+          python3 pact.py doctor --strict
+          python3 pact.py status --strict --json | tee /tmp/doubao-status.json
+          python3 pact.py inspect "round robin client task dispatch" \
+            --query "round_robin_index get_idle_client" \
+            --code-limit 12 \
+            --json | tee /tmp/doubao-inspect.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/doubao-inspect.json", encoding="utf-8"))
+          paths = {item["path"] for item in data["discovery"].get("code_results", [])}
+          assert "McpServer/server.py" in paths, paths
+          print("DouBao inspect located McpServer/server.py", sorted(paths))
+          PY
+
+      - name: Prepare real medium-risk task
+        working-directory: /tmp/doubao
+        run: |
+          python3 pact.py task prepare \
+            "Document round-robin dispatch without changing behavior" \
+            --success "McpServer/server.py remains syntactically valid" \
+            --accept "The task change is limited to one non-behavioral comment in McpServer/server.py" \
+            --risk medium \
+            --code \
+            --query "round_robin_index get_idle_client" \
+            --task-id "$TASK_ID" \
+            --json | tee /tmp/doubao-prepare.json
+
+      - name: Make one real non-behavioral source change
+        working-directory: /tmp/doubao
+        run: |
+          printf '\n# PACT lifecycle smoke: round-robin behavior unchanged.\n' >> McpServer/server.py
+          git diff -- McpServer/server.py
+
+      - name: Verify the exact change through pact run
+        working-directory: /tmp/doubao
+        run: |
+          cat > /tmp/verify_doubao_lifecycle.py <<'PY'
+          import pathlib
+          import subprocess
+
+          path = pathlib.Path("McpServer/server.py")
+          source = path.read_text(encoding="utf-8")
+          compile(source, str(path), "exec")
+
+          diff = subprocess.run(
+              ["git", "diff", "--unified=0", "--", str(path)],
+              check=True, capture_output=True, text=True,
+          ).stdout.splitlines()
+          additions = [line for line in diff if line.startswith("+") and not line.startswith("+++")]
+          deletions = [line for line in diff if line.startswith("-") and not line.startswith("---")]
+          expected = ["+# PACT lifecycle smoke: round-robin behavior unchanged."]
+          assert additions == expected, additions
+          assert deletions == [], deletions
+          print("DouBao source verification PASS")
+          PY
+          mkdir -p ".pact/runs/$TASK_ID"
+          python3 pact.py run \
+            --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/verify.json" \
+            --quiet \
+            -- python3 /tmp/verify_doubao_lifecycle.py
+
+      - name: Build Evidence Convergence and Owner Report from prepared state
+        working-directory: /tmp/doubao
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path(".")
+          task_id = os.environ["TASK_ID"]
+          prep = json.load(open("/tmp/doubao-prepare.json", encoding="utf-8"))
+          contract = json.loads((root / prep["contract"]).read_text(encoding="utf-8"))
+          context = json.loads((root / prep["context"]).read_text(encoding="utf-8"))
+          bundle = root / ".pact" / "completions" / task_id
+          bundle.mkdir(parents=True, exist_ok=True)
+
+          claim = (
+              "The lifecycle change is limited to one non-behavioral comment and "
+              "McpServer/server.py remains syntactically valid."
+          )
+          evidence_id = "EV-DOUBAO-LIFECYCLE"
+          criteria = [item["id"] for item in contract["acceptance_criteria"]]
+          evidence = {
+              "version": 1,
+              "task_id": task_id,
+              "task": "Document round-robin dispatch without changing behavior",
+              "risk_level": "medium",
+              "task_contract_sha256": prep["contract_sha256"],
+              "claims": [{
+                  "id": evidence_id,
+                  "claim": claim,
+                  "required": True,
+                  "status": "pass",
+                  "criteria": criteria,
+                  "evidence": [{
+                      "kind": "test",
+                      "provenance": "pact-run",
+                      "ref": f".pact/runs/{task_id}/verify.json",
+                  }],
+              }],
+              "limitations": [
+                  "This lifecycle pilot does not connect to a live Doubao browser client or exercise external image generation.",
+              ],
+          }
+          convergence = {
+              "version": 1,
+              "task_id": task_id,
+              "change": "Add one temporary non-behavioral lifecycle-smoke comment to McpServer/server.py.",
+              "owner_summary": "PACT reviewed the prepared context, exact source change, and machine verification without claiming external Doubao behavior.",
+              "evidence": [evidence_id],
+              "context_sha256": prep["context_sha256"],
+              "coverage": [
+                  {
+                      "path": item["path"],
+                      "disposition": "aligned",
+                      "rationale": "Reviewed against the non-behavioral lifecycle-smoke task.",
+                  }
+                  for item in context.get("artifacts", [])
+              ],
+              "change_coverage": [{
+                  "path": "McpServer/server.py",
+                  "rationale": "This is the only task-attributed source change and it is the file compiled and diff-checked by the run receipt.",
+              }],
+              "findings": [],
+          }
+          owner = {
+              "version": 1,
+              "task_id": task_id,
+              "status": "completed",
+              "summary": "PACT completed a real DouBaoFreeImageGen task lifecycle without changing application behavior.",
+              "before": "The pinned project had no PACT state and McpServer/server.py had no lifecycle-smoke comment.",
+              "after": "PACT was freshly adopted, found the round-robin implementation, prepared the task, verified the exact one-line comment and Python syntax, and converged the changed file.",
+              "verification": [{
+                  "claim": claim,
+                  "evidence_ids": [evidence_id],
+              }],
+              "acceptance": [
+                  {
+                      "criterion_id": item["id"],
+                      "summary": item["text"],
+                      "evidence_ids": [evidence_id],
+                  }
+                  for item in contract["acceptance_criteria"]
+              ],
+              "consistency": {
+                  "status": "aligned",
+                  "summary": "The only project change is the reviewed non-behavioral comment; external Doubao behavior was not claimed as tested.",
+              },
+              "owner_decisions": [],
+          }
+
+          for name, data in [
+              ("evidence.json", evidence),
+              ("convergence.json", convergence),
+              ("owner-report.json", owner),
+          ]:
+              (bundle / name).write_text(
+                  json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+          print("DouBao completion bundle generated", bundle)
+          PY
+
+      - name: Finish task and assert machine-observed completion
+        working-directory: /tmp/doubao
+        run: |
+          python3 pact.py task finish "$TASK_ID" --json | tee /tmp/doubao-finish.json
+          python3 pact.py eval --task "$TASK_ID" --json | tee /tmp/doubao-eval.json
+          python3 - <<'PY'
+          import json
+
+          finish = json.load(open("/tmp/doubao-finish.json", encoding="utf-8"))
+          assert finish["complete"] is True, finish
+          assert finish["acceptance"]["total"] == 2, finish["acceptance"]
+          assert finish["acceptance"]["evidence_verified"] == 2, finish["acceptance"]
+          assert finish["acceptance"]["owner_report_covered"] == 2, finish["acceptance"]
+          assert finish["task_change"]["supported"] is True, finish["task_change"]
+          assert finish["task_change"]["changed_files"] == ["McpServer/server.py"], finish["task_change"]
+
+          observed = json.load(open("/tmp/doubao-eval.json", encoding="utf-8"))
+          assert observed["completion"]["final_complete"] is True, observed
+          assert observed["task_change"]["changed_files"] == 1, observed["task_change"]
+          assert observed["runs"]["passed"] >= 1, observed["runs"]
+          print("DouBao full PACT lifecycle PASS")
+          PY
+
+      - name: Verify upgrade dry-run and final project delta
+        working-directory: /tmp/doubao
+        run: |
+          python3 "$GITHUB_WORKSPACE/bootstrap.py" upgrade \
+            --target "$TARGET_DIR" \
+            --ref "$PACT_REF"
+          python3 - <<'PY'
+          import subprocess
+
+          result = subprocess.run(
+              ["git", "diff", "--name-only"],
+              check=True, capture_output=True, text=True,
+          )
+          paths = [line for line in result.stdout.splitlines() if line]
+          assert paths == ["McpServer/server.py"], paths
+          print("Final tracked delta:", paths)
+          PY
+
+      - name: Summarize lifecycle facts
+        if: always()
+        working-directory: /tmp/doubao
+        run: |
+          git status --short || true
+          test -f /tmp/doubao-status.json && cat /tmp/doubao-status.json || true
+          test -f /tmp/doubao-finish.json && cat /tmp/doubao-finish.json || true
+          test -f /tmp/doubao-eval.json && cat /tmp/doubao-eval.json || true
