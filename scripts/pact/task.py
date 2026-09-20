@@ -73,10 +73,95 @@ def read_task_manifest(path: pathlib.Path) -> dict:
     return data
 
 
-def append_jsonl(path: pathlib.Path, data: dict) -> None:
+def read_jsonl_records(path: pathlib.Path) -> list[dict]:
+    if path.is_symlink():
+        raise ValueError(f"JSONL history path must not be a symlink: {path}")
+    if not path.is_file():
+        return []
+
+    records: list[dict] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"invalid JSONL history at {path}:{line_number}: {exc}"
+            ) from exc
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"invalid JSONL history object at {path}:{line_number}"
+            )
+        records.append(value)
+    return records
+
+
+def append_jsonl_atomic(path: pathlib.Path, data: dict) -> None:
+    """Append one JSONL record by atomically replacing the complete valid history."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(data, ensure_ascii=False) + "\n")
+    records = read_jsonl_records(path)
+    records.append(data)
+    payload = "".join(
+        json.dumps(record, ensure_ascii=False) + "\n"
+        for record in records
+    )
+
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.pact-task-",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = pathlib.Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+
+
+def run_impact_atomically(
+    command: list[str],
+    destination: pathlib.Path,
+) -> subprocess.CompletedProcess[str]:
+    """Run Impact against a staged output path and atomically publish on success."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.pact-task-",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    os.close(fd)
+    temporary = pathlib.Path(temporary_name)
+    staged_command = list(command)
+    try:
+        output_index = staged_command.index("--output") + 1
+    except (ValueError, IndexError):
+        temporary.unlink(missing_ok=True)
+        raise ValueError("Impact command is missing --output")
+
+    staged_command[output_index] = str(temporary)
+    try:
+        result = run(staged_command)
+        if result.returncode == 0:
+            os.replace(temporary, destination)
+        return result
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
 
 
 def completion_blockers(errors: list[str]) -> list[str]:
@@ -439,7 +524,7 @@ def finish(args) -> int:
             "--files",
             *changed_files,
         )
-        impact_result = run(impact_cmd)
+        impact_result = run_impact_atomically(impact_cmd, final_impact)
         if impact_result.returncode != 0:
             print(impact_result.stdout, end="")
             print(impact_result.stderr, end="", file=sys.stderr)
@@ -518,7 +603,14 @@ def finish(args) -> int:
         "final_impact": manifest.get("final_impact"),
         "trust_warnings": trust_warnings,
     }
-    append_jsonl(task_dir / "completion-attempts.jsonl", attempt)
+    try:
+        append_jsonl_atomic(task_dir / "completion-attempts.jsonl", attempt)
+    except (OSError, ValueError) as exc:
+        print(
+            f"PACT task finish: cannot persist completion attempt history: {exc}",
+            file=sys.stderr,
+        )
+        return 2
 
     if completed.returncode == 0:
         manifest["status"] = "completed"
