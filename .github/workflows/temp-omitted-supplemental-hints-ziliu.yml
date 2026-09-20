@@ -46,11 +46,12 @@ jobs:
             --token-budget 40000 \
             --output /tmp/direct.json
 
-      - name: Build widened supplemental-only discovery
+      - name: Build widened task-plus-supplemental discovery
         run: |
           cd "$TARGET_DIR"
           python3 pact.py discover \
-            "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            "$TASK_TEXT" \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
             --query "feishu-import-dialog loading progress toast" \
             --query "image-service uploadImageFromUrl retry timeout" \
             --code \
