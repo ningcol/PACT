@@ -1,0 +1,98 @@
+name: Temporary Omitted Supplemental Hint Diagnostic - Ziliu
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-omitted-hints
+  BASE_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TASK_TEXT: "optimize Feishu import image handling performance/UX: parallel image upload, download timeout/retry, loading progress, API image stats/results, better toast feedback"
+  SUCCESS_TEXT: "Feishu image import is faster and reports progress and failures clearly"
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned pre-change project
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+
+      - name: Adopt current PACT
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Build canonical direct Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --output /tmp/direct.json
+
+      - name: Build widened supplemental-only discovery
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py discover \
+            "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --code \
+            --code-limit 36 \
+            --json > /tmp/supplemental.json
+
+      - name: Rank omitted supplemental candidates
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path(os.environ["TARGET_DIR"])
+          direct = json.loads(pathlib.Path("/tmp/direct.json").read_text(encoding="utf-8"))
+          supplemental = json.loads(pathlib.Path("/tmp/supplemental.json").read_text(encoding="utf-8"))
+          selected = {item["path"] for item in direct.get("code_artifacts", [])}
+          omitted = []
+          for rank, item in enumerate(supplemental.get("code_results", []), start=1):
+              path = item["path"]
+              if path in selected:
+                  continue
+              file_path = root / path
+              estimated = max((file_path.stat().st_size + 3) // 4, 1) if file_path.is_file() else 1
+              omitted.append({
+                  "supplemental_rank": rank,
+                  "path": path,
+                  "score": item.get("score"),
+                  "relation": item.get("relation"),
+                  "confidence": item.get("confidence"),
+                  "reasons": item.get("reasons", []),
+                  "estimated_tokens": estimated,
+              })
+
+          report = {
+              "direct_selected": [item["path"] for item in direct.get("code_artifacts", [])],
+              "direct_selected_estimated_tokens": direct.get("context_budget", {}).get("selected_estimated_tokens"),
+              "direct_dropped_for_count_limit": direct.get("context_budget", {}).get("dropped_for_count_limit"),
+              "top_omitted_supplemental": omitted[:10],
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          target = "src/components/editor/editor-layout.tsx"
+          hit = next((item for item in omitted if item["path"] == target), None)
+          print("EDITOR_LAYOUT_HINT=", json.dumps(hit, ensure_ascii=False))
+          PY
