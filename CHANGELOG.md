@@ -53,6 +53,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - per-file parse cache reuse is content-hash bound, so equal-size content replacements with preserved mtimes are reparsed;
 - `pact run` streams stdout/stderr while hashing instead of retaining full command output in memory;
 - validated `pact run` receipts are staged in the destination directory, fsynced, and atomically published so interrupted/failed writes do not leave partial receipts or follow a pre-existing leaf symlink;
+- interrupted `pact run` execution now terminates its direct verification child with bounded terminate/kill cleanup, returns controlled status 130, and avoids publishing a receipt or leaking a Python traceback;
 - Git workspace fingerprint V2 hashes staged index state, current unstaged file state, and untracked contents instead of buffering full binary patches;
 - large-output and large-binary workspace regressions now run in the cross-platform portability matrix.
 
