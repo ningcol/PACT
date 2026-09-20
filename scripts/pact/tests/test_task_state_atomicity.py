@@ -159,6 +159,41 @@ class TaskStateAtomicityTests(unittest.TestCase):
             [],
         )
 
+    def test_final_impact_commit_failure_preserves_existing_canonical_file(self) -> None:
+        task_dir = self.tasks / "TASK-IMPACT-COMMIT-FAIL"
+        task_dir.mkdir()
+        destination = task_dir / "final-impact.json"
+        destination.write_text('{"old":true}\n', encoding="utf-8")
+
+        def fake_run(command):
+            output = pathlib.Path(command[command.index("--output") + 1])
+            output.write_text('{"changed_files":["src/a.py"]}\n', encoding="utf-8")
+            return pact_task.subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(pact_task, "run", side_effect=fake_run):
+            with mock.patch.object(
+                pact_task.os,
+                "replace",
+                side_effect=OSError("simulated final impact commit failure"),
+            ):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "simulated final impact commit failure",
+                ):
+                    pact_task.run_impact_atomically(
+                        ["impact", "--output", str(destination), "--files", "src/a.py"],
+                        destination,
+                    )
+
+        self.assertEqual(
+            json.loads(destination.read_text(encoding="utf-8")),
+            {"old": True},
+        )
+        self.assertEqual(
+            list(task_dir.glob(".final-impact.json.pact-task-*.tmp")),
+            [],
+        )
+
     def test_final_impact_failure_preserves_existing_canonical_file(self) -> None:
         task_dir = self.tasks / "TASK-IMPACT-FAIL"
         task_dir.mkdir()
