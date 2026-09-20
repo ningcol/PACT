@@ -70,7 +70,7 @@ jobs:
       - name: Make one real non-behavioral source change
         working-directory: /tmp/doubao
         run: |
-          printf '\n# PACT lifecycle smoke: round-robin behavior unchanged.\n' >> McpServer/server.py
+          printf '# PACT lifecycle smoke: round-robin behavior unchanged.\n' >> McpServer/server.py
           git diff -- McpServer/server.py
 
       - name: Verify the exact change through pact run
