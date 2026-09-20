@@ -1,0 +1,72 @@
+name: Temporary Task-primary Context Ziliu Reproduction
+
+on:
+  pull_request:
+    branches:
+      - fix/primary-query-fusion
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-primary-repro
+  BASE_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TARGET_REF: a900bd01d8dcb1098adb151a0eff2a32e908c58b
+  TASK_TEXT: "optimize Feishu import image handling performance/UX: parallel image upload, download timeout/retry, loading progress, API image stats/results, better toast feedback"
+  SUCCESS_TEXT: "Feishu image import is faster and reports progress and failures clearly"
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Clone pinned pre-change project
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+      - name: Adopt candidate PACT
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+      - name: Direct Context
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" --risk medium --code \
+            --code-limit 12 --token-budget 40000 \
+            --output /tmp/direct.json
+      - name: Primary plus frozen supplemental queries
+        run: |
+          cd "$TARGET_DIR"
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" --risk medium --code \
+            --code-limit 12 --token-budget 40000 \
+            --query "$TASK_TEXT" \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --output /tmp/fusion.json
+      - name: Compare against pinned historical oracle
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ["TARGET_DIR"])
+          base, target = os.environ["BASE_REF"], os.environ["TARGET_REF"]
+          supported = {".py",".js",".jsx",".ts",".tsx",".vue",".go",".swift",".kt",".kts",".java",".rs",".c",".cc",".cpp",".h",".hpp",".cs",".rb",".php"}
+          changed = subprocess.run(["git","diff","--name-only","--no-renames",base,target,"--"], cwd=root, check=True, capture_output=True, text=True).stdout.splitlines()
+          oracle = [p for p in changed if pathlib.PurePosixPath(p).suffix.lower() in supported and subprocess.run(["git","cat-file","-e",f"{base}:{p}"],cwd=root,capture_output=True).returncode == 0]
+          direct = json.loads(pathlib.Path("/tmp/direct.json").read_text())
+          fusion = json.loads(pathlib.Path("/tmp/fusion.json").read_text())
+          def m(ctx):
+              paths=[x["path"] for x in ctx.get("code_artifacts",[])]
+              budget=ctx.get("context_budget",{})
+              matched=[p for p in oracle if p in paths]
+              return {"paths":paths,"matched":matched,"missing":[p for p in oracle if p not in paths],"recall":len(matched)/len(oracle),"tokens":budget.get("selected_estimated_tokens"),"dropped":budget.get("dropped_candidates"),"dropped_token":budget.get("dropped_for_token_budget"),"dropped_count":budget.get("dropped_for_count_limit")}
+          report={"oracle":oracle,"direct":m(direct),"fusion":m(fusion),"fusion_queries":fusion.get("discovery_queries")}
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          pathlib.Path("/tmp/report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n")
+          PY
