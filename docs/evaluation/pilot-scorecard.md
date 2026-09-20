@@ -120,6 +120,14 @@ The first machine-observed owner-project lifecycle is recorded in:
 
 It records one pinned DouBaoFreeImageGen task, the retrieval/workspace defects the pilot exposed, machine-observed Context/verification/completion facts, and the human-only dimensions that remain unknown. Treat it as a baseline sample, not as proof that PACT has already reduced cognitive load or engineering cost.
 
+## Blind query evaluation
+
+The owner-language -> code-language query experiments and the resulting retrieval design decisions are recorded in:
+
+`docs/evaluation/blind-query-evaluation-2026-09-20.md`
+
+The report distinguishes blind Agent-generated queries from post-oracle diagnostics and records the task-primary preservation / fallback-hint changes driven by the experiments. It does not claim that semantic retrieval is permanently unnecessary.
+
 ## Historical retrieval replay
 
 Use `docs/evaluation/brownfield-benchmark.md` for the repeatable historical Context-retrieval benchmark. It compares pre-change Context with source files changed by later real commits and separately measures direct retrieval vs a curated post-hoc expanded-query diagnostic. The latter is not an unbiased Agent-performance metric.
