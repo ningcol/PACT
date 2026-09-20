@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -177,6 +178,40 @@ class InitReadinessTests(unittest.TestCase):
         result = self.run_init("--apply", "--github-actions")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(workflow.read_text(encoding="utf-8"), "KEEP\n")
+
+    def test_parent_symlink_escape_is_rejected(self) -> None:
+        self.target.mkdir(parents=True)
+        outside = pathlib.Path(self.temp.name) / "outside"
+        outside.mkdir()
+        link = self.target / ".pact"
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("init path escapes target through symlink", result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_broken_leaf_symlink_is_preserved_as_existing_path(self) -> None:
+        self.target.mkdir(parents=True)
+        agents = self.target / "AGENTS.md"
+        broken_target = self.target / "missing-agents.md"
+        try:
+            os.symlink(broken_target, agents)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        self.assertTrue(agents.is_symlink())
+        self.assertFalse(agents.exists())
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(agents.is_symlink())
+        self.assertEqual(os.readlink(agents), str(broken_target))
+        self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
 
 
 if __name__ == "__main__":

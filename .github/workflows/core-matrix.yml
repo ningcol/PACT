@@ -46,5 +46,6 @@ jobs:
           python -m unittest discover -s scripts/pact/tests -p "test_distribution_upgrade.py"
           python -m unittest discover -s scripts/pact/tests -p "test_stdlib_runtime.py"
           python -m unittest discover -s scripts/pact/tests -p "test_init_readiness.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_discovery_ownership.py"
           python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
           python -m unittest discover -s scripts/pact/tests -p "test_streaming_reliability.py"

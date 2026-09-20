@@ -93,8 +93,16 @@ def manifest_record(entry: dict, destination: pathlib.Path) -> dict:
 
 
 def read_install_manifest(root: pathlib.Path) -> dict | None:
-    """Return a valid install manifest, None when absent, or raise when corrupt."""
+    """Return a valid confined install manifest, None when absent, or raise."""
+    root_resolved = root.resolve()
     path = root / ".pact" / "install.json"
+    parent = path.parent.resolve()
+    if parent != root_resolved and root_resolved not in parent.parents:
+        raise ValueError(
+            "invalid .pact/install.json: parent path escapes repository root"
+        )
+    if path.is_symlink():
+        raise ValueError("invalid .pact/install.json: path must not be a symlink")
     if not path.exists():
         return None
     try:
@@ -191,7 +199,9 @@ def discovery_excluded_paths(root: pathlib.Path) -> set[str]:
 
         path = root / relative
         expected = record.get("installed_sha256")
-        if not path.is_file() or not isinstance(expected, str):
+        # A project replacing a seed with a symlink has changed ownership/state.
+        # Do not follow the link merely to decide whether the seed is unchanged.
+        if path.is_symlink() or not path.is_file() or not isinstance(expected, str):
             continue
         try:
             actual = sha256_file(path)

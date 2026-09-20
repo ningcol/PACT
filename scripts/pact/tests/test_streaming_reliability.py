@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -121,6 +122,30 @@ class StreamingReliabilityTests(unittest.TestCase):
         binary.write_bytes(b"C" * (6 * 1024 * 1024))
         second = workspace.workspace_snapshot(self.root)
         self.assertTrue(second["dirty"])
+        self.assertNotEqual(first["sha256"], second["sha256"])
+
+    def test_filesystem_workspace_snapshot_tracks_directory_symlink_target(self) -> None:
+        fs_root = pathlib.Path(self.temp.name) / "filesystem"
+        outside = pathlib.Path(self.temp.name) / "outside"
+        target_a = outside / "a"
+        target_b = outside / "b"
+        fs_root.mkdir()
+        target_a.mkdir(parents=True)
+        target_b.mkdir(parents=True)
+        link = fs_root / "linked-dir"
+        try:
+            os.symlink(target_a, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        first = workspace.filesystem_workspace_snapshot(fs_root)
+        self.assertEqual(first["file_count"], 1)
+
+        link.unlink()
+        os.symlink(target_b, link, target_is_directory=True)
+        second = workspace.filesystem_workspace_snapshot(fs_root)
+
+        self.assertEqual(second["file_count"], 1)
         self.assertNotEqual(first["sha256"], second["sha256"])
 
 
