@@ -112,6 +112,14 @@ The machine summary reports overall and per-risk counts/means for verification, 
 
 There is deliberately no combined 0–100 score. A lower Context size is not automatically better, and more trust blockers are not automatically worse: a blocker may represent a useful false-completion catch.
 
+## Real owner-project baseline
+
+The first machine-observed owner-project lifecycle is recorded in:
+
+`docs/evaluation/real-doubao-pilot-2026-09-20.md`
+
+It records one pinned DouBaoFreeImageGen task, the retrieval/workspace defects the pilot exposed, machine-observed Context/verification/completion facts, and the human-only dimensions that remain unknown. Treat it as a baseline sample, not as proof that PACT has already reduced cognitive load or engineering cost.
+
 ## Historical retrieval replay
 
 Use `docs/evaluation/brownfield-benchmark.md` for the repeatable historical Context-retrieval benchmark. It compares pre-change Context with source files changed by later real commits and separately measures direct retrieval vs a curated post-hoc expanded-query diagnostic. The latter is not an unbiased Agent-performance metric.
