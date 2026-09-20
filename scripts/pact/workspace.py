@@ -184,17 +184,27 @@ def _filesystem_paths(root: pathlib.Path) -> list[pathlib.Path]:
     for current, dirs, files in os.walk(root):
         current_path = pathlib.Path(current)
         relative_dir = current_path.relative_to(root).as_posix()
-        dirs[:] = [
-            name
-            for name in dirs
-            if name not in excluded_dirs
-            and not _excluded(
-                (
-                    f"{relative_dir}/{name}" if relative_dir != "." else name
-                ).rstrip("/") + "/",
-                installed_exclusions,
+
+        retained_dirs: list[str] = []
+        for name in dirs:
+            path = current_path / name
+            relative = (
+                f"{relative_dir}/{name}" if relative_dir != "." else name
             )
-        ]
+            excluded = (
+                name in excluded_dirs
+                or _excluded(relative.rstrip("/") + "/", installed_exclusions)
+            )
+            if excluded:
+                continue
+            if path.is_symlink():
+                # os.walk(followlinks=False) exposes directory symlinks in dirs
+                # but does not traverse them. Hash the link itself so retargeting
+                # invalidates filesystem-backed run receipts.
+                paths.append(path)
+                continue
+            retained_dirs.append(name)
+        dirs[:] = retained_dirs
 
         for name in files:
             path = current_path / name
