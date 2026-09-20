@@ -28,13 +28,18 @@ jobs:
       - name: Show bounded task-relevant source paths
         run: |
           cd "$TARGET_DIR"
-          git ls-files | python3 - <<'PY'
+          python3 - <<'PY'
           import re
-          import sys
+          import subprocess
 
-          keywords = re.compile(r"(feishu|image|editor|upload|import|toast|loading|progress|api)", re.I)
+          keywords = re.compile(r"(feishu|image|editor|upload|toast|loading|progress|api|article|content)", re.I)
           suffixes = (".py", ".js", ".jsx", ".ts", ".tsx", ".vue")
-          paths = [line.strip() for line in sys.stdin if line.strip()]
+          paths = subprocess.run(
+              ["git", "ls-files"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.splitlines()
           selected = [p for p in paths if p.lower().endswith(suffixes) and keywords.search(p)]
           for path in selected[:160]:
               print(path)
@@ -44,7 +49,7 @@ jobs:
       - name: Show bounded pre-change vocabulary hints
         run: |
           cd "$TARGET_DIR"
-          git grep -n -I -E "Feishu|feishu|image|upload|toast|loading|progress|retry|timeout|import" -- src > /tmp/ziliu-prechange-grep.txt || true
+          git grep -n -I -E "Feishu|feishu|飞书|image|图片|upload|上传|toast|loading|progress|retry|重试|timeout|超时|下载" -- src > /tmp/ziliu-prechange-grep.txt || true
           python3 - <<'PY'
           import pathlib
 
