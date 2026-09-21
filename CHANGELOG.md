@@ -44,6 +44,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Reliability hardening
 
+- `task status` now validates manifest path fields before resolving completion/contract state, so malformed local task metadata fails closed with a controlled error instead of a Python traceback;
 - `task status` now reports completion files from the task manifest's actual `completion_bundle`, including custom relative/absolute bundle paths, instead of always assuming the default `.pact/completions/<TASK-ID>` location;
 - `task finish` now atomically publishes completion-attempt history and stages Final Impact before replacing its canonical path, so persistence failures preserve prior valid derived state and do not follow leaf symlinks;
 - `pact init --apply` now rejects parent-directory symlink escapes and treats existing leaf symlinks, including broken symlinks, as occupied paths under no-overwrite semantics;
