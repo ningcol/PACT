@@ -1,0 +1,24 @@
+name: Temporary Upload Artifact v7 Smoke
+
+on:
+  pull_request:
+    branches:
+      - chore/node24-upload-artifact
+
+permissions:
+  contents: read
+
+jobs:
+  upload-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create smoke artifact
+        run: |
+          printf 'PACT upload-artifact v7 smoke\n' > /tmp/pact-upload-smoke.txt
+
+      - name: Upload smoke artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pact-upload-artifact-v7-smoke
+          path: /tmp/pact-upload-smoke.txt
+          if-no-files-found: error
