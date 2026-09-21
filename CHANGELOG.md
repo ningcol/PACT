@@ -45,6 +45,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 ### Reliability hardening
 
 - maintained GitHub Actions workflows and the downstream CI template now pin Node 24-capable `actions/checkout@v7.0.1` and `actions/setup-python@v7.0.0`, removing the Node 20 deprecation path before formal release;
+- external pilot workflows now pin Node 24-capable `actions/upload-artifact@v7.0.1`, completing the maintained JavaScript-action runtime migration away from deprecated Node 20 actions;
 - prepared Task Contract/Context/Final Impact paths are now resolved through one repository-confinement primitive across finish/status/eval, preventing traversal or symlink escapes while preserving external custom completion bundles;
 - `task finish` now validates prepared manifest path/digest/risk/workspace-baseline fields before any workspace, Impact, or completion-history side effects, so malformed durable task state fails closed at the lifecycle boundary;
 - `task status` now validates manifest path fields and the prepared Task Contract before reporting recovery state, so malformed/missing durable task metadata fails closed instead of becoming a traceback or a misleading zero-acceptance task;
