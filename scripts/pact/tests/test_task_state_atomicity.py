@@ -62,8 +62,9 @@ class TaskStateAtomicityTests(unittest.TestCase):
             )
 
     def test_confined_repository_path_rejects_symlink_escape(self) -> None:
-        outside = pathlib.Path(self.temp.name) / "outside-contract.json"
+        outside = self.root.parent / f"{self.root.name}-outside-contract.json"
         outside.write_text("{}\n", encoding="utf-8")
+        self.addCleanup(outside.unlink, missing_ok=True)
         inside = self.root / "contract.json"
         try:
             os.symlink(outside, inside)
