@@ -217,6 +217,20 @@ def smoke_install(source_root: pathlib.Path, output_dir: pathlib.Path) -> dict:
                 f"release asset: {installed_sha} != {release_sha}"
             )
 
+        installed_license = target / ".pact" / "LICENSE"
+        source_license = source_root / "LICENSE"
+        if not installed_license.is_file():
+            raise RuntimeError(
+                "fresh bootstrap did not retain Apache-2.0 license under .pact/LICENSE"
+            )
+        installed_license_sha = sha256_file(installed_license)
+        source_license_sha = sha256_file(source_license)
+        if installed_license_sha != source_license_sha:
+            raise RuntimeError(
+                "fresh bootstrap installed a PACT license different from the "
+                f"release source: {installed_license_sha} != {source_license_sha}"
+            )
+
         installed_version = (target / ".pact" / "VERSION").read_text(
             encoding="utf-8"
         ).strip()
@@ -238,6 +252,7 @@ def smoke_install(source_root: pathlib.Path, output_dir: pathlib.Path) -> dict:
             "archive_sha256": archive_sha,
             "release_runtime_sha256": release_sha,
             "installed_runtime_sha256": installed_sha,
+            "installed_license_sha256": installed_license_sha,
             "runtime_version": installed_version,
             "status": status_data.get("overall"),
         }
