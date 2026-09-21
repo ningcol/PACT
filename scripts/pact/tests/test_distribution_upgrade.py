@@ -179,9 +179,13 @@ class DistributionUpgradeTests(unittest.TestCase):
         manifest = self.scaffold()
         self.assertEqual(manifest["runtime_version"], SOURCE_VERSION)
         self.assertNotIn("install_profile", manifest)
-        self.assertLessEqual(len(manifest["files"]), 8)
+        self.assertLessEqual(len(manifest["files"]), 9)
         self.assertEqual(
             manifest["files"][".pact/pact.pyz"]["management"],
+            "framework",
+        )
+        self.assertEqual(
+            manifest["files"][".pact/LICENSE"]["management"],
             "framework",
         )
         self.assertEqual(
@@ -189,6 +193,11 @@ class DistributionUpgradeTests(unittest.TestCase):
             "seed",
         )
         self.assertTrue((self.target / ".pact" / "pact.pyz").is_file())
+        self.assertEqual(
+            (self.target / ".pact" / "LICENSE").read_bytes(),
+            (PROJECT_ROOT / "LICENSE").read_bytes(),
+        )
+        self.assertFalse((self.target / "LICENSE").exists())
         self.assertFalse((self.target / "scripts" / "pact").exists())
 
         version = self.run_target("version", "--json")
@@ -257,6 +266,23 @@ class DistributionUpgradeTests(unittest.TestCase):
         reinit = self.run_init("--apply")
         self.assertEqual(reinit.returncode, 2)
         self.assertIn("unsafe tracked path", reinit.stderr)
+
+        doctor = self.run_target("doctor", "--strict", "--json")
+        self.assertEqual(doctor.returncode, 1)
+        self.assertIn("unsafe tracked path", doctor.stdout + doctor.stderr)
+
+        status = self.run_target("status", "--strict", "--json")
+        self.assertEqual(status.returncode, 1)
+        self.assertIn("unsafe tracked path", status.stdout + status.stderr)
+
+        version = self.run_target(
+            "version",
+            "--target",
+            str(self.target),
+            "--json",
+        )
+        self.assertEqual(version.returncode, 2)
+        self.assertIn("unsafe tracked path", version.stderr)
 
         upgrade = self.run_upgrade("--apply")
         self.assertEqual(upgrade.returncode, 2)
@@ -377,6 +403,94 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertNotIn(".pact/obsolete-framework.txt", updated["files"])
 
+    def test_init_preserves_host_license_and_installs_pact_license(self) -> None:
+        self.target.mkdir(parents=True)
+        host_license = self.target / "LICENSE"
+        host_license.write_text("Host project license\n", encoding="utf-8")
+
+        manifest = self.scaffold()
+
+        self.assertEqual(
+            host_license.read_text(encoding="utf-8"),
+            "Host project license\n",
+        )
+        pact_license = self.target / ".pact" / "LICENSE"
+        self.assertEqual(
+            pact_license.read_bytes(),
+            (PROJECT_ROOT / "LICENSE").read_bytes(),
+        )
+        record = manifest["files"][".pact/LICENSE"]
+        self.assertEqual(record["management"], "framework")
+        self.assertEqual(record["source_path"], "LICENSE")
+        self.assertEqual(
+            record["installed_sha256"],
+            hashlib.sha256(pact_license.read_bytes()).hexdigest(),
+        )
+
+    def test_upgrade_updates_framework_managed_pact_license(self) -> None:
+        self.scaffold()
+        original = (self.target / ".pact" / "LICENSE").read_text(encoding="utf-8")
+
+        self.change_runtime_source()
+        changed = original + "\n# test-only upstream license payload change\n"
+        self.write_source("LICENSE", changed)
+
+        result = self.run_upgrade("--apply", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            (self.target / ".pact" / "LICENSE").read_text(encoding="utf-8"),
+            changed,
+        )
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["files"][".pact/LICENSE"]["installed_sha256"],
+            hashlib.sha256(changed.encode("utf-8")).hexdigest(),
+        )
+
+    def test_manifest_parent_symlink_escape_is_rejected_everywhere(self) -> None:
+        manifest = self.scaffold()
+        outside_dir = self.root / "outside-framework"
+        outside_dir.mkdir()
+        outside_file = outside_dir / "framework.txt"
+        outside_file.write_text("outside framework\n", encoding="utf-8")
+        digest = hashlib.sha256(outside_file.read_bytes()).hexdigest()
+
+        linked = self.target / "linked-framework"
+        try:
+            os.symlink(outside_dir, linked, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        manifest["files"]["linked-framework/framework.txt"] = {
+            "management": "framework",
+            "source_path": "pact.py",
+            "source_sha256": digest,
+            "installed_sha256": digest,
+        }
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        doctor = self.run_target("doctor", "--strict", "--json")
+        self.assertEqual(doctor.returncode, 1)
+        self.assertIn("escapes repository through symlink", doctor.stdout + doctor.stderr)
+
+        version = self.run_target(
+            "version",
+            "--target",
+            str(self.target),
+            "--json",
+        )
+        self.assertEqual(version.returncode, 2)
+        self.assertIn("escapes repository through symlink", version.stderr)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("escapes repository through symlink", upgrade.stderr)
+
     def test_project_toml_seed_is_never_overwritten(self) -> None:
         self.scaffold()
         config = self.target / ".pact" / "config.toml"
@@ -415,9 +529,25 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_symlink())
         self.assertEqual(outside.read_bytes(), original)
 
+        doctor = self.run_target("doctor", "--strict", "--json")
+        self.assertEqual(doctor.returncode, 1)
+        self.assertIn("install.json", doctor.stdout + doctor.stderr)
+        self.assertIn("symlink", doctor.stdout + doctor.stderr)
+
+        version = self.run_target(
+            "version",
+            "--target",
+            str(self.target),
+            "--json",
+        )
+        self.assertEqual(version.returncode, 2)
+        self.assertIn("install.json", version.stderr)
+        self.assertIn("symlink", version.stderr)
+
         upgrade = self.run_upgrade("--apply")
         self.assertEqual(upgrade.returncode, 2)
-        self.assertIn("upgrade path is a symlink", upgrade.stderr)
+        self.assertIn("install.json", upgrade.stderr)
+        self.assertIn("symlink", upgrade.stderr)
         self.assertTrue(manifest_path.is_symlink())
         self.assertEqual(outside.read_bytes(), original)
 
@@ -436,7 +566,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         result = self.run_upgrade("--apply")
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("upgrade path is a symlink: 'pact.py'", result.stderr)
+        self.assertIn("tracked path is a symlink: 'pact.py'", result.stderr)
         self.assertTrue(framework.is_symlink())
         self.assertEqual(outside.read_bytes(), original)
 
