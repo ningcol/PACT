@@ -11,7 +11,7 @@ import sys
 from collections import defaultdict
 
 from schema_validate import load_schema, validate_instance
-from protocol_ids import validate_task_id, confined_child
+from protocol_ids import validate_task_id, confined_child, confined_repository_path
 from task_contract import acceptance_review
 
 
@@ -354,14 +354,37 @@ def derive_task(task_id: str) -> dict:
 
     contract_path = manifest.get("contract")
     contract = (
-        load_optional(ROOT / contract_path)
-        if isinstance(contract_path, str)
+        load_optional(
+            confined_repository_path(
+                ROOT,
+                contract_path,
+                field="contract",
+            )
+        )
+        if contract_path is not None
         else None
     )
     context_path = manifest.get("context")
     context = (
-        load_optional(ROOT / context_path)
-        if isinstance(context_path, str)
+        load_optional(
+            confined_repository_path(
+                ROOT,
+                context_path,
+                field="context",
+            )
+        )
+        if context_path is not None
+        else None
+    )
+
+    raw_final_impact = manifest.get("final_impact")
+    final_impact_path = (
+        confined_repository_path(
+            ROOT,
+            raw_final_impact,
+            field="final_impact",
+        )
+        if raw_final_impact is not None
         else None
     )
 
@@ -418,8 +441,8 @@ def derive_task(task_id: str) -> dict:
                 "changed_files": len(task_change_paths),
                 "paths": task_change_paths,
                 "final_impact": bool(
-                    manifest.get("final_impact")
-                    and (ROOT / manifest["final_impact"]).is_file()
+                    final_impact_path
+                    and final_impact_path.is_file()
                 ),
                 "reason": None,
             }
