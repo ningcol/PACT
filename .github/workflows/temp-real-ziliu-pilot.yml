@@ -1,0 +1,354 @@
+name: Temporary Real Ziliu Brownfield Pilot
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-real-pilot
+  BASE_REF: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+  TARGET_REF: a900bd01d8dcb1098adb151a0eff2a32e908c58b
+  TASK_ID: REAL-ZILIU-FEISHU-001
+
+jobs:
+  real-ziliu-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Clone pinned ziliu history and freeze historical patch
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" fetch --quiet origin "$BASE_REF" "$TARGET_REF"
+          git -C "$TARGET_DIR" diff --binary "$BASE_REF" "$TARGET_REF" -- > /tmp/ziliu-real.patch
+          git -C "$TARGET_DIR" checkout --detach "$BASE_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_REF"
+          git -C "$TARGET_DIR" diff --quiet
+          printf "Historical changed files:\n"
+          git -C "$TARGET_DIR" diff --name-status "$BASE_REF" "$TARGET_REF" --
+
+      - name: Install ziliu dependencies
+        working-directory: /tmp/ziliu-real-pilot
+        run: npm ci --no-audit --no-fund
+
+      - name: Measure baseline project verification
+        working-directory: /tmp/ziliu-real-pilot
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit > /tmp/ziliu-baseline-tsc.log 2>&1
+          BASE_TSC_RC=$?
+          npm run build > /tmp/ziliu-baseline-build.log 2>&1
+          BASE_BUILD_RC=$?
+          set -e
+          echo "BASE_TSC_RC=$BASE_TSC_RC" | tee /tmp/ziliu-baseline-results.env
+          echo "BASE_BUILD_RC=$BASE_BUILD_RC" | tee -a /tmp/ziliu-baseline-results.env
+          echo "### Baseline tsc tail"
+          tail -n 80 /tmp/ziliu-baseline-tsc.log || true
+          echo "### Baseline build tail"
+          tail -n 120 /tmp/ziliu-baseline-build.log || true
+
+      - name: Fresh adopt candidate PACT and commit control plane
+        run: |
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+          git -C "$TARGET_DIR" config user.email "pact-pilot@example.invalid"
+          git -C "$TARGET_DIR" config user.name "PACT Pilot"
+          git -C "$TARGET_DIR" add -A
+          git -C "$TARGET_DIR" commit -m "chore: adopt PACT for temporary pilot"
+          git -C "$TARGET_DIR" status --short
+
+      - name: Prepare real historical task Context
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          python3 pact.py task prepare \
+            "优化飞书导入的图片处理性能和用户体验" \
+            --success "真实历史多文件改动被完整重放，飞书导入图片链路通过可执行项目验证且完成证据与变更覆盖闭环" \
+            --accept "历史目标提交涉及的源代码改动被准确应用，无额外产品文件漂移" \
+            --accept "可执行的 TypeScript 或 Next.js 构建验证证明变更后项目至少保持历史基线的机器可验证质量" \
+            --constraint "不得把 PACT 生成状态计入产品 changed-file attribution" \
+            --risk medium \
+            --code \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --task-id "$TASK_ID" \
+            --json | tee /tmp/ziliu-prepare.json
+
+      - name: Apply exact historical product patch
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          git apply /tmp/ziliu-real.patch
+          git status --short
+          echo "Changed product paths after replay:"
+          git diff --name-status --
+
+      - name: Verify exact historical replay through pact run
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          python3 pact.py run \
+            --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/historical-replay.json" \
+            --quiet \
+            -- \
+            python3 -c "import pathlib,subprocess,sys; expected={'src/app/api/parse-feishu/route.ts','src/components/editor/editor-layout.tsx','src/components/editor/feishu-import-dialog.tsx','src/components/editor/simple-editor.tsx','src/lib/services/image-service.ts','vercel.json'}; changed=set(subprocess.run(['git','diff','--name-only','--',],check=True,capture_output=True,text=True).stdout.splitlines()); extra={p for p in changed if not p.startswith('.pact/')}; assert extra==expected,(extra,expected); target='a900bd01d8dcb1098adb151a0eff2a32e908c58b'; deleted={'src/components/editor/simple-editor.tsx'}; [((pathlib.Path(p).read_bytes()==subprocess.run(['git','show',f'{target}:{p}'],check=True,capture_output=True).stdout) or (_ for _ in ()).throw(AssertionError(p))) for p in sorted(expected-deleted)]; assert all(not pathlib.Path(p).exists() for p in deleted); print('historical replay matches target source state')"
+
+      - name: Run post-change TypeScript verification through pact run
+        working-directory: /tmp/ziliu-real-pilot
+        shell: bash
+        run: |
+          set +e
+          python3 pact.py run \
+            --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/typescript.json" \
+            --quiet \
+            -- npx tsc --noEmit
+          TSC_RC=$?
+          set -e
+          echo "POST_TSC_RC=$TSC_RC" | tee /tmp/ziliu-post-results.env
+          exit 0
+
+      - name: Run post-change Next build through pact run
+        working-directory: /tmp/ziliu-real-pilot
+        shell: bash
+        run: |
+          set +e
+          python3 pact.py run \
+            --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/build.json" \
+            --quiet \
+            -- npm run build
+          BUILD_RC=$?
+          set -e
+          echo "POST_BUILD_RC=$BUILD_RC" | tee -a /tmp/ziliu-post-results.env
+          exit 0
+
+      - name: Summarize baseline vs post-change verification
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          cat /tmp/ziliu-baseline-results.env
+          cat /tmp/ziliu-post-results.env
+          python3 - <<'PY'
+          import json, pathlib
+          for name in ("historical-replay", "typescript", "build"):
+              path = pathlib.Path(".pact/runs") / "REAL-ZILIU-FEISHU-001" / f"{name}.json"
+              data = json.loads(path.read_text(encoding="utf-8"))
+              print(name, "status=", data["status"], "exit_code=", data["exit_code"], "workspace_changed=", data.get("workspace_changed"))
+          PY
+
+      - name: Create completion bundle from observed verification
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          root = pathlib.Path(".")
+          task_id = os.environ["TASK_ID"]
+          prep = json.loads(pathlib.Path("/tmp/ziliu-prepare.json").read_text(encoding="utf-8"))
+          context = json.loads((root / prep["context"]).read_text(encoding="utf-8"))
+          runs = {}
+          for name in ("historical-replay", "typescript", "build"):
+              path = root / ".pact" / "runs" / task_id / f"{name}.json"
+              runs[name] = json.loads(path.read_text(encoding="utf-8"))
+
+          passing_quality = [name for name in ("typescript", "build") if runs[name]["status"] == "pass"]
+          quality_ref = passing_quality[0] if passing_quality else None
+          claims = [
+              {
+                  "id": "EV-ZILIU-REPLAY",
+                  "claim": "The historical ziliu Feishu-import patch is replayed exactly across the expected product files.",
+                  "required": True,
+                  "status": "pass",
+                  "criteria": ["AC-1"],
+                  "evidence": [{
+                      "kind": "test",
+                      "provenance": "pact-run",
+                      "ref": f".pact/runs/{task_id}/historical-replay.json",
+                  }],
+              }
+          ]
+          limitations = []
+          if quality_ref:
+              claims.append({
+                  "id": "EV-ZILIU-QUALITY",
+                  "claim": f"Post-change project verification passes via {quality_ref}.",
+                  "required": True,
+                  "status": "pass",
+                  "criteria": ["AC-2"],
+                  "evidence": [{
+                      "kind": "test",
+                      "provenance": "pact-run",
+                      "ref": f".pact/runs/{task_id}/{quality_ref}.json",
+                  }],
+              })
+          else:
+              claims.append({
+                  "id": "EV-ZILIU-QUALITY",
+                  "claim": "Neither TypeScript nor Next.js build verification passed after replay.",
+                  "required": True,
+                  "status": "fail",
+                  "criteria": ["AC-2"],
+                  "evidence": [
+                      {"kind": "test", "provenance": "pact-run", "ref": f".pact/runs/{task_id}/typescript.json"},
+                      {"kind": "test", "provenance": "pact-run", "ref": f".pact/runs/{task_id}/build.json"},
+                  ],
+              })
+              limitations.append("Project-level executable quality verification did not pass; inspect baseline vs post-change logs before attributing cause.")
+
+          evidence = {
+              "version": 1,
+              "task_id": task_id,
+              "task": "优化飞书导入的图片处理性能和用户体验",
+              "risk_level": "medium",
+              "task_contract_sha256": prep["contract_sha256"],
+              "claims": claims,
+              "limitations": limitations,
+          }
+
+          knowledge_coverage = [
+              {
+                  "path": item["path"],
+                  "disposition": "aligned",
+                  "rationale": "Reviewed against the pinned historical replay; no durable PACT knowledge update is asserted by this temporary pilot.",
+              }
+              for item in context.get("artifacts", [])
+          ]
+          expected_changed = [
+              "src/app/api/parse-feishu/route.ts",
+              "src/components/editor/editor-layout.tsx",
+              "src/components/editor/feishu-import-dialog.tsx",
+              "src/components/editor/simple-editor.tsx",
+              "src/lib/services/image-service.ts",
+              "vercel.json",
+          ]
+          convergence = {
+              "version": 1,
+              "task_id": task_id,
+              "change": "Replay the real historical ziliu Feishu image-import performance/UX change.",
+              "owner_summary": "Pinned historical patch replayed; completion depends on executable project verification and exact changed-file coverage.",
+              "evidence": [claim["id"] for claim in claims],
+              "context_sha256": prep["context_sha256"],
+              "coverage": knowledge_coverage,
+              "change_coverage": [
+                  {"path": path, "rationale": "Path belongs to the pinned historical target diff for this real brownfield replay."}
+                  for path in expected_changed
+              ],
+              "findings": [],
+          }
+          owner = {
+              "version": 1,
+              "task_id": task_id,
+              "status": "completed" if quality_ref else "blocked",
+              "summary": "Real ziliu historical multi-file change replayed under PACT.",
+              "before": "Pinned pre-change ziliu commit before Feishu image-processing optimization.",
+              "after": "Working tree matches the historical target product state for the six changed paths.",
+              "verification": [
+                  {"claim": claim["claim"], "evidence_ids": [claim["id"]]}
+                  for claim in claims
+              ],
+              "acceptance": [
+                  {"criterion_id": "AC-1", "summary": "历史目标提交涉及的源代码改动被准确应用，无额外产品文件漂移", "evidence_ids": ["EV-ZILIU-REPLAY"]},
+                  {"criterion_id": "AC-2", "summary": "可执行的 TypeScript 或 Next.js 构建验证证明变更后项目至少保持历史基线的机器可验证质量", "evidence_ids": ["EV-ZILIU-QUALITY"]},
+                  {"criterion_id": "AC-3", "summary": "不得把 PACT 生成状态计入产品 changed-file attribution", "evidence_ids": ["EV-ZILIU-REPLAY"]},
+              ],
+              "consistency": {
+                  "status": "aligned" if quality_ref else "needs-owner-decision",
+                  "summary": "Historical product diff is exact; executable project verification determines whether completion can pass.",
+              },
+              "owner_decisions": [],
+          }
+
+          bundle = root / ".pact" / "completions" / task_id
+          bundle.mkdir(parents=True, exist_ok=True)
+          for name, data in (("evidence.json", evidence), ("convergence.json", convergence), ("owner-report.json", owner)):
+              (bundle / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Finish task and capture machine observation
+        working-directory: /tmp/ziliu-real-pilot
+        shell: bash
+        run: |
+          set +e
+          python3 pact.py task finish "$TASK_ID" --json > /tmp/ziliu-finish.json 2> /tmp/ziliu-finish.err
+          FINISH_RC=$?
+          python3 pact.py eval --task "$TASK_ID" --json > /tmp/ziliu-eval.json 2> /tmp/ziliu-eval.err
+          EVAL_RC=$?
+          set -e
+          echo "FINISH_RC=$FINISH_RC"
+          echo "EVAL_RC=$EVAL_RC"
+          echo "### task finish"
+          cat /tmp/ziliu-finish.json || true
+          cat /tmp/ziliu-finish.err || true
+          echo "### task eval"
+          cat /tmp/ziliu-eval.json || true
+          cat /tmp/ziliu-eval.err || true
+          echo "FINISH_RC=$FINISH_RC" > /tmp/ziliu-final-results.env
+          echo "EVAL_RC=$EVAL_RC" >> /tmp/ziliu-final-results.env
+          exit 0
+
+      - name: Emit pilot report
+        working-directory: /tmp/ziliu-real-pilot
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, os
+          def env_file(path):
+              out = {}
+              for line in pathlib.Path(path).read_text().splitlines():
+                  k,v = line.split("=",1); out[k]=int(v)
+              return out
+          baseline = env_file("/tmp/ziliu-baseline-results.env")
+          post = env_file("/tmp/ziliu-post-results.env")
+          final = env_file("/tmp/ziliu-final-results.env")
+          prep = json.loads(pathlib.Path("/tmp/ziliu-prepare.json").read_text())
+          context = json.loads(pathlib.Path(prep["context"]).read_text())
+          finish = None
+          eval_data = None
+          try: finish = json.loads(pathlib.Path("/tmp/ziliu-finish.json").read_text())
+          except Exception: pass
+          try: eval_data = json.loads(pathlib.Path("/tmp/ziliu-eval.json").read_text())
+          except Exception: pass
+          report = {
+              "pilot": "real-ziliu-feishu-historical-replay",
+              "base": os.environ["BASE_REF"],
+              "target": os.environ["TARGET_REF"],
+              "baseline_verification": baseline,
+              "post_change_verification": post,
+              "task_finish_returncode": final["FINISH_RC"],
+              "eval_returncode": final["EVAL_RC"],
+              "context": {
+                  "knowledge_artifacts": len(context.get("artifacts", [])),
+                  "code_artifacts": len(context.get("code_artifacts", [])),
+                  "known_unknowns": len(context.get("known_unknowns", [])),
+                  "selected_estimated_tokens": context.get("context_budget", {}).get("selected_estimated_tokens"),
+                  "dropped_candidates": context.get("context_budget", {}).get("dropped_candidates"),
+                  "fallback_hints": [item["path"] for item in context.get("code_candidate_hints", [])],
+              },
+              "finish": finish,
+              "eval": eval_data,
+          }
+          rendered=json.dumps(report,ensure_ascii=False,indent=2)
+          print(rendered)
+          pathlib.Path("/tmp/ziliu-real-pilot-report.json").write_text(rendered+"\n",encoding="utf-8")
+          with pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a",encoding="utf-8") as h:
+              h.write("# Real ziliu Brownfield Pilot\n\n")
+              h.write(f"- Baseline tsc/build: {baseline}\n")
+              h.write(f"- Post-change tsc/build: {post}\n")
+              h.write(f"- task finish rc: {final['FINISH_RC']}\n")
+              h.write(f"- eval rc: {final['EVAL_RC']}\n")
+              h.write(f"- Context code files: {report['context']['code_artifacts']}\n")
+              h.write(f"- Context estimated tokens: {report['context']['selected_estimated_tokens']}\n")
+              h.write("\nFailures are pilot evidence and do not fail this temporary harness.\n")
+          PY
