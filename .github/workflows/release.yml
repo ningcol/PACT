@@ -113,6 +113,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/pact-bootstrap.py \
             dist/pact.pyz \
+            dist/LICENSE \
             dist/SHA256SUMS \
             --verify-tag \
             --title "PACT $GITHUB_REF_NAME" \
