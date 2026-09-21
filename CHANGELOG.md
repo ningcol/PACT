@@ -44,6 +44,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Reliability hardening
 
+- prepared Task Contract/Context/Final Impact paths are now resolved through one repository-confinement primitive across finish/status/eval, preventing traversal or symlink escapes while preserving external custom completion bundles;
 - `task finish` now validates prepared manifest path/digest/risk/workspace-baseline fields before any workspace, Impact, or completion-history side effects, so malformed durable task state fails closed at the lifecycle boundary;
 - `task status` now validates manifest path fields and the prepared Task Contract before reporting recovery state, so malformed/missing durable task metadata fails closed instead of becoming a traceback or a misleading zero-acceptance task;
 - `task status` now reports completion files from the task manifest's actual `completion_bundle`, including custom relative/absolute bundle paths, instead of always assuming the default `.pact/completions/<TASK-ID>` location;

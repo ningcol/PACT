@@ -45,3 +45,31 @@ def confined_child(root: pathlib.Path, task_id: str) -> pathlib.Path:
         )
 
     return candidate
+
+
+def confined_repository_path(
+    root: pathlib.Path,
+    value: str,
+    *,
+    field: str,
+) -> pathlib.Path:
+    """Resolve one repository-owned relative path without allowing escapes."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty repository-relative path")
+
+    relative = pathlib.Path(value).expanduser()
+    if relative.is_absolute():
+        raise ValueError(f"{field} must be repository-relative")
+
+    root_resolved = root.resolve()
+    try:
+        resolved = (root_resolved / relative).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{field} cannot be resolved safely: {value!r}") from exc
+
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ValueError(f"{field} escapes repository root: {value!r}") from exc
+
+    return resolved

@@ -53,6 +53,31 @@ class TaskStateAtomicityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "real direct child"):
             protocol_ids.confined_child(self.tasks, "TASK-BROKEN")
 
+    def test_confined_repository_path_rejects_parent_traversal(self) -> None:
+        with self.assertRaisesRegex(ValueError, "escapes repository root"):
+            protocol_ids.confined_repository_path(
+                self.root,
+                "../outside.json",
+                field="contract",
+            )
+
+    def test_confined_repository_path_rejects_symlink_escape(self) -> None:
+        outside = self.root.parent / f"{self.root.name}-outside-contract.json"
+        outside.write_text("{}\n", encoding="utf-8")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        inside = self.root / "contract.json"
+        try:
+            os.symlink(outside, inside)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        with self.assertRaisesRegex(ValueError, "escapes repository root"):
+            protocol_ids.confined_repository_path(
+                self.root,
+                "contract.json",
+                field="contract",
+            )
+
     def test_atomic_task_json_preserves_existing_file_when_commit_fails(self) -> None:
         task_dir = self.tasks / "TASK-ATOMIC"
         task_dir.mkdir()

@@ -1303,6 +1303,54 @@ class TaskSurfaceTests(unittest.TestCase):
                 self.assertEqual(persisted[field], value)
                 self.assertEqual(persisted["status"], "prepared")
 
+    def test_prepared_contract_symlink_escape_is_rejected_by_status_eval_and_finish(self) -> None:
+        task_id = "TASK-CONTRACT-ESCAPE"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "prepared contract escape",
+            "--success",
+            "Prepared artifacts remain repository-owned",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        prep = json.loads(prepared.stdout)
+
+        contract_path = self.root / prep["contract"]
+        outside = self.root.parent / "outside-contract.json"
+        outside.write_bytes(contract_path.read_bytes())
+        contract_path.unlink()
+        try:
+            contract_path.symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+
+        status = self.pact("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 2)
+        self.assertIn("escapes repository root", status.stderr)
+        self.assertNotIn("Traceback", status.stderr)
+
+        observation = self.pact("eval", "--task", task_id, "--json")
+        self.assertEqual(observation.returncode, 2)
+        self.assertIn("escapes repository root", observation.stderr)
+        self.assertNotIn("Traceback", observation.stderr)
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("invalid prepared task path", finished.stderr)
+        self.assertIn("escapes repository root", finished.stderr)
+        self.assertNotIn("Traceback", finished.stderr)
+
+        task_dir = self.root / ".pact" / "tasks" / task_id
+        self.assertFalse((task_dir / "final-impact.json").exists())
+        self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
+        manifest = json.loads((task_dir / "task.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "prepared")
+
     def test_task_finish_requires_prepared_task(self) -> None:
         finished = self.pact(
             "task",
