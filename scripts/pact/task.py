@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from task_contract import validate as validate_contract
 from runtime_exec import runtime_command
 from workspace import task_workspace_baseline, task_changed_files
-from protocol_ids import validate_task_id, confined_child
+from protocol_ids import validate_task_id, confined_child, confined_repository_path
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -584,13 +584,19 @@ def finish(args) -> int:
         command.append("--require-ci-metadata")
 
     try:
-        contract_path = (ROOT / manifest["contract"]).resolve()
-        context_path = (ROOT / manifest["context"]).resolve()
-        contract_path.relative_to(ROOT.resolve())
-        context_path.relative_to(ROOT.resolve())
-    except (ValueError, TypeError) as exc:
+        contract_path = confined_repository_path(
+            ROOT,
+            manifest["contract"],
+            field="contract",
+        )
+        context_path = confined_repository_path(
+            ROOT,
+            manifest["context"],
+            field="context",
+        )
+    except ValueError as exc:
         print(
-            f"PACT task finish: prepared task path escapes repository: {exc}",
+            f"PACT task finish: invalid prepared task path: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -750,8 +756,12 @@ def task_status(args) -> int:
 
     contract = None
     if contract_path:
-        path = ROOT / contract_path
         try:
+            path = confined_repository_path(
+                ROOT,
+                contract_path,
+                field="contract",
+            )
             contract = read_status_contract(path)
         except ValueError as exc:
             print(f"PACT task status: {exc}", file=sys.stderr)
