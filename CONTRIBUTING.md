@@ -63,4 +63,4 @@ Useful PR descriptions explain:
 
 ## Licensing
 
-PACT's repository license is an explicit owner decision. Until a license is selected, do not assume public visibility alone grants downstream redistribution rights beyond GitHub's platform terms.
+PACT is licensed under the Apache License, Version 2.0. By contributing to PACT, contributions are submitted under the terms of the repository's Apache-2.0 license unless explicitly stated otherwise. See `LICENSE`.
