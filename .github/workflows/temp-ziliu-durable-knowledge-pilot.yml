@@ -176,17 +176,20 @@ jobs:
           }
           missing=selected_required-set(by_path)
           assert not missing, missing
-          assert by_path["docs/product/rules/feishu-image-handling.md"]["status"]=="candidate"
-          assert by_path[".agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md"]["status"]=="proposed"
           assert len(context.get("code_artifacts",[])) > 0
 
-          discovery_paths={item["path"] for item in discover.get("results",[])}
+          discovery_by_path={item["path"]:item for item in discover.get("results",[])}
+          discovery_paths=set(discovery_by_path)
           assert "docs/architecture/feishu-import.md" in discovery_paths, discovery_paths
           assert "docs/drift/known/DRIFT-FEISHU-E2E.md" in discovery_paths, discovery_paths
 
+          # Lifecycle/authority status belongs to discovery metadata, not the
+          # compact materialized Context artifact shape.
+          assert discovery_by_path["docs/architecture/feishu-import.md"]["status"]=="current"
+          assert discovery_by_path["docs/drift/known/DRIFT-FEISHU-E2E.md"]["status"]=="known"
+
           print(json.dumps({
               "knowledge_paths":[item["path"] for item in arts],
-              "knowledge_statuses":{item["path"]:item.get("status") for item in arts},
               "discoverable_nonselected_paths":sorted(discovery_paths-set(by_path)),
               "code_paths":[item["path"] for item in context.get("code_artifacts",[])],
               "known_unknowns":context.get("known_unknowns",[]),
@@ -243,7 +246,7 @@ jobs:
               "knowledge_artifacts":len(ctx.get("artifacts",[])),
               "code_artifacts":len(ctx.get("code_artifacts",[])),
               "selected_estimated_tokens":ctx.get("context_budget",{}).get("selected_estimated_tokens"),
-              "statuses":{item["path"]:item.get("status") for item in ctx.get("artifacts",[])},
+              "selected_knowledge_paths":[item["path"] for item in ctx.get("artifacts",[])],
               "convergence":conv,
               "authority_boundary":"No candidate rule was promoted to confirmed and no proposed decision was promoted to implemented.",
           },ensure_ascii=False,indent=2))
