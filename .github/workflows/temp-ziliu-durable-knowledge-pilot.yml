@@ -1,0 +1,242 @@
+name: Temporary Ziliu Durable Knowledge Pilot
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-knowledge-pilot
+  TARGET_REF: a900bd01d8dcb1098adb151a0eff2a32e908c58b
+  TASK_ID: REAL-ZILIU-KNOWLEDGE-001
+
+jobs:
+  knowledge-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned ziliu and adopt PACT
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Add temporary non-authoritative durable knowledge
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          mkdir -p docs/product/domains docs/product/rules docs/architecture docs/drift/known .agents/decisions/proposed
+          cat > docs/product/domains/feishu-import.md <<'EOF'
+          +++
+          [pact]
+          type = "domain"
+          id = "DOMAIN-FEISHU-IMPORT"
+          status = "candidate"
+          owners = ["product"]
+          aliases = ["飞书导入", "Feishu import", "parse-feishu"]
+          paths = ["src/app/api/parse-feishu/**", "src/components/editor/feishu-import-dialog.tsx", "src/lib/services/image-service.ts"]
+          +++
+
+          # 飞书文章导入
+
+          当前仓库存在飞书文章解析与图片处理链路。该领域条目只用于定位与检索；`candidate` 不代表 owner 已确认任何规范性产品规则。
+          EOF
+
+          cat > docs/product/rules/feishu-image-handling.md <<'EOF'
+          +++
+          [pact]
+          type = "rule"
+          id = "RULE-FEISHU-IMAGE-001"
+          status = "candidate"
+          owners = ["product"]
+          domains = ["DOMAIN-FEISHU-IMPORT"]
+          aliases = ["飞书图片处理", "Feishu image handling"]
+          verification = ["src/app/api/parse-feishu/route.ts", "src/lib/services/image-service.ts"]
+          +++
+
+          # Candidate rule: 飞书导入图片处理
+
+          ## Candidate statement
+
+          导入飞书文章时，图片处理失败不应被默默当作完整成功。该陈述来自现有代码路径与历史验证需求，只作为候选规则；未经 owner 确认，不是 Product Truth。
+          EOF
+
+          cat > .agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md <<'EOF'
+          +++
+          [pact]
+          type = "decision"
+          id = "DEC-FEISHU-IMAGE-PIPELINE"
+          status = "proposed"
+          owners = ["engineering"]
+          domains = ["DOMAIN-FEISHU-IMPORT"]
+          related = ["RULE-FEISHU-IMAGE-001"]
+          +++
+
+          # Decision proposal: centralize Feishu image transfer through the image service
+
+          ## Problem
+
+          飞书导入同时涉及 HTML 解析、远程图片下载、上传与 UI 反馈。
+
+          ## Proposed decision
+
+          继续让 `image-service` 作为远程图片下载/上传的主要实现边界，API route 负责流程编排，UI 负责进度与反馈。
+
+          ## Status boundary
+
+          这是基于当前代码结构形成的工程提案，不代表 owner 或工程团队已经接受。
+          EOF
+
+          cat > docs/architecture/feishu-import.md <<'EOF'
+          +++
+          [pact]
+          type = "architecture"
+          status = "current"
+          owners = ["engineering"]
+          domains = ["DOMAIN-FEISHU-IMPORT"]
+          related = ["DEC-FEISHU-IMAGE-PIPELINE"]
+          +++
+
+          # Current architecture: Feishu import
+
+          Verified repository facts at the pinned commit:
+
+          - `src/components/editor/feishu-import-dialog.tsx` is the editor-side import interaction.
+          - `src/app/api/parse-feishu/route.ts` orchestrates Feishu parsing and image processing.
+          - `src/lib/services/image-service.ts` contains remote image download/upload helpers.
+          - the historical production build and TypeScript check pass at this pinned commit.
+          EOF
+
+          cat > docs/drift/known/DRIFT-FEISHU-E2E.md <<'EOF'
+          +++
+          [pact]
+          type = "drift"
+          id = "DRIFT-FEISHU-E2E"
+          status = "known"
+          owners = ["engineering"]
+          domains = ["DOMAIN-FEISHU-IMPORT"]
+          related = ["RULE-FEISHU-IMAGE-001"]
+          +++
+
+          # Known verification gap: Feishu import end-to-end behavior
+
+          The real historical pilot verified exact patch replay, TypeScript, and production build, but did not execute a live Feishu/browser end-to-end import. Treat that external behavior as an explicit verification gap rather than claiming it was tested.
+          EOF
+
+      - name: Validate and index durable knowledge
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          python3 pact.py check
+          python3 pact.py map --ensure
+          python3 pact.py inspect "飞书导入 图片处理" \
+            --query "FeishuImportDialog processImagesInHtml uploadImageFromUrl" \
+            --json > /tmp/ziliu-inspect.json
+
+      - name: Prepare task using durable knowledge
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          python3 pact.py task prepare \
+            "复核飞书导入图片处理链路及其已知验证缺口" \
+            --success "Context 同时包含相关 durable knowledge 与实现代码，并明确区分 candidate/proposed 与 current/known 状态" \
+            --risk medium \
+            --code \
+            --query "飞书导入 图片处理" \
+            --query "FeishuImportDialog processImagesInHtml uploadImageFromUrl" \
+            --task-id "$TASK_ID" \
+            --json > /tmp/ziliu-knowledge-prepare.json
+
+      - name: Assert knowledge retrieval and authority boundaries
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          prep=json.loads(pathlib.Path("/tmp/ziliu-knowledge-prepare.json").read_text(encoding="utf-8"))
+          context=json.loads(pathlib.Path(prep["context"]).read_text(encoding="utf-8"))
+          inspect=json.loads(pathlib.Path("/tmp/ziliu-inspect.json").read_text(encoding="utf-8"))
+          arts=context.get("artifacts",[])
+          by_path={item["path"]:item for item in arts}
+          expected={
+              "docs/product/domains/feishu-import.md",
+              "docs/product/rules/feishu-image-handling.md",
+              ".agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md",
+              "docs/architecture/feishu-import.md",
+              "docs/drift/known/DRIFT-FEISHU-E2E.md",
+          }
+          missing=expected-set(by_path)
+          assert not missing, missing
+          assert by_path["docs/product/rules/feishu-image-handling.md"]["status"]=="candidate"
+          assert by_path[".agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md"]["status"]=="proposed"
+          assert by_path["docs/architecture/feishu-import.md"]["status"]=="current"
+          assert by_path["docs/drift/known/DRIFT-FEISHU-E2E.md"]["status"]=="known"
+          assert len(context.get("code_artifacts",[])) > 0
+          print(json.dumps({
+              "knowledge_paths":[item["path"] for item in arts],
+              "knowledge_statuses":{item["path"]:item.get("status") for item in arts},
+              "code_paths":[item["path"] for item in context.get("code_artifacts",[])],
+              "known_unknowns":context.get("known_unknowns",[]),
+              "inspect_query_count":len(inspect.get("queries",[])),
+              "selected_estimated_tokens":context.get("context_budget",{}).get("selected_estimated_tokens"),
+          },ensure_ascii=False,indent=2))
+          PY
+
+      - name: Build and validate Convergence coverage over durable knowledge
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib,os
+          prep=json.loads(pathlib.Path("/tmp/ziliu-knowledge-prepare.json").read_text(encoding="utf-8"))
+          context_path=pathlib.Path(prep["context"])
+          context=json.loads(context_path.read_text(encoding="utf-8"))
+          report={
+              "version":1,
+              "task_id":os.environ["TASK_ID"],
+              "change":"Review Feishu import durable knowledge against the pinned implementation.",
+              "owner_summary":"Candidate/proposed knowledge remains non-authoritative; current architecture and known verification gap align with the pinned repository facts.",
+              "evidence":[],
+              "context_sha256":prep["context_sha256"],
+              "coverage":[
+                  {
+                      "path":item["path"],
+                      "disposition":"aligned",
+                      "rationale":(
+                          "Reviewed as non-authoritative candidate/proposed knowledge."
+                          if item.get("status") in {"candidate","proposed"}
+                          else "Reviewed against pinned repository and pilot facts."
+                      ),
+                  }
+                  for item in context.get("artifacts",[])
+              ],
+              "findings":[],
+          }
+          pathlib.Path("/tmp/ziliu-convergence.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          PY
+          python3 pact.py converge /tmp/ziliu-convergence.json \
+            --context ".pact/tasks/$TASK_ID/context.json" \
+            --context-sha256 "$(python3 -c 'import json;print(json.load(open("/tmp/ziliu-knowledge-prepare.json"))["context_sha256"])')" \
+            --json | tee /tmp/ziliu-convergence-result.json
+
+      - name: Emit durable knowledge pilot summary
+        working-directory: /tmp/ziliu-knowledge-pilot
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          prep=json.loads(pathlib.Path("/tmp/ziliu-knowledge-prepare.json").read_text())
+          ctx=json.loads(pathlib.Path(prep["context"]).read_text())
+          conv=json.loads(pathlib.Path("/tmp/ziliu-convergence-result.json").read_text())
+          print(json.dumps({
+              "knowledge_artifacts":len(ctx.get("artifacts",[])),
+              "code_artifacts":len(ctx.get("code_artifacts",[])),
+              "selected_estimated_tokens":ctx.get("context_budget",{}).get("selected_estimated_tokens"),
+              "statuses":{item["path"]:item.get("status") for item in ctx.get("artifacts",[])},
+              "convergence":conv,
+              "authority_boundary":"No candidate rule was promoted to confirmed and no proposed decision was promoted to implemented.",
+          },ensure_ascii=False,indent=2))
+          PY
