@@ -221,6 +221,14 @@ class TaskStateAtomicityTests(unittest.TestCase):
             [],
         )
 
+    def test_completion_bundle_path_preserves_absolute_custom_path(self) -> None:
+        absolute = self.root / "external-completion" / "TASK-ABS"
+        resolved = pact_task.completion_bundle_path(
+            {"completion_bundle": str(absolute)},
+            "TASK-ABS",
+        )
+        self.assertEqual(resolved, absolute)
+
     def test_task_manifest_reader_rejects_leaf_symlink(self) -> None:
         task_dir = self.tasks / "TASK-LINK"
         task_dir.mkdir()
