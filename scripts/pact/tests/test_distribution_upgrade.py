@@ -216,7 +216,7 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
 
-    def test_corrupt_install_manifest_blocks_reinit_and_upgrade(self) -> None:
+    def test_corrupt_install_manifest_blocks_all_surfaces(self) -> None:
         self.scaffold()
         manifest_path = self.target / ".pact" / "install.json"
         manifest_path.write_text("{ not valid json\n", encoding="utf-8")
@@ -225,9 +225,55 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual(reinit.returncode, 2)
         self.assertIn("invalid .pact/install.json", reinit.stderr)
 
+        doctor = self.run_target("doctor", "--strict", "--json")
+        self.assertEqual(doctor.returncode, 1)
+        self.assertIn("invalid .pact/install.json", doctor.stdout + doctor.stderr)
+
+        status = self.run_target("status", "--strict", "--json")
+        self.assertEqual(status.returncode, 1)
+        self.assertIn("invalid .pact/install.json", status.stdout + status.stderr)
+
+        version = self.run_target(
+            "version",
+            "--target",
+            str(self.target),
+            "--json",
+        )
+        self.assertEqual(version.returncode, 2)
+        self.assertIn("invalid .pact/install.json", version.stderr)
+
         upgrade = self.run_upgrade("--apply")
         self.assertEqual(upgrade.returncode, 2)
         self.assertIn("invalid .pact/install.json", upgrade.stderr)
+
+    def test_invalid_install_manifest_hash_blocks_all_surfaces(self) -> None:
+        manifest = self.scaffold()
+        manifest["files"]["pact.py"]["installed_sha256"] = "not-a-sha"
+        (self.target / ".pact" / "install.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        reinit = self.run_init("--apply")
+        self.assertEqual(reinit.returncode, 2)
+        self.assertIn("invalid installed_sha256", reinit.stderr)
+
+        doctor = self.run_target("doctor", "--strict", "--json")
+        self.assertEqual(doctor.returncode, 1)
+        self.assertIn("invalid installed_sha256", doctor.stdout + doctor.stderr)
+
+        version = self.run_target(
+            "version",
+            "--target",
+            str(self.target),
+            "--json",
+        )
+        self.assertEqual(version.returncode, 2)
+        self.assertIn("invalid installed_sha256", version.stderr)
+
+        upgrade = self.run_upgrade("--apply")
+        self.assertEqual(upgrade.returncode, 2)
+        self.assertIn("invalid installed_sha256", upgrade.stderr)
 
     def test_local_framework_modification_conflicts_even_when_upstream_file_is_unchanged(self) -> None:
         self.scaffold()
