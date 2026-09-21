@@ -1,0 +1,108 @@
+name: Temporary Changed-file Proximity Diagnostic - Ziliu
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-proximity
+  TARGET_REF: a900bd01d8dcb1098adb151a0eff2a32e908c58b
+  TASK_TEXT: "优化飞书导入的图片处理性能和用户体验"
+  SUCCESS_TEXT: "评审已知变更文件时，补充上下文应保持高价值且不过载"
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned target and adopt PACT
+        run: |
+          git clone https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Build current task-primary Context
+        working-directory: /tmp/ziliu-proximity
+        run: |
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "$TASK_TEXT" \
+            --query "parseFeishuContent processImagesInHtml uploadImageFromUrl" \
+            --query "feishu-import-dialog loading progress toast" \
+            --query "image-service uploadImageFromUrl retry timeout" \
+            --output /tmp/ziliu-context.json
+
+      - name: Build changed-file Impact relationships
+        working-directory: /tmp/ziliu-proximity
+        run: |
+          python3 pact.py impact \
+            --risk medium \
+            --code \
+            --files \
+              src/app/api/parse-feishu/route.ts \
+              src/components/editor/editor-layout.tsx \
+              src/components/editor/feishu-import-dialog.tsx \
+              src/components/editor/simple-editor.tsx \
+              src/lib/services/image-service.ts \
+              vercel.json \
+            --json > /tmp/ziliu-impact.json
+
+      - name: Compare Context with changed-file proximity candidates
+        working-directory: /tmp/ziliu-proximity
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+
+          root = pathlib.Path(".")
+          context = json.loads(pathlib.Path("/tmp/ziliu-context.json").read_text(encoding="utf-8"))
+          impact = json.loads(pathlib.Path("/tmp/ziliu-impact.json").read_text(encoding="utf-8"))
+          selected = [item["path"] for item in context.get("code_artifacts", [])]
+          selected_set = set(selected)
+          hint_paths = [item["path"] for item in context.get("code_candidate_hints", [])]
+          hint_set = set(hint_paths)
+
+          candidates = []
+          for item in impact.get("code_candidate_impacts", []):
+              path = item["related_file"]
+              file_path = root / path
+              estimated = max((file_path.stat().st_size + 3) // 4, 1) if file_path.is_file() else 1
+              candidates.append({
+                  **item,
+                  "already_selected": path in selected_set,
+                  "already_hint": path in hint_set,
+                  "estimated_tokens": estimated,
+              })
+
+          novel = [item for item in candidates if not item["already_selected"] and not item["already_hint"]]
+          high_conf_novel = [item for item in novel if item.get("confidence") in {"relative-resolved", "ast-resolved"}]
+          report = {
+              "selected_context_paths": selected,
+              "fallback_hint_paths": hint_paths,
+              "context_selected_estimated_tokens": context.get("context_budget", {}).get("selected_estimated_tokens"),
+              "impact_candidate_count": len(candidates),
+              "candidate_overlap_selected": sum(item["already_selected"] for item in candidates),
+              "candidate_overlap_hints": sum((not item["already_selected"]) and item["already_hint"] for item in candidates),
+              "novel_candidate_count": len(novel),
+              "high_confidence_novel_count": len(high_conf_novel),
+              "high_confidence_novel_estimated_tokens": sum(item["estimated_tokens"] for item in high_conf_novel),
+              "top_novel_candidates": novel[:12],
+          }
+          rendered = json.dumps(report, ensure_ascii=False, indent=2)
+          print(rendered)
+          pathlib.Path("/tmp/ziliu-proximity-report.json").write_text(rendered+"\n", encoding="utf-8")
+          PY
