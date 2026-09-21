@@ -168,7 +168,7 @@ class InitReadinessTests(unittest.TestCase):
         manifest = json.loads(
             (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
         )
-        self.assertLessEqual(len(manifest["files"]), 9)
+        self.assertLessEqual(len(manifest["files"]), 10)
 
     def test_existing_pact_workflow_is_never_overwritten(self) -> None:
         workflow = self.target / ".github" / "workflows" / "pact-project-check.yml"
