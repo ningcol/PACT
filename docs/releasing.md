@@ -11,7 +11,7 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 3. Ensure `PACT Check` and `PACT Core Matrix` are green on `main`.
 4. Run relevant manual external pilots when the release changes installation, Discovery, code mapping, Evidence, or completion semantics.
 5. Resolve or explicitly document compatibility/migration behavior.
-6. Confirm repository licensing/release terms are appropriate before publishing public release artifacts.
+6. Confirm `LICENSE` is present and release assets/checksums include the Apache-2.0 license file.
 
 ## Tagging
 
@@ -36,7 +36,8 @@ The workflow:
 - builds the compact `pact.pyz` runtime from the tagged source;
 - publishes `pact-bootstrap.py`;
 - publishes `pact.pyz`;
-- publishes `SHA256SUMS` covering both artifacts;
+- publishes `LICENSE` with the release assets;
+- publishes `SHA256SUMS` covering `pact-bootstrap.py`, `pact.pyz`, and `LICENSE`;
 - creates the GitHub Release with generated notes;
 - marks versions with a prerelease suffix (for example `0.4.0-rc.1` or `0.4.0-dev.1`) as GitHub prereleases rather than stable releases.
 

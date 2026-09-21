@@ -309,11 +309,15 @@ Current `main` is the development line for the next minor release. It includes t
 
 This development version is **not** a GitHub Release or immutable release tag. For reproducible external adoption, prefer an exact commit until a formal release is cut.
 
-The remaining high-level validation work is ongoing evaluation with observed real tasks, plus the explicit owner decision on repository licensing.
+The remaining high-level validation work is ongoing evaluation with observed real tasks.
+
+## License
+
+PACT is licensed under the Apache License, Version 2.0. See `LICENSE`.
 
 ## Project governance
 
 - Security reporting: `SECURITY.md`
 - Contributing: `CONTRIBUTING.md`
 - Release process: `docs/releasing.md`
-- Repository license: pending explicit owner decision; public visibility alone is not treated as a license grant.
+- Repository license: Apache License 2.0 (`LICENSE`).
