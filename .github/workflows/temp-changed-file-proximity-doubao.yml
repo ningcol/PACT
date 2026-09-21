@@ -1,0 +1,96 @@
+name: Temporary Changed-file Proximity Diagnostic - DouBao
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/doubao-proximity
+  TARGET_REF: 9ca173e37341e4e1a80cadc427737510a3a1eaa5
+  TASK_TEXT: "优化图片获取方式并添加Cookie清除功能：使用debugger监听EventStream获取图片URL，添加清除Cookie功能及设置选项，优化代码结构"
+  SUCCESS_TEXT: "评审已知变更文件时，补充上下文应保持高价值且不过载"
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned target and adopt PACT
+        run: |
+          git clone https://github.com/ningcol/DouBaoFreeImageGen.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach "$TARGET_REF"
+          python scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python "$TARGET_DIR/pact.py" doctor --strict
+
+      - name: Build current task-primary Context
+        working-directory: /tmp/doubao-proximity
+        run: |
+          python3 pact.py context "$TASK_TEXT" \
+            --success "$SUCCESS_TEXT" \
+            --risk medium \
+            --code \
+            --code-limit 12 \
+            --token-budget 40000 \
+            --query "$TASK_TEXT" \
+            --query "debugger EventStream image URL" \
+            --query "clear cookies settings" \
+            --query "image extraction debugger" \
+            --output /tmp/doubao-context.json
+
+      - name: Build changed-file Impact relationships
+        working-directory: /tmp/doubao-proximity
+        run: |
+          python3 pact.py impact \
+            --risk medium \
+            --code \
+            --files \
+              DoubaoMcpBrowserProxy/background.js \
+              DoubaoMcpBrowserProxy/content.js \
+              DoubaoMcpBrowserProxy/manifest.json \
+              DoubaoMcpBrowserProxy/options.html \
+              DoubaoMcpBrowserProxy/options.js \
+            --json > /tmp/doubao-impact.json
+
+      - name: Compare Context with changed-file proximity candidates
+        working-directory: /tmp/doubao-proximity
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          root=pathlib.Path(".")
+          context=json.loads(pathlib.Path("/tmp/doubao-context.json").read_text(encoding="utf-8"))
+          impact=json.loads(pathlib.Path("/tmp/doubao-impact.json").read_text(encoding="utf-8"))
+          selected=[item["path"] for item in context.get("code_artifacts",[])]
+          selected_set=set(selected)
+          hints=[item["path"] for item in context.get("code_candidate_hints",[])]
+          hint_set=set(hints)
+          candidates=[]
+          for item in impact.get("code_candidate_impacts",[]):
+              path=item["related_file"]
+              fp=root/path
+              est=max((fp.stat().st_size+3)//4,1) if fp.is_file() else 1
+              candidates.append({**item,"already_selected":path in selected_set,"already_hint":path in hint_set,"estimated_tokens":est})
+          novel=[x for x in candidates if not x["already_selected"] and not x["already_hint"]]
+          high=[x for x in novel if x.get("confidence") in {"relative-resolved","ast-resolved"}]
+          report={
+              "selected_context_paths":selected,
+              "fallback_hint_paths":hints,
+              "context_selected_estimated_tokens":context.get("context_budget",{}).get("selected_estimated_tokens"),
+              "impact_candidate_count":len(candidates),
+              "candidate_overlap_selected":sum(x["already_selected"] for x in candidates),
+              "candidate_overlap_hints":sum((not x["already_selected"]) and x["already_hint"] for x in candidates),
+              "novel_candidate_count":len(novel),
+              "high_confidence_novel_count":len(high),
+              "high_confidence_novel_estimated_tokens":sum(x["estimated_tokens"] for x in high),
+              "top_novel_candidates":novel[:12],
+          }
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          PY
