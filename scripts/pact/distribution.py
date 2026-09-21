@@ -52,6 +52,7 @@ def source_manifest(source_root: pathlib.Path) -> list[dict]:
 
     add("pact.py")
     add(".pact/VERSION")
+    add("LICENSE", ".pact/LICENSE")
     add(".pact/templates/control-plane.gitignore", ".pact/.gitignore")
 
     runtime_bundle = ensure_runtime_bundle(source_root)
@@ -92,6 +93,44 @@ def manifest_record(entry: dict, destination: pathlib.Path) -> dict:
     }
 
 
+def resolve_install_target(
+    root: pathlib.Path,
+    relative: str,
+    *,
+    allow_leaf_symlink: bool = False,
+) -> pathlib.Path:
+    """Resolve a tracked install path without allowing repository escapes."""
+    if (
+        not isinstance(relative, str)
+        or not relative
+        or "\\" in relative
+        or ":" in relative
+        or "\x00" in relative
+    ):
+        raise ValueError(f"unsafe tracked path {relative!r}")
+
+    pure = pathlib.PurePosixPath(relative)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise ValueError(f"unsafe tracked path {relative!r}")
+
+    root_resolved = root.resolve()
+    destination = root / pathlib.Path(*pure.parts)
+    try:
+        parent = destination.parent.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(
+            f"cannot resolve tracked path {relative!r}: {exc}"
+        ) from exc
+
+    if parent != root_resolved and root_resolved not in parent.parents:
+        raise ValueError(
+            f"tracked path escapes repository through symlink: {relative!r}"
+        )
+    if destination.is_symlink() and not allow_leaf_symlink:
+        raise ValueError(f"tracked path is a symlink: {relative!r}")
+    return destination
+
+
 def read_install_manifest(root: pathlib.Path) -> dict | None:
     """Return a valid confined install manifest, None when absent, or raise."""
     root_resolved = root.resolve()
@@ -117,18 +156,17 @@ def read_install_manifest(root: pathlib.Path) -> dict | None:
         raise ValueError("invalid .pact/install.json: missing runtime_version")
 
     for relative, record in data["files"].items():
-        if (
-            not isinstance(relative, str)
-            or not relative
-            or "\\" in relative
-            or ":" in relative
-            or "\x00" in relative
-            or pathlib.PurePosixPath(relative).is_absolute()
-            or ".." in pathlib.PurePosixPath(relative).parts
-        ):
-            raise ValueError(
-                f"invalid .pact/install.json: unsafe tracked path {relative!r}"
+        try:
+            resolve_install_target(
+                root,
+                relative,
+                allow_leaf_symlink=(
+                    isinstance(record, dict)
+                    and record.get("management") == "seed"
+                ),
             )
+        except ValueError as exc:
+            raise ValueError(f"invalid .pact/install.json: {exc}") from exc
         if not isinstance(record, dict):
             raise ValueError(
                 f"invalid .pact/install.json: invalid record for {relative!r}"

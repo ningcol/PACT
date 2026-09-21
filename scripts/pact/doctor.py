@@ -9,8 +9,7 @@ import pathlib
 import subprocess
 import sys
 
-from distribution import sha256_file
-from schema_validate import load_schema, validate_instance
+from distribution import read_install_manifest, resolve_install_target, sha256_file
 from runtime_exec import runtime_command
 
 
@@ -28,6 +27,7 @@ SOURCE_REQUIRED = [
     ".agents/decisions",
     ".agents/skills",
     ".pact/VERSION",
+    "LICENSE",
 ]
 
 # Adopted projects may use the minimal profile. Optional knowledge locations are
@@ -37,6 +37,7 @@ ADOPTED_REQUIRED = [
     "pact.py",
     ".pact/pact.pyz",
     ".pact/VERSION",
+    ".pact/LICENSE",
 ]
 
 
@@ -45,36 +46,51 @@ def item(name: str, state: str, detail: str) -> dict:
 
 
 def install_provenance_check(strict: bool) -> dict:
-    manifest_path = ROOT / ".pact" / "install.json"
-    if not manifest_path.exists():
+    try:
+        manifest = read_install_manifest(ROOT)
+    except ValueError as exc:
+        return item(
+            "install-provenance",
+            "fail",
+            f"cannot validate install manifest: {exc}",
+        )
+
+    if manifest is None:
         return item(
             "install-provenance",
             "fail" if strict else "warn",
-            "missing .pact/install.json" if strict else "source/untracked checkout; no install manifest",
+            "missing .pact/install.json"
+            if strict
+            else "source/untracked checkout; no install manifest",
         )
 
-    schema_path = ROOT / ".pact" / "schema" / "install-manifest.schema.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        errors = validate_instance(manifest, load_schema(schema_path))
-        if errors:
-            return item("install-provenance", "fail", "; ".join(errors))
-
-        version_path = ROOT / ".pact" / "VERSION"
+        version_path = resolve_install_target(ROOT, ".pact/VERSION")
+        if not version_path.is_file():
+            return item(
+                "install-provenance",
+                "fail",
+                "missing framework file: .pact/VERSION",
+            )
         installed_version = version_path.read_text(encoding="utf-8").strip()
-        manifest_version = manifest.get("runtime_version")
+        manifest_version = manifest["runtime_version"]
         if installed_version != manifest_version:
             return item(
                 "install-provenance",
                 "fail",
-                f"VERSION={installed_version!r} but install manifest runtime_version={manifest_version!r}",
+                f"VERSION={installed_version!r} but install manifest "
+                f"runtime_version={manifest_version!r}",
             )
 
         integrity_errors = []
-        for relative, record in manifest.get("files", {}).items():
+        for relative, record in manifest["files"].items():
             if record.get("management") != "framework":
                 continue
-            path = ROOT / relative
+            try:
+                path = resolve_install_target(ROOT, relative)
+            except ValueError as exc:
+                integrity_errors.append(str(exc))
+                continue
             if not path.is_file():
                 integrity_errors.append(f"missing framework file: {relative}")
                 continue
@@ -96,10 +112,14 @@ def install_provenance_check(strict: bool) -> dict:
         return item(
             "install-provenance",
             "pass",
-            f"runtime={manifest_version}, tracked_files={len(manifest.get('files', {}))}",
+            f"runtime={manifest_version}, tracked_files={len(manifest['files'])}",
         )
-    except Exception as exc:
-        return item("install-provenance", "fail", f"cannot validate install manifest: {exc}")
+    except (OSError, ValueError) as exc:
+        return item(
+            "install-provenance",
+            "fail",
+            f"cannot validate install manifest: {exc}",
+        )
 
 
 def main() -> int:

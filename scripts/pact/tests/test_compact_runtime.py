@@ -100,12 +100,16 @@ class CompactRuntimeTests(unittest.TestCase):
             bundle = target / ".pact" / "pact.pyz"
             self.assertTrue(bundle.is_file())
             self.assertFalse((target / "scripts" / "pact").exists())
+            self.assertEqual(
+                (target / ".pact" / "LICENSE").read_bytes(),
+                (PROJECT_ROOT / "LICENSE").read_bytes(),
+            )
 
             manifest = json.loads(
                 (target / ".pact" / "install.json").read_text(encoding="utf-8")
             )
             self.assertNotIn("install_profile", manifest)
-            self.assertLessEqual(len(manifest["files"]), 8)
+            self.assertLessEqual(len(manifest["files"]), 9)
             self.assertEqual(
                 [
                     path
@@ -135,7 +139,7 @@ class CompactRuntimeTests(unittest.TestCase):
                 path for path in target.rglob("*")
                 if path.is_file()
             ]
-            self.assertLessEqual(len(physical_files), 9)
+            self.assertLessEqual(len(physical_files), 10)
 
             help_result = subprocess.run(
                 [sys.executable, str(target / "pact.py"), "--help"],

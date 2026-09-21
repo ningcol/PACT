@@ -17,7 +17,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 - the default Agent task trust loop remains in compact `AGENTS.md` / merge guidance, so removing empty Skill scaffold does not weaken Task Contract, Evidence, Convergence, Owner Report, or completion requirements;
 - upgrades preserve the compact installed surface without alternate legacy/full profiles;
 - existing `AGENTS.md` remains untouched and receives merge guidance under `.pact/`;
-- real DouBaoFreeImageGen historical fresh-adoption validation reduced the install from the original 97 managed files to 8 managed files (9 physical files including `.pact/install.json`) while strict Doctor, Status, schema-lint, and code-aware Task Context still passed.
+- real DouBaoFreeImageGen historical fresh-adoption validation reduced the install from the original 97 managed files to 9 managed files (10 physical files including `.pact/install.json`) after retaining the PACT license under `.pact/LICENSE` while strict Doctor, Status, schema-lint, and code-aware Task Context still passed.
 
 ### CI efficiency
 
@@ -35,6 +35,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Release / distribution hardening
 
+- adopted projects now retain Apache-2.0 at `.pact/LICENSE` as a framework-managed install artifact, so bootstrap/init/upgrade preserve the license without overwriting the host repository's root license;
 - PACT is now licensed under Apache License 2.0; the repository and formal release assets include `LICENSE`, and `SHA256SUMS` covers the license alongside the executable release artifacts;
 - bootstrap ZIP extraction now limits archive file count, per-file expanded size, total expanded size, local archive size, and suspicious compression ratios before extraction;
 - tag releases are blocked on the same 3 OS × 3 Python portability coverage used for normal development;
@@ -45,6 +46,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Reliability hardening
 
+- Doctor/Status/Version/Upgrade now share the canonical install-manifest reader and filesystem confinement rules, eliminating divergent trust decisions for unsafe tracked paths or symlinked provenance;
 - maintained GitHub Actions workflows and the downstream CI template now pin Node 24-capable `actions/checkout@v7.0.1` and `actions/setup-python@v7.0.0`, removing the Node 20 deprecation path before formal release;
 - external pilot workflows now pin Node 24-capable `actions/upload-artifact@v7.0.1`, completing the maintained JavaScript-action runtime migration away from deprecated Node 20 actions;
 - prepared Task Contract/Context/Final Impact paths are now resolved through one repository-confinement primitive across finish/status/eval, preventing traversal or symlink escapes while preserving external custom completion bundles;

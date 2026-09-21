@@ -18,6 +18,7 @@ from distribution import (
     sha256_file,
     source_manifest,
     read_install_manifest,
+    resolve_install_target,
 )
 from schema_validate import load_schema, validate_instance
 
@@ -43,28 +44,8 @@ def path_present(path: pathlib.Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
-def safe_relative_target(
-    target: pathlib.Path,
-    relative: str,
-    *,
-    allow_leaf_symlink: bool = False,
-) -> pathlib.Path:
-    pure = pathlib.PurePosixPath(relative)
-    if pure.is_absolute() or ".." in pure.parts:
-        raise RuntimeError(f"unsafe upgrade path: {relative!r}")
-
-    target_root = target.resolve()
-    destination = target / pathlib.Path(*pure.parts)
-    parent = destination.parent.resolve()
-    if parent != target_root and target_root not in parent.parents:
-        raise RuntimeError(f"upgrade path escapes target through symlink: {relative!r}")
-    if destination.is_symlink() and not allow_leaf_symlink:
-        raise RuntimeError(f"upgrade path is a symlink: {relative!r}")
-    return destination
-
-
 def load_manifest(target: pathlib.Path) -> dict:
-    manifest_path = safe_relative_target(target, INSTALL_MANIFEST.as_posix())
+    manifest_path = resolve_install_target(target, INSTALL_MANIFEST.as_posix())
     if not manifest_path.is_file():
         raise FileNotFoundError(
             "missing .pact/install.json; initialize the project with PACT first"
@@ -82,7 +63,7 @@ def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: d
 
     workflow_path = ".github/workflows/pact-project-check.yml"
     tracked = manifest.get("files", {}).get(workflow_path)
-    workflow_target = safe_relative_target(
+    workflow_target = resolve_install_target(
         target,
         workflow_path,
         allow_leaf_symlink=True,
@@ -105,7 +86,7 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
     notices: list[dict] = []
 
     for path, entry in sorted(desired_by_path.items()):
-        destination = safe_relative_target(
+        destination = resolve_install_target(
             target,
             path,
             allow_leaf_symlink=entry["management"] == "seed",
@@ -237,7 +218,7 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
         if record.get("management") != "framework" or path in desired_paths:
             continue
 
-        destination = safe_relative_target(target, path)
+        destination = resolve_install_target(target, path)
         if not path_present(destination):
             operations.append({
                 "action": "remove-framework",
@@ -316,7 +297,7 @@ def validate_new_manifest(
     if errors:
         raise RuntimeError("new install manifest is invalid: " + "; ".join(errors))
 
-    version_path = safe_relative_target(target, ".pact/VERSION")
+    version_path = resolve_install_target(target, ".pact/VERSION")
     actual_version = (
         version_path.read_text(encoding="utf-8").strip()
         if version_path.exists()
@@ -330,7 +311,7 @@ def validate_new_manifest(
 
     files = new_manifest.get("files", {})
     for path in touched_paths:
-        destination = safe_relative_target(target, path)
+        destination = resolve_install_target(target, path)
         record = files.get(path)
         if not destination.is_file() or not record:
             raise RuntimeError(f"upgraded file missing from final state: {path}")
@@ -371,9 +352,9 @@ def apply_upgrade(
     }
     files = dict(manifest.get("files", {}))
 
-    pact_dir = safe_relative_target(target, ".pact")
+    pact_dir = resolve_install_target(target, ".pact")
     pact_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = safe_relative_target(target, INSTALL_MANIFEST.as_posix())
+    manifest_path = resolve_install_target(target, INSTALL_MANIFEST.as_posix())
 
     mutating_ops = [
         op for op in plan["operations"]
@@ -416,7 +397,7 @@ def apply_upgrade(
         backups: dict[str, pathlib.Path] = {}
         for op in mutating_ops:
             path = op["path"]
-            destination = safe_relative_target(target, path)
+            destination = resolve_install_target(target, path)
             original_exists[path] = destination.is_file()
             if destination.is_file():
                 backup = backup_root / pathlib.Path(path)
@@ -436,7 +417,7 @@ def apply_upgrade(
             removed: list[str] = []
             for op in mutating_ops:
                 path = op["path"]
-                destination = safe_relative_target(target, path)
+                destination = resolve_install_target(target, path)
 
                 if op["action"] == "remove-framework":
                     if destination.is_file():
@@ -475,7 +456,7 @@ def apply_upgrade(
             ]:
                 path = op["path"]
                 entry = desired[path]
-                destination = safe_relative_target(target, path)
+                destination = resolve_install_target(target, path)
                 if destination.is_file():
                     files[path] = manifest_record(entry, destination)
                     touched.append(path)
@@ -498,7 +479,7 @@ def apply_upgrade(
             validate_new_manifest(target, new_manifest, touched)
 
             for path in removed:
-                destination = safe_relative_target(target, path)
+                destination = resolve_install_target(target, path)
                 cleanup_empty_parents(destination.parent, target)
 
             return {
@@ -512,7 +493,7 @@ def apply_upgrade(
             rollback_errors: list[str] = []
 
             for path in reversed(replaced):
-                destination = safe_relative_target(target, path)
+                destination = resolve_install_target(target, path)
                 try:
                     if original_exists.get(path):
                         backup = backups[path]
