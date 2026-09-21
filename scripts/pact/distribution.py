@@ -107,11 +107,11 @@ def resolve_install_target(
         or ":" in relative
         or "\x00" in relative
     ):
-        raise ValueError(f"unsafe tracked install path {relative!r}")
+        raise ValueError(f"unsafe tracked path {relative!r}")
 
     pure = pathlib.PurePosixPath(relative)
     if pure.is_absolute() or ".." in pure.parts:
-        raise ValueError(f"unsafe tracked install path {relative!r}")
+        raise ValueError(f"unsafe tracked path {relative!r}")
 
     root_resolved = root.resolve()
     destination = root / pathlib.Path(*pure.parts)
@@ -119,15 +119,15 @@ def resolve_install_target(
         parent = destination.parent.resolve()
     except (OSError, RuntimeError) as exc:
         raise ValueError(
-            f"cannot resolve tracked install path {relative!r}: {exc}"
+            f"cannot resolve tracked path {relative!r}: {exc}"
         ) from exc
 
     if parent != root_resolved and root_resolved not in parent.parents:
         raise ValueError(
-            f"tracked install path escapes repository through symlink: {relative!r}"
+            f"tracked path escapes repository through symlink: {relative!r}"
         )
     if destination.is_symlink() and not allow_leaf_symlink:
-        raise ValueError(f"tracked install path is a symlink: {relative!r}")
+        raise ValueError(f"tracked path is a symlink: {relative!r}")
     return destination
 
 
