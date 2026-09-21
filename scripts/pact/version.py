@@ -6,6 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
+
+
+from distribution import read_install_manifest
 
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -28,14 +32,17 @@ def main() -> int:
 
     if args.target:
         target = pathlib.Path(args.target).expanduser().resolve()
-        manifest = target / ".pact" / "install.json"
-        if manifest.exists():
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-            result["target"] = str(target)
-            result["installed_runtime_version"] = data.get("runtime_version", "unknown")
-            result["tracked_files"] = len(data.get("files", {}))
+        try:
+            data = read_install_manifest(target)
+        except ValueError as exc:
+            print(f"PACT version: {exc}", file=sys.stderr)
+            return 2
+
+        result["target"] = str(target)
+        if data is not None:
+            result["installed_runtime_version"] = data["runtime_version"]
+            result["tracked_files"] = len(data["files"])
         else:
-            result["target"] = str(target)
             result["installed_runtime_version"] = None
             result["tracked_files"] = 0
 
