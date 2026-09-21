@@ -335,6 +335,66 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(task_manifest.read_bytes(), original_manifest)
         self.assertTrue(marker.is_file())
 
+    def test_task_status_rejects_malformed_completion_bundle_field(self) -> None:
+        task_id = "TASK-BAD-BUNDLE-FIELD"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "malformed bundle recovery",
+            "--success",
+            "Status fails closed",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["completion_bundle"] = {"bad": "path"}
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        status = self.pact("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 2)
+        self.assertIn("completion_bundle", status.stderr)
+        self.assertIn("non-empty string path", status.stderr)
+        self.assertNotIn("Traceback", status.stderr)
+
+    def test_task_status_rejects_malformed_contract_path_field(self) -> None:
+        task_id = "TASK-BAD-CONTRACT-FIELD"
+        prepared = self.pact(
+            "task",
+            "prepare",
+            "malformed contract recovery",
+            "--success",
+            "Status fails closed",
+            "--risk",
+            "low",
+            "--task-id",
+            task_id,
+            "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["contract"] = ["not", "a", "path"]
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        status = self.pact("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 2)
+        self.assertIn("contract", status.stderr)
+        self.assertIn("non-empty string path", status.stderr)
+        self.assertNotIn("Traceback", status.stderr)
+
     def test_task_status_uses_manifest_custom_completion_bundle(self) -> None:
         task_id = "TASK-CUSTOM-BUNDLE"
         prepared = self.pact(
