@@ -454,7 +454,10 @@ def validate_finish_manifest(manifest: dict) -> list[str]:
         errors.append("context_sha256 must be a 64-character hexadecimal digest")
 
     risk_level = manifest.get("risk_level")
-    if risk_level not in {"low", "medium", "high"}:
+    if (
+        not isinstance(risk_level, str)
+        or risk_level not in {"low", "medium", "high"}
+    ):
         errors.append("risk_level must be one of: low, medium, high")
 
     workspace_baseline = manifest.get("workspace_baseline")
