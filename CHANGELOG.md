@@ -35,6 +35,7 @@ Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been publi
 
 ### Release / distribution hardening
 
+- PACT is now licensed under Apache License 2.0; the repository and formal release assets include `LICENSE`, and `SHA256SUMS` covers the license alongside the executable release artifacts;
 - bootstrap ZIP extraction now limits archive file count, per-file expanded size, total expanded size, local archive size, and suspicious compression ratios before extraction;
 - tag releases are blocked on the same 3 OS × 3 Python portability coverage used for normal development;
 - normal PR CI and tag publication now use the same release-asset builder and run a fresh offline bootstrap smoke against the exact `pact-bootstrap.py` / `pact.pyz` / `SHA256SUMS` package before publication;
