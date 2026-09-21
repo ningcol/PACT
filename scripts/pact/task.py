@@ -650,11 +650,46 @@ def finish(args) -> int:
     return completed.returncode
 
 
+def manifest_path_field(
+    manifest: dict,
+    field: str,
+    *,
+    default: str | None = None,
+) -> str | None:
+    value = manifest.get(field, default)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"task manifest field {field!r} must be a non-empty string path"
+        )
+    return value
+
+
+def read_status_contract(path: pathlib.Path) -> dict:
+    if not path.is_file():
+        raise ValueError(f"task contract file is missing: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read task contract: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid task contract object: {path}")
+    errors = validate_contract(data)
+    if errors:
+        raise ValueError(
+            "invalid task contract: " + "; ".join(errors)
+        )
+    return data
+
+
 def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
-    value = manifest.get(
+    value = manifest_path_field(
+        manifest,
         "completion_bundle",
-        f".pact/completions/{task_id}",
+        default=f".pact/completions/{task_id}",
     )
+    assert value is not None
     bundle = pathlib.Path(value).expanduser()
     return bundle if bundle.is_absolute() else ROOT / bundle
 
@@ -676,7 +711,13 @@ def task_status(args) -> int:
         print(f"PACT task status: {exc}", file=sys.stderr)
         return 2
 
-    bundle = completion_bundle_path(manifest, args.task_id)
+    try:
+        bundle = completion_bundle_path(manifest, args.task_id)
+        contract_path = manifest_path_field(manifest, "contract")
+    except ValueError as exc:
+        print(f"PACT task status: {exc}", file=sys.stderr)
+        return 2
+
     completion_files = {
         name: (bundle / filename).is_file()
         for name, filename in {
@@ -687,20 +728,17 @@ def task_status(args) -> int:
     }
 
     contract = None
-    contract_path = manifest.get("contract")
     if contract_path:
         path = ROOT / contract_path
-        if path.is_file():
-            try:
-                contract = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                contract = None
+        try:
+            contract = read_status_contract(path)
+        except ValueError as exc:
+            print(f"PACT task status: {exc}", file=sys.stderr)
+            return 2
 
     result = {
         **manifest,
-        "acceptance_criteria": (
-            contract.get("acceptance_criteria", []) if contract else []
-        ),
+        "acceptance_criteria": contract.get("acceptance_criteria", []) if contract else [],
         "completion_files": completion_files,
     }
     if args.json:
