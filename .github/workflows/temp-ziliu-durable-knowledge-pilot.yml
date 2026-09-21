@@ -139,6 +139,11 @@ jobs:
           python3 pact.py inspect "飞书导入 图片处理" \
             --query "FeishuImportDialog processImagesInHtml uploadImageFromUrl" \
             --json > /tmp/ziliu-inspect.json
+          python3 pact.py discover "known verification gap" \
+            --query "current architecture Feishu import" \
+            --query "Feishu import end-to-end behavior" \
+            --limit 10 \
+            --json > /tmp/ziliu-knowledge-discover.json
 
       - name: Prepare task using durable knowledge
         working-directory: /tmp/ziliu-knowledge-pilot
@@ -161,25 +166,28 @@ jobs:
           prep=json.loads(pathlib.Path("/tmp/ziliu-knowledge-prepare.json").read_text(encoding="utf-8"))
           context=json.loads(pathlib.Path(prep["context"]).read_text(encoding="utf-8"))
           inspect=json.loads(pathlib.Path("/tmp/ziliu-inspect.json").read_text(encoding="utf-8"))
+          discover=json.loads(pathlib.Path("/tmp/ziliu-knowledge-discover.json").read_text(encoding="utf-8"))
           arts=context.get("artifacts",[])
           by_path={item["path"]:item for item in arts}
-          expected={
+          selected_required={
               "docs/product/domains/feishu-import.md",
               "docs/product/rules/feishu-image-handling.md",
               ".agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md",
-              "docs/architecture/feishu-import.md",
-              "docs/drift/known/DRIFT-FEISHU-E2E.md",
           }
-          missing=expected-set(by_path)
+          missing=selected_required-set(by_path)
           assert not missing, missing
           assert by_path["docs/product/rules/feishu-image-handling.md"]["status"]=="candidate"
           assert by_path[".agents/decisions/proposed/DEC-FEISHU-IMAGE-PIPELINE.md"]["status"]=="proposed"
-          assert by_path["docs/architecture/feishu-import.md"]["status"]=="current"
-          assert by_path["docs/drift/known/DRIFT-FEISHU-E2E.md"]["status"]=="known"
           assert len(context.get("code_artifacts",[])) > 0
+
+          discovery_paths={item["path"] for item in discover.get("results",[])}
+          assert "docs/architecture/feishu-import.md" in discovery_paths, discovery_paths
+          assert "docs/drift/known/DRIFT-FEISHU-E2E.md" in discovery_paths, discovery_paths
+
           print(json.dumps({
               "knowledge_paths":[item["path"] for item in arts],
               "knowledge_statuses":{item["path"]:item.get("status") for item in arts},
+              "discoverable_nonselected_paths":sorted(discovery_paths-set(by_path)),
               "code_paths":[item["path"] for item in context.get("code_artifacts",[])],
               "known_unknowns":context.get("known_unknowns",[]),
               "inspect_query_count":len(inspect.get("queries",[])),
