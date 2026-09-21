@@ -650,11 +650,29 @@ def finish(args) -> int:
     return completed.returncode
 
 
+def manifest_path_field(
+    manifest: dict,
+    field: str,
+    *,
+    default: str | None = None,
+) -> str | None:
+    value = manifest.get(field, default)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"task manifest field {field!r} must be a non-empty string path"
+        )
+    return value
+
+
 def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
-    value = manifest.get(
+    value = manifest_path_field(
+        manifest,
         "completion_bundle",
-        f".pact/completions/{task_id}",
+        default=f".pact/completions/{task_id}",
     )
+    assert value is not None
     bundle = pathlib.Path(value).expanduser()
     return bundle if bundle.is_absolute() else ROOT / bundle
 
@@ -676,7 +694,13 @@ def task_status(args) -> int:
         print(f"PACT task status: {exc}", file=sys.stderr)
         return 2
 
-    bundle = completion_bundle_path(manifest, args.task_id)
+    try:
+        bundle = completion_bundle_path(manifest, args.task_id)
+        contract_path = manifest_path_field(manifest, "contract")
+    except ValueError as exc:
+        print(f"PACT task status: {exc}", file=sys.stderr)
+        return 2
+
     completion_files = {
         name: (bundle / filename).is_file()
         for name, filename in {
@@ -687,7 +711,6 @@ def task_status(args) -> int:
     }
 
     contract = None
-    contract_path = manifest.get("contract")
     if contract_path:
         path = ROOT / contract_path
         if path.is_file():
