@@ -395,6 +395,52 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertIn("non-empty string path", status.stderr)
         self.assertNotIn("Traceback", status.stderr)
 
+    def test_task_status_fails_closed_on_broken_task_contract(self) -> None:
+        cases = [
+            ("TASK-CONTRACT-MISSING", "missing"),
+            ("TASK-CONTRACT-BAD-JSON", "bad-json"),
+            ("TASK-CONTRACT-BAD-SCHEMA", "bad-schema"),
+        ]
+        for task_id, mode in cases:
+            with self.subTest(mode=mode):
+                prepared = self.pact(
+                    "task",
+                    "prepare",
+                    f"broken contract {mode}",
+                    "--success",
+                    "Status reports broken durable state",
+                    "--risk",
+                    "low",
+                    "--task-id",
+                    task_id,
+                    "--json",
+                )
+                self.assertEqual(
+                    prepared.returncode,
+                    0,
+                    prepared.stdout + prepared.stderr,
+                )
+                prep = json.loads(prepared.stdout)
+                contract_path = self.root / prep["contract"]
+
+                if mode == "missing":
+                    contract_path.unlink()
+                elif mode == "bad-json":
+                    contract_path.write_text("{ broken\n", encoding="utf-8")
+                else:
+                    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+                    contract.pop("task_id", None)
+                    contract_path.write_text(
+                        json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+
+                status = self.pact("task", "status", task_id, "--json")
+                self.assertEqual(status.returncode, 2)
+                self.assertIn("PACT task status:", status.stderr)
+                self.assertIn("task contract", status.stderr)
+                self.assertNotIn("Traceback", status.stderr)
+
     def test_task_status_uses_manifest_custom_completion_bundle(self) -> None:
         task_id = "TASK-CUSTOM-BUNDLE"
         prepared = self.pact(
