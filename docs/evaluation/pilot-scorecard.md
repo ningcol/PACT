@@ -120,6 +120,12 @@ The first machine-observed owner-project lifecycle is recorded in:
 
 It records one pinned DouBaoFreeImageGen task, the retrieval/workspace defects the pilot exposed, machine-observed Context/verification/completion facts, and the human-only dimensions that remain unknown. Treat it as a baseline sample, not as proof that PACT has already reduced cognitive load or engineering cost.
 
+A second real owner-project lifecycle is recorded in:
+
+`docs/evaluation/real-ziliu-pilot-2026-09-21.md`
+
+It replays a real six-file historical ziliu change, compares baseline vs post-change TypeScript/Next.js verification, records near-budget Context pressure, exact changed-file attribution, and one malformed completion bundle that PACT correctly blocked before a corrected rerun completed. Human-only dimensions remain unmeasured.
+
 ## Blind query evaluation
 
 The owner-language -> code-language query experiments and the resulting retrieval design decisions are recorded in:
