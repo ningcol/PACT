@@ -666,6 +666,23 @@ def manifest_path_field(
     return value
 
 
+def read_status_contract(path: pathlib.Path) -> dict:
+    if not path.is_file():
+        raise ValueError(f"task contract file is missing: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read task contract: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid task contract object: {path}")
+    errors = validate_contract(data)
+    if errors:
+        raise ValueError(
+            "invalid task contract: " + "; ".join(errors)
+        )
+    return data
+
+
 def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
     value = manifest_path_field(
         manifest,
@@ -713,17 +730,15 @@ def task_status(args) -> int:
     contract = None
     if contract_path:
         path = ROOT / contract_path
-        if path.is_file():
-            try:
-                contract = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                contract = None
+        try:
+            contract = read_status_contract(path)
+        except ValueError as exc:
+            print(f"PACT task status: {exc}", file=sys.stderr)
+            return 2
 
     result = {
         **manifest,
-        "acceptance_criteria": (
-            contract.get("acceptance_criteria", []) if contract else []
-        ),
+        "acceptance_criteria": contract.get("acceptance_criteria", []) if contract else [],
         "completion_files": completion_files,
     }
     if args.json:
