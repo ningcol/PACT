@@ -1254,6 +1254,55 @@ class TaskSurfaceTests(unittest.TestCase):
             )
         )
 
+    def test_task_finish_rejects_malformed_prepared_manifest_before_side_effects(self) -> None:
+        cases = [
+            ("TASK-FINISH-BAD-CONTRACT", "contract", {"bad": "path"}),
+            ("TASK-FINISH-BAD-CONTEXT-SHA", "context_sha256", "not-a-sha"),
+            ("TASK-FINISH-BAD-RISK", "risk_level", {"bad": "risk"}),
+            ("TASK-FINISH-BAD-BASELINE", "workspace_baseline", ["bad", "baseline"]),
+        ]
+
+        for task_id, field, value in cases:
+            with self.subTest(field=field):
+                prepared = self.pact(
+                    "task",
+                    "prepare",
+                    f"malformed finish manifest {field}",
+                    "--success",
+                    "Finish fails before side effects",
+                    "--risk",
+                    "low",
+                    "--task-id",
+                    task_id,
+                    "--json",
+                )
+                self.assertEqual(
+                    prepared.returncode,
+                    0,
+                    prepared.stdout + prepared.stderr,
+                )
+
+                task_dir = self.root / ".pact" / "tasks" / task_id
+                manifest_path = task_dir / "task.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest[field] = value
+                manifest_path.write_text(
+                    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+
+                finished = self.pact("task", "finish", task_id, "--json")
+                self.assertEqual(finished.returncode, 2)
+                self.assertIn("prepared task manifest is invalid", finished.stderr)
+                self.assertIn(field, finished.stderr)
+                self.assertNotIn("Traceback", finished.stderr)
+                self.assertFalse((task_dir / "final-impact.json").exists())
+                self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
+
+                persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(persisted[field], value)
+                self.assertEqual(persisted["status"], "prepared")
+
     def test_task_finish_requires_prepared_task(self) -> None:
         finished = self.pact(
             "task",
