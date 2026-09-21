@@ -437,6 +437,36 @@ def prepare(args) -> int:
     return 0
 
 
+def validate_finish_manifest(manifest: dict) -> list[str]:
+    errors: list[str] = []
+
+    for field in ("contract", "context"):
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} must be a non-empty string path")
+
+    context_sha256 = manifest.get("context_sha256")
+    if (
+        not isinstance(context_sha256, str)
+        or len(context_sha256) != 64
+        or any(ch not in "0123456789abcdefABCDEF" for ch in context_sha256)
+    ):
+        errors.append("context_sha256 must be a 64-character hexadecimal digest")
+
+    risk_level = manifest.get("risk_level")
+    if (
+        not isinstance(risk_level, str)
+        or risk_level not in {"low", "medium", "high"}
+    ):
+        errors.append("risk_level must be one of: low, medium, high")
+
+    workspace_baseline = manifest.get("workspace_baseline")
+    if not isinstance(workspace_baseline, dict):
+        errors.append("workspace_baseline must be an object")
+
+    return errors
+
+
 def finish(args) -> int:
     try:
         validate_task_id(args.task_id)
@@ -466,23 +496,14 @@ def finish(args) -> int:
         )
         return 2
 
-    required_manifest_fields = (
-        "contract",
-        "context",
-        "context_sha256",
-        "workspace_baseline",
-        "risk_level",
-    )
-    missing_fields = [
-        field for field in required_manifest_fields
-        if not manifest.get(field)
-    ]
-    if missing_fields:
+    manifest_errors = validate_finish_manifest(manifest)
+    if manifest_errors:
         print(
-            "PACT task finish: prepared task manifest is incomplete; missing "
-            + ", ".join(missing_fields),
+            "PACT task finish: prepared task manifest is invalid:",
             file=sys.stderr,
         )
+        for error in manifest_errors:
+            print(f"  - {error}", file=sys.stderr)
         return 2
 
     bundle = pathlib.Path(args.bundle) if args.bundle else confined_child(COMPLETION_ROOT, args.task_id)
