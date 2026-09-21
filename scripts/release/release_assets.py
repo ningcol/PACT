@@ -16,7 +16,7 @@ import zipfile
 
 SCRIPT_PATH = pathlib.Path(__file__).resolve()
 DEFAULT_ROOT = SCRIPT_PATH.parents[2]
-ASSET_NAMES = ("pact-bootstrap.py", "pact.pyz")
+ASSET_NAMES = ("pact-bootstrap.py", "pact.pyz", "LICENSE")
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -88,6 +88,10 @@ def build_assets(source_root: pathlib.Path, output_dir: pathlib.Path) -> dict:
         raise FileNotFoundError(f"missing release bootstrap source: {bootstrap}")
 
     shutil.copy2(bootstrap, output_dir / "pact-bootstrap.py")
+    license_path = source_root / "LICENSE"
+    if not license_path.is_file():
+        raise FileNotFoundError(f"missing repository license: {license_path}")
+    shutil.copy2(license_path, output_dir / "LICENSE")
     build_runtime_bundle = runtime_builder(source_root)
     build_runtime_bundle(source_root, output_dir / "pact.pyz")
     write_checksums(output_dir)
@@ -110,6 +114,7 @@ def release_source_paths(source_root: pathlib.Path) -> list[pathlib.Path]:
         pathlib.Path(".pact/config.example.toml"),
         pathlib.Path(".pact/baseline.example.toml"),
         pathlib.Path(".pact/fitness.example.toml"),
+        pathlib.Path("LICENSE"),
     ]
     paths = [source_root / relative for relative in relative_files]
     paths.extend(sorted((source_root / "scripts" / "pact").glob("*.py")))
