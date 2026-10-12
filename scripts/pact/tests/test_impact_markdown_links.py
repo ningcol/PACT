@@ -94,6 +94,29 @@ class MarkdownImpactLinkTests(unittest.TestCase):
         )
         self.assertEqual(report["unmapped_files"], [])
 
+    def test_nested_link_does_not_false_match_reporoot_file(self) -> None:
+        report = self.analyze(
+            document_path="docs/product/rules/checkout.md",
+            markdown="# Checkout\n\n[Local file](src/api/checkout.py)\n",
+            changed_path="src/api/checkout.py",
+        )
+        self.assertEqual(report["deterministic_impacts"], [])
+        self.assertEqual(report["unmapped_files"], ["src/api/checkout.py"])
+
+    def test_angle_link_with_spaces_and_optional_title(self) -> None:
+        report = self.analyze(
+            document_path="docs/product/rules/checkout.md",
+            markdown=(
+                '# Checkout\n\n'
+                '[Worker](<../../../src/api/payment worker.py> "worker source")\n'
+            ),
+            changed_path="src/api/payment worker.py",
+        )
+        self.assertEqual(
+            [hit["relation"] for hit in report["deterministic_impacts"]],
+            ["explicit-doc-link"],
+        )
+
     def test_root_readme_relative_link_retains_existing_behavior(self) -> None:
         report = self.analyze(
             document_path="README.md",
