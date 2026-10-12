@@ -513,6 +513,89 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual(disk_path.read_bytes(), before)
         self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), version_before)
 
+    def test_stale_plan_does_not_overwrite_new_seed(self) -> None:
+        manifest = self.scaffold()
+        config = self.target / ".pact" / "config.toml"
+        self.assertTrue(config.is_file())
+        config.unlink()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        self.assertTrue(any(
+            item["action"] == "create-seed"
+            and item["path"] == ".pact/config.toml"
+            for item in plan["operations"]
+        ))
+        config.write_text("owner created this file after planning\n", encoding="utf-8")
+        before = (self.target / ".pact" / "install.json").read_bytes()
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual(
+            config.read_text(encoding="utf-8"),
+            "owner created this file after planning\n",
+        )
+        self.assertEqual((self.target / ".pact" / "install.json").read_bytes(), before)
+
+    def test_stale_already_absent_obsolete_path_does_not_delete_new_file(self) -> None:
+        manifest = self.scaffold()
+        old = self.add_tracked_obsolete_framework(manifest)
+        old.unlink()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        self.assertTrue(any(
+            item["action"] == "remove-framework"
+            and item["path"] == ".pact/obsolete-framework.txt"
+            and item.get("already_absent")
+            for item in plan["operations"]
+        ))
+        old.write_text("OWNER RECREATED THIS FILE\n", encoding="utf-8")
+        before = (self.target / ".pact" / "install.json").read_bytes()
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual(old.read_text(encoding="utf-8"), "OWNER RECREATED THIS FILE\n")
+        self.assertEqual((self.target / ".pact" / "install.json").read_bytes(), before)
+
+    def test_install_manifest_edit_after_backup_is_not_rolled_back_over_owner(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        manifest_path = self.target / ".pact" / "install.json"
+        original_copy = upgrade_runtime.shutil.copy2
+        injected = {"done": False}
+
+        def backup_then_edit(source, destination, *args, **kwargs):
+            result = original_copy(source, destination, *args, **kwargs)
+            if (
+                not injected["done"]
+                and pathlib.Path(source) == manifest_path
+                and "backup" in pathlib.Path(destination).parts
+            ):
+                changed = json.loads(manifest_path.read_text(encoding="utf-8"))
+                changed["runtime_version"] = "OWNER-CHANGED-DURING-BACKUP"
+                manifest_path.write_text(
+                    json.dumps(changed, indent=2) + "\n", encoding="utf-8"
+                )
+                injected["done"] = True
+            return result
+
+        with mock.patch.object(
+            upgrade_runtime.shutil, "copy2", side_effect=backup_then_edit
+        ):
+            with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+                upgrade_runtime.apply_upgrade(
+                    self.new_source, self.target, manifest, plan
+                )
+        self.assertTrue(injected["done"])
+        self.assertEqual(
+            json.loads(manifest_path.read_text(encoding="utf-8"))["runtime_version"],
+            "OWNER-CHANGED-DURING-BACKUP",
+        )
+        self.assertNotEqual(
+            (self.target / ".pact" / "VERSION").read_text(encoding="utf-8").strip(),
+            NEXT_VERSION,
+        )
+
     def test_stale_source_change_stays_rejected_before_target_mutation(self) -> None:
         manifest = self.scaffold()
         self.change_runtime_source()
