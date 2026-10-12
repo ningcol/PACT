@@ -58,7 +58,7 @@ def acceptance_review(
                     f"acceptance criterion {criterion_id!r}"
                 )
                 continue
-            if claim.get("status") == "pass":
+            if claim.get("status") == "pass" and claim.get("required") is True:
                 passing_by_criterion[criterion_id].append(claim_id)
 
     owner_acceptance: dict[str, dict] = {}
@@ -70,6 +70,11 @@ def acceptance_review(
             )
             continue
         owner_acceptance[criterion_id] = item
+
+    for criterion_id in sorted(set(owner_acceptance) - known):
+        errors.append(
+            f"Owner Report acceptance references unknown acceptance criterion {criterion_id!r}"
+        )
 
     evidence_verified: list[str] = []
     owner_report_covered: list[str] = []
