@@ -58,7 +58,7 @@ def acceptance_review(
                     f"acceptance criterion {criterion_id!r}"
                 )
                 continue
-            if claim.get("status") == "pass":
+            if claim.get("status") == "pass" and claim.get("required") is True:
                 passing_by_criterion[criterion_id].append(claim_id)
 
     owner_acceptance: dict[str, dict] = {}
@@ -70,6 +70,11 @@ def acceptance_review(
             )
             continue
         owner_acceptance[criterion_id] = item
+
+    for criterion_id in sorted(set(owner_acceptance) - known):
+        errors.append(
+            f"Owner Report acceptance references unknown acceptance criterion {criterion_id!r}"
+        )
 
     evidence_verified: list[str] = []
     owner_report_covered: list[str] = []
@@ -105,7 +110,12 @@ def acceptance_review(
             continue
 
         owner_ids = set(owner_item.get("evidence_ids", []))
-        if not any(claim_id in owner_ids for claim_id in passing):
+        for evidence_id in sorted(owner_ids - set(passing)):
+            errors.append(
+                f"Owner Report acceptance {criterion_id} cites non-passing or "
+                f"unrelated Evidence claim {evidence_id!r}"
+            )
+        if not owner_ids.intersection(passing):
             owner_report_missing.append(criterion_id)
             errors.append(
                 f"Owner Report acceptance {criterion_id} does not cite "
@@ -113,7 +123,8 @@ def acceptance_review(
             )
             continue
 
-        owner_report_covered.append(criterion_id)
+        if owner_ids.issubset(passing):
+            owner_report_covered.append(criterion_id)
 
     return errors, {
         "total": len(criterion_ids),

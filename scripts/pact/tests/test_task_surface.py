@@ -935,12 +935,9 @@ class TaskSurfaceTests(unittest.TestCase):
         self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
 
         finished = self.pact("task", "finish", task_id, "--json")
-        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
-        result = json.loads(finished.stdout)
-        self.assertFalse(result["complete"])
-        self.assertTrue(
-            any("task_contract_sha256" in error for error in result["errors"])
-        )
+        self.assertEqual(finished.returncode, 2, finished.stdout + finished.stderr)
+        self.assertIn("contract_sha256 does not match prepared Task Contract", finished.stderr)
+        self.assertFalse((self.root / ".pact" / "tasks" / task_id / "completion-attempts.jsonl").exists())
 
     def test_task_finish_rejects_missing_convergence_coverage(self) -> None:
         task_id = "TASK-CONVERGENCE-GAP"
@@ -1341,7 +1338,7 @@ class TaskSurfaceTests(unittest.TestCase):
 
         finished = self.pact("task", "finish", task_id, "--json")
         self.assertEqual(finished.returncode, 2)
-        self.assertIn("invalid prepared task path", finished.stderr)
+        self.assertIn("invalid prepared Task Contract", finished.stderr)
         self.assertIn("escapes repository root", finished.stderr)
         self.assertNotIn("Traceback", finished.stderr)
 
