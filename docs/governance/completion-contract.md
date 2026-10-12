@@ -28,6 +28,14 @@ Completion requires the Convergence Report to:
 This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
 
 
+## Run process and output-pipe completeness
+
+`pact run` streams a direct verification child's stdout and stderr into SHA256 digests without persisting raw output. Successful execution requires the command to exit successfully **and** both streams to reach EOF, so the digests represent complete output.
+
+When a direct child spawns a descendant that inherits either output pipe, closing only the direct child does not necessarily close the pipes. After the direct child exits, PACT uses one bounded 3-second drain deadline for both reader threads. If either pipe remains open at that point, PACT reports an execution error and **does not publish a run receipt**, even if the direct command returned exit code zero. Short-lived descendants that close the pipes within the deadline remain supported.
+
+When only PACT itself receives a keyboard interrupt, it requests termination of the direct child (escalating to kill after a 2-second grace period), bounds the subsequent output reader waits, returns exit code 130, and does not publish a new receipt when cleanup succeeds. As before, OS-level uninterruptible direct-child reaping is not given a strict deadline. PACT does not attempt portable termination of arbitrary descendant process trees. A noncooperating descendant may outlive PACT, and its cleanup belongs to the calling environment. This is a fail-closed evidence boundary, not a guarantee of full process-tree cleanup.
+
 ## Git worktree fingerprint and submodule boundary
 
 PACT binds execution-backed Evidence to a Git worktree snapshot. For tracked files, the snapshot includes staged index state, unstaged content and Git file type/execute-bit semantics; it separately accounts for visible untracked files. Git -z path identities are preserved, including a literal backslash in a POSIX filename.

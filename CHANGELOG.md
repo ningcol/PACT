@@ -6,6 +6,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Execution pipe and interruption reliability (PR-03)
+
+- The streamed verifier waits for stdout/stderr reader threads using one bounded 3-second drain deadline after its direct child exits, rather than joining indefinitely if a descendant inherited an output handle.
+- A direct child exit without output-pipe EOF cannot produce a run receipt: output digests may be incomplete, so `pact run` exits with an execution error instead of claiming a verified pass.
+- On an interrupt delivered to PACT alone, direct-child terminate-then-kill behavior is retained and output reader joins cannot block forever; the existing interrupt return code (130) and no-receipt behavior are preserved.
+- This change deliberately does not kill arbitrary descendant process trees. Noncooperating descendants may remain running and are outside this direct-child cleanup boundary; verification still fails closed.
+- The positive short-lived descendant and both inherited-pipe regressions now run as part of PACT Check and the 3-OS × 3-Python portability/release matrix.
+
 ### Contract and acceptance trust fixes (PR-01)
 
 - High-level `task finish` rejects prepared Task Contracts whose bytes no longer match the original digest before task-change/Impact side effects. `task status` and contract-backed `eval --task` reject that drift as well; minimal historical eval observations without a tracked Contract remain readable.
