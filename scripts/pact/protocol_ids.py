@@ -49,6 +49,10 @@ def confined_state_root(
             raise ValueError(
                 f"{field} state root must not follow a symlink: {current}"
             )
+        if current.exists() and not current.is_dir():
+            raise ValueError(
+                f"{field} state root must be a directory: {current}"
+            )
 
     try:
         resolved_repo = repository_root.resolve()
