@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -164,6 +163,7 @@ class TaskStateRootSafetyTests(unittest.TestCase):
             ("task", "finish", task_id, "--json"),
             ("task", "status", task_id, "--json"),
             ("eval", "--task", task_id, "--json"),
+            ("eval", "--all-tasks", "--json"),
         ):
             with self.subTest(args=args):
                 result = self.pact(*args)
