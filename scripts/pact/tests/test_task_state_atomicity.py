@@ -53,6 +53,57 @@ class TaskStateAtomicityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "real direct child"):
             protocol_ids.confined_child(self.tasks, "TASK-BROKEN")
 
+    def test_confined_state_root_blocks_symlinked_pact_ancestor(self) -> None:
+        repo = self.root / "project"
+        repo.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        try:
+            os.symlink(outside, repo / ".pact", target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"directory symlinks unavailable: {exc}")
+
+        with self.assertRaisesRegex(ValueError, "state root must not follow a symlink"):
+            protocol_ids.confined_state_root(
+                repo, repo / ".pact" / "tasks", field="task"
+            )
+        self.assertFalse((outside / "tasks").exists())
+
+    def test_confined_state_root_rejects_internal_directory_alias(self) -> None:
+        repo = self.root / "project"
+        repo.mkdir()
+        real = repo / "actual-tasks"
+        real.mkdir()
+        pact = repo / ".pact"
+        pact.mkdir()
+        try:
+            os.symlink(real, pact / "tasks", target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"directory symlinks unavailable: {exc}")
+        with self.assertRaisesRegex(ValueError, "state root must not follow a symlink"):
+            protocol_ids.confined_child(
+                pact / "tasks", "TASK-ALIAS", repository_root=repo
+            )
+
+    def test_confined_state_root_rejects_regular_file_ancestor(self) -> None:
+        repo = self.root / "project"
+        repo.mkdir()
+        (repo / ".pact").write_text("not a directory", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "state root must be a directory"):
+            protocol_ids.confined_state_root(
+                repo, repo / ".pact" / "tasks", field="task"
+            )
+
+    def test_confined_state_root_accepts_uncreated_repository_directory(self) -> None:
+        repo = self.root / "project"
+        repo.mkdir()
+        state = repo / ".pact" / "tasks"
+        self.assertEqual(
+            protocol_ids.confined_state_root(repo, state, field="task"),
+            state,
+        )
+        self.assertFalse(state.exists())
+
     def test_confined_repository_path_rejects_parent_traversal(self) -> None:
         with self.assertRaisesRegex(ValueError, "escapes repository root"):
             protocol_ids.confined_repository_path(

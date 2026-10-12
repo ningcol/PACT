@@ -11,7 +11,12 @@ import sys
 from collections import defaultdict
 
 from schema_validate import load_schema, validate_instance
-from protocol_ids import validate_task_id, confined_child, confined_repository_path
+from protocol_ids import (
+    validate_task_id,
+    confined_child,
+    confined_repository_path,
+    confined_state_root,
+)
 from task_contract import acceptance_review
 from task import validate_finish_manifest
 
@@ -285,6 +290,7 @@ def summarize_observations(observations: list[dict]) -> dict:
 
 def discover_task_ids() -> list[str]:
     task_root = ROOT / ".pact" / "tasks"
+    confined_state_root(ROOT, task_root, field="task")
     if not task_root.is_dir():
         return []
     return sorted(
@@ -343,7 +349,9 @@ def run_receipts(task_id: str, evidence: dict | None) -> list[dict]:
 
 def derive_task(task_id: str) -> dict:
     validate_task_id(task_id)
-    task_dir = confined_child(ROOT / ".pact" / "tasks", task_id)
+    task_dir = confined_child(
+        ROOT / ".pact" / "tasks", task_id, repository_root=ROOT
+    )
     manifest_path = task_dir / "task.json"
     if manifest_path.is_symlink():
         raise ValueError(
@@ -605,7 +613,12 @@ def main() -> int:
 
         observations = []
         failures = []
-        for task_id in discover_task_ids():
+        try:
+            task_ids = discover_task_ids()
+        except ValueError as exc:
+            print(f"PACT eval: invalid task state: {exc}", file=sys.stderr)
+            return 2
+        for task_id in task_ids:
             try:
                 observations.append(derive_task(task_id))
             except Exception as exc:

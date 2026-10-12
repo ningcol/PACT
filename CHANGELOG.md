@@ -6,6 +6,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Task state path confinement and completion preflight (PR-04)
+
+- `task prepare`, `task finish`, `task status` and task-backed `eval` reject symlinked, non-directory, or escaped PACT task-state roots instead of resolving an untrusted `.pact/tasks` alias; preparation also validates its completion and temporary state roots before any staging work.
+- `task finish` now validates the prepared Task Context repository path, existence and original content digest **before** changed-file attribution, Final Impact publishing or task state writes. A missing, escaped, or modified Context exits with code 2 without recording a completion attempt.
+- `task status` and contract-backed `eval` use the same prepared Context checks; the default completion root is guarded on status and finish without changing the existing explicit/custom bundle policy.
+- Existing task IDs, normal valid task completion, atomic writes and historical minimal evaluation observations retain their previous behavior. These checks guard preflight boundaries; they do not provide an inter-process lock against a concurrent filesystem adversary.
+
 ### Execution pipe and interruption reliability (PR-03)
 
 - The streamed verifier waits for stdout/stderr reader threads using one bounded 3-second drain deadline after its direct child exits, rather than joining indefinitely if a descendant inherited an output handle.

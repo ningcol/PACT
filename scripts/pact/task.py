@@ -20,7 +20,12 @@ from datetime import datetime, timezone
 from task_contract import validate as validate_contract
 from runtime_exec import runtime_command
 from workspace import task_workspace_baseline, task_changed_files
-from protocol_ids import validate_task_id, confined_child, confined_repository_path
+from protocol_ids import (
+    validate_task_id,
+    confined_child,
+    confined_repository_path,
+    confined_state_root,
+)
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -189,10 +194,15 @@ def prepare(args) -> int:
     task_id = args.task_id or generated_task_id(args.task)
     try:
         validate_task_id(task_id)
-        task_dir = confined_child(TASK_ROOT, task_id)
-        completion_dir = confined_child(COMPLETION_ROOT, task_id)
     except ValueError as exc:
         print(f"PACT task prepare: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
+        confined_state_root(ROOT, TMP_ROOT, field="temporary")
+        task_dir = confined_child(TASK_ROOT, task_id, repository_root=ROOT)
+        completion_dir = confined_child(COMPLETION_ROOT, task_id, repository_root=ROOT)
+    except ValueError as exc:
+        print(f"PACT task prepare: invalid task state: {exc}", file=sys.stderr)
         return 2
 
     if (task_dir.exists() or completion_dir.exists()) and not args.force:
@@ -491,15 +501,38 @@ def validate_finish_manifest(
     if not isinstance(workspace_baseline, dict):
         errors.append("workspace_baseline must be an object")
 
+    if root is not None and not errors:
+        try:
+            context_path = confined_repository_path(
+                root, manifest["context"], field="context"
+            )
+            if not context_path.is_file():
+                errors.append(f"prepared Task Context is missing: {context_path}")
+            else:
+                actual_sha = hashlib.sha256(context_path.read_bytes()).hexdigest()
+                if actual_sha != context_sha256.lower():
+                    errors.append(
+                        "context_sha256 does not match prepared Task Context "
+                        f"({actual_sha!r} != {context_sha256!r})"
+                    )
+        except (OSError, ValueError) as exc:
+            errors.append(f"invalid prepared Task Context: {exc}")
+
     return errors
 
 
 def finish(args) -> int:
     try:
         validate_task_id(args.task_id)
-        task_dir = confined_child(TASK_ROOT, args.task_id)
     except ValueError as exc:
         print(f"PACT task finish: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        if args.bundle is None:
+            confined_state_root(ROOT, COMPLETION_ROOT, field="completion")
+    except ValueError as exc:
+        print(f"PACT task finish: invalid task state: {exc}", file=sys.stderr)
         return 2
     manifest_path = task_dir / "task.json"
     try:
@@ -533,7 +566,29 @@ def finish(args) -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
-    bundle = pathlib.Path(args.bundle) if args.bundle else confined_child(COMPLETION_ROOT, args.task_id)
+    try:
+        contract_path = confined_repository_path(
+            ROOT,
+            manifest["contract"],
+            field="contract",
+        )
+        context_path = confined_repository_path(
+            ROOT,
+            manifest["context"],
+            field="context",
+        )
+    except ValueError as exc:
+        print(
+            f"PACT task finish: invalid prepared task path: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    bundle = (
+        pathlib.Path(args.bundle)
+        if args.bundle
+        else confined_child(COMPLETION_ROOT, args.task_id, repository_root=ROOT)
+    )
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
@@ -609,24 +664,6 @@ def finish(args) -> int:
     )
     if args.require_ci_metadata:
         command.append("--require-ci-metadata")
-
-    try:
-        contract_path = confined_repository_path(
-            ROOT,
-            manifest["contract"],
-            field="contract",
-        )
-        context_path = confined_repository_path(
-            ROOT,
-            manifest["context"],
-            field="context",
-        )
-    except ValueError as exc:
-        print(
-            f"PACT task finish: invalid prepared task path: {exc}",
-            file=sys.stderr,
-        )
-        return 2
 
     command.extend(["--contract", str(contract_path)])
     command.extend(["--context", str(context_path)])
@@ -745,15 +782,21 @@ def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
     )
     assert value is not None
     bundle = pathlib.Path(value).expanduser()
+    if not bundle.is_absolute() and bundle.parts[:2] == (".pact", "completions"):
+        confined_state_root(ROOT, COMPLETION_ROOT, field="completion")
     return bundle if bundle.is_absolute() else ROOT / bundle
 
 
 def task_status(args) -> int:
     try:
         validate_task_id(args.task_id)
-        task_dir = confined_child(TASK_ROOT, args.task_id)
     except ValueError as exc:
         print(f"PACT task status: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+    except ValueError as exc:
+        print(f"PACT task status: invalid task state: {exc}", file=sys.stderr)
         return 2
     manifest_path = task_dir / "task.json"
     try:
