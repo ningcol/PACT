@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -190,6 +191,31 @@ class TrustedCompletionTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertTrue(data["complete"])
         self.assertEqual(data["workspace_bound_claims"], 1)
+
+    def test_legacy_v2_receipt_does_not_verify_v3_worktree(self) -> None:
+        evidence, convergence, owner = self.base_bundle("medium")
+        run_path = pathlib.Path(evidence["claims"][0]["evidence"][0]["ref"])
+        receipt = json.loads(run_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["workspace_after"]["kind"], "git")
+        self.assertFalse(receipt["workspace_after"]["dirty"])
+
+        # Rebuild the actual V2 clean-repository digest layout used by the
+        # previous PACT runtime; HEAD is stable and there are no changed paths.
+        head = receipt["workspace_after"]["git_head"]
+        old_hash = hashlib.sha256(
+            b"PACT-WORKSPACE-V2\n"
+            + f"HEAD:{head}\n".encode("ascii")
+            + b"UNTRACKED\n"
+        ).hexdigest()
+        self.assertNotEqual(old_hash, receipt["workspace_after"]["sha256"])
+        receipt["workspace_before"]["sha256"] = old_hash
+        receipt["workspace_after"]["sha256"] = old_hash
+        self.write_json(run_path, receipt)
+
+        self.save_bundle(evidence, convergence, owner)
+        result = self.run_complete()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("stale pact-run receipt", result.stdout)
 
     def test_tracked_change_after_verification_blocks_completion(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")

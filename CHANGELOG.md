@@ -13,6 +13,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - Duplicate Evidence claim identifiers, Owner acceptance entries outside the Task Contract, and unrelated/unknown evidence references inside an acceptance entry are rejected.
 - These checks validate local recorded state; they do not establish remote/tamper-proof attestations when a writer can modify the prepared manifest and its dependent artifacts together.
 
+### Git workspace identity and attribution hardening (PR-02)
+
+- Git working-tree snapshots now reject dirty, uninitialized, moved, or uninspectable tracked submodules rather than assigning the same stable fingerprint to different unverified source states. A clean, initialized submodule remains represented by its Git gitlink object.
+- Final task change attribution compares committed and working file state using consistent type, executable-bit and content encodings. It no longer reports a file as changed solely because it was committed and then restored to its original bytes.
+- POSIX Git -z filenames preserve literal backslashes instead of converting them to directory separators, preventing path collisions and incorrect generated-state exclusions.
+- Git workspace fingerprint domain is now V3. Older V2 run receipts intentionally become stale and must be regenerated under the newer verification rule; existing pre-V3 prepared dirty-file baseline strings remain readable for final change attribution.
+- New temporary-Git regression cases also run in the portability/release matrix. The boundary still excludes Git ignored input files, environment variables and remote services from workspace fingerprint guarantees.
 
 Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been published by this change.
 
