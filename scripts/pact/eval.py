@@ -352,9 +352,12 @@ def derive_task(task_id: str) -> dict:
     manifest = load_optional(manifest_path)
     if manifest is None:
         raise FileNotFoundError(f"task manifest not found for {task_id}")
-    manifest_errors = validate_finish_manifest(manifest, root=ROOT)
-    if manifest_errors:
-        raise ValueError("invalid prepared task manifest: " + "; ".join(manifest_errors))
+    # Historical/minimal local observations may have no prepared Contract.
+    # When one is tracked, never report it as trustworthy after hash drift.
+    if manifest.get("contract") is not None or manifest.get("contract_sha256") is not None:
+        manifest_errors = validate_finish_manifest(manifest, root=ROOT)
+        if manifest_errors:
+            raise ValueError("invalid prepared task manifest: " + "; ".join(manifest_errors))
 
     contract_path = manifest.get("contract")
     contract = (
