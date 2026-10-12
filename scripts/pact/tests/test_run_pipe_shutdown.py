@@ -120,7 +120,7 @@ class RunPipeShutdownTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "pass")
         self.assertEqual(
             receipt["stdout_sha256"],
-            hashlib.sha256(b"direct-child-output\\n").hexdigest(),
+            hashlib.sha256(b"direct-child-output\n").hexdigest(),
         )
 
     def test_direct_child_exit_cannot_wait_forever_for_descendant_pipe_eof(self) -> None:
