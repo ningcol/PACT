@@ -334,7 +334,6 @@ def cleanup_empty_parents(path: pathlib.Path, stop: pathlib.Path) -> None:
         current = current.parent
 
 
-
 def assert_planned_target_unchanged(
     target: pathlib.Path,
     operation: dict,
@@ -443,50 +442,59 @@ def apply_upgrade(
         stage_root.mkdir()
         backup_root.mkdir()
 
-        # Stage and validate every source before target mutation begins.
-        staged: dict[str, pathlib.Path] = {}
-        for op in mutating_ops:
-            if op["action"] == "remove-framework":
-                continue
-            path = op["path"]
-            entry = desired[path]
-            staged_path = stage_root / pathlib.Path(path)
-            staged_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry["source"], staged_path)
-            actual_sha = sha256_file(staged_path)
-            if actual_sha != op["source_sha256"]:
+        try:
+            # Stage and validate every source before target mutation begins.
+            staged: dict[str, pathlib.Path] = {}
+            for op in mutating_ops:
+                if op["action"] == "remove-framework":
+                    continue
+                path = op["path"]
+                entry = desired[path]
+                staged_path = stage_root / pathlib.Path(path)
+                staged_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(entry["source"], staged_path)
+                actual_sha = sha256_file(staged_path)
+                if actual_sha != op["source_sha256"]:
+                    raise UpgradeApplyError(
+                        f"staged source hash mismatch for {path}",
+                        rolled_back=False,
+                    )
+                staged[path] = staged_path
+
+            original_exists: dict[str, bool] = {}
+            backups: dict[str, pathlib.Path] = {}
+            for op in mutating_ops:
+                path = op["path"]
+                destination = resolve_install_target(target, path)
+                original_exists[path] = destination.is_file()
+                if destination.is_file():
+                    backup = backup_root / pathlib.Path(path)
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(destination, backup)
+                    backups[path] = backup
+
+            manifest_backup = backup_root / "install.json"
+            shutil.copy2(manifest_path, manifest_backup)
+            original_manifest_sha256 = sha256_file(manifest_backup)
+            if sha256_file(manifest_path) != original_manifest_sha256:
                 raise UpgradeApplyError(
-                    f"staged source hash mismatch for {path}",
+                    "install manifest changed while staging upgrade; refusing apply",
                     rolled_back=False,
                 )
-            staged[path] = staged_path
+            # The on-disk object must still be the one we planned against.
+            if load_manifest(target) != manifest:
+                raise UpgradeApplyError(
+                    "install manifest changed while staging upgrade; refusing apply",
+                    rolled_back=False,
+                )
 
-        original_exists: dict[str, bool] = {}
-        backups: dict[str, pathlib.Path] = {}
-        for op in mutating_ops:
-            path = op["path"]
-            destination = resolve_install_target(target, path)
-            original_exists[path] = destination.is_file()
-            if destination.is_file():
-                backup = backup_root / pathlib.Path(path)
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(destination, backup)
-                backups[path] = backup
-
-        manifest_backup = backup_root / "install.json"
-        shutil.copy2(manifest_path, manifest_backup)
-        original_manifest_sha256 = sha256_file(manifest_backup)
-        if sha256_file(manifest_path) != original_manifest_sha256:
+        except UpgradeApplyError:
+            raise
+        except Exception as exc:
             raise UpgradeApplyError(
-                "install manifest changed while staging upgrade; refusing apply",
+                f"upgrade staging or backup failed before target mutation: {exc}",
                 rolled_back=False,
-            )
-        # The on-disk object must still be the one we planned against.
-        if load_manifest(target) != manifest:
-            raise UpgradeApplyError(
-                "install manifest changed while staging upgrade; refusing apply",
-                rolled_back=False,
-            )
+            ) from exc
 
         replaced: list[str] = []
         created: list[str] = []
