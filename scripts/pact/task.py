@@ -529,8 +529,6 @@ def finish(args) -> int:
         return 2
     try:
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        if args.bundle is None:
-            confined_state_root(ROOT, COMPLETION_ROOT, field="completion")
     except ValueError as exc:
         print(f"PACT task finish: invalid task state: {exc}", file=sys.stderr)
         return 2
@@ -584,11 +582,15 @@ def finish(args) -> int:
         )
         return 2
 
-    bundle = (
-        pathlib.Path(args.bundle)
-        if args.bundle
-        else confined_child(COMPLETION_ROOT, args.task_id, repository_root=ROOT)
-    )
+    try:
+        bundle = (
+            pathlib.Path(args.bundle)
+            if args.bundle
+            else completion_bundle_path(manifest, args.task_id)
+        )
+    except ValueError as exc:
+        print(f"PACT task finish: invalid completion bundle: {exc}", file=sys.stderr)
+        return 2
     if not bundle.is_absolute():
         bundle = ROOT / bundle
 
