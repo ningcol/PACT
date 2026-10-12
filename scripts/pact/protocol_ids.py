@@ -20,9 +20,57 @@ def validate_task_id(value: str) -> str:
     return value
 
 
-def confined_child(root: pathlib.Path, task_id: str) -> pathlib.Path:
+def confined_state_root(
+    repository_root: pathlib.Path,
+    state_root: pathlib.Path,
+    *,
+    field: str,
+) -> pathlib.Path:
+    """Accept only a real repository-contained PACT state root.
+
+    Inspect every component rather than resolving away a symlink first:
+    `.pact`, `tasks`, `completions` and `tmp` must remain project-owned.
+    Existing roots need not exist yet (e.g. before task preparation).
+    """
+    repository = repository_root.absolute()
+    state = state_root.absolute()
+    try:
+        relative = state.relative_to(repository)
+    except ValueError as exc:
+        raise ValueError(f"{field} state root escapes repository root") from exc
+
+    if not relative.parts or ".." in relative.parts:
+        raise ValueError(f"{field} state root must be a repository subdirectory")
+
+    current = repository
+    for component in relative.parts:
+        current = current / component
+        if current.is_symlink():
+            raise ValueError(
+                f"{field} state root must not follow a symlink: {current}"
+            )
+
+    try:
+        resolved_repo = repository_root.resolve()
+        resolved_state = state_root.resolve()
+        resolved_state.relative_to(resolved_repo)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError(
+            f"{field} state root cannot be resolved within repository root"
+        ) from exc
+    return state_root
+
+
+def confined_child(
+    root: pathlib.Path,
+    task_id: str,
+    *,
+    repository_root: pathlib.Path | None = None,
+) -> pathlib.Path:
     """Return one real direct child rooted under state root, never a path alias."""
     validate_task_id(task_id)
+    if repository_root is not None:
+        confined_state_root(repository_root, root, field="task")
     root = root.resolve()
     candidate = root / task_id
 
