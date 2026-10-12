@@ -49,7 +49,7 @@ def git_root(cwd: pathlib.Path) -> pathlib.Path | None:
 
 
 def _excluded(relative: str, installed_exclusions: set[str]) -> bool:
-    normalized = relative.replace("\\", "/")
+    normalized = relative
     if normalized in CONTROL_PLANE_EXACT_PATHS:
         return True
     if normalized in installed_exclusions:
@@ -73,12 +73,128 @@ def _hash_untracked_file(digest, root: pathlib.Path, relative: str) -> None:
             digest.update(b"\n")
             return
 
+        if not path.is_file():
+            raise WorkspaceError(f"untracked path is not a regular file: {relative}")
+        digest.update(b"executable\\0" if path.stat().st_mode & 0o111 else b"regular\\0")
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         digest.update(b"\n")
     except OSError as exc:
         raise WorkspaceError(f"cannot fingerprint untracked file {relative}: {exc}") from exc
+
+
+def _git_index_entry(root: pathlib.Path, relative: str) -> tuple[str, str] | None:
+    """Get an exact indexed entry rather than expanding pathspec wildcards."""
+    try:
+        result = _run_git(
+            root, ["ls-files", "--stage", "-z", "--", f":(literal){relative}"]
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot inspect Git index entry {relative}: {exc}") from exc
+    if result.returncode != 0:
+        raise WorkspaceError(f"cannot inspect Git index entry {relative}")
+
+    found: tuple[str, str] | None = None
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            mode, oid, stage = header.decode("ascii").split()
+        except (ValueError, UnicodeError) as exc:
+            raise WorkspaceError(f"malformed Git index entry {relative}") from exc
+        if raw_path.decode("utf-8", errors="surrogateescape") != relative:
+            continue
+        if stage != "0" or found is not None:
+            raise WorkspaceError(f"unmerged/ambiguous Git index entry {relative}")
+        found = (mode, oid)
+    return found
+
+
+def _git_index_gitlinks(root: pathlib.Path) -> dict[str, str]:
+    """Collect Git index entries of type gitlink (mode 160000)."""
+    try:
+        result = _run_git(root, ["ls-files", "--stage", "-z"])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot enumerate Git submodules: {exc}") from exc
+    if result.returncode != 0:
+        raise WorkspaceError("cannot enumerate Git submodules")
+
+    links: dict[str, str] = {}
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            mode, oid, stage = header.decode("ascii").split()
+        except (ValueError, UnicodeError) as exc:
+            raise WorkspaceError("malformed Git index while identifying submodules") from exc
+        if mode != "160000":
+            continue
+        relative = raw_path.decode("utf-8", errors="surrogateescape")
+        if stage != "0" or relative in links:
+            raise WorkspaceError(f"unmerged Git submodule: {relative}")
+        links[relative] = oid
+    return links
+
+
+def _ensure_clean_gitlinks(root: pathlib.Path, seen: set[pathlib.Path] | None = None) -> None:
+    """Refuse stable verification fingerprints for dirty or unknown gitlinks."""
+    root = root.resolve()
+    if seen is None:
+        seen = set()
+    if root in seen:
+        raise WorkspaceError(f"repeated Git submodule worktree: {root}")
+    seen.add(root)
+
+    for relative, expected_sha in _git_index_gitlinks(root).items():
+        child = root / relative
+        if child.is_symlink() or not child.is_dir():
+            raise WorkspaceError(f"Git submodule is missing/uninitialized: {relative}")
+        resolved = child.resolve()
+        if not resolved.is_relative_to(root) or git_root(child) != resolved:
+            raise WorkspaceError(f"Git submodule is not a contained Git worktree: {relative}")
+
+        try:
+            head = _run_git(child, ["rev-parse", "HEAD"], text=True)
+            status = _run_git(
+                child,
+                ["status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"],
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise WorkspaceError(f"cannot inspect Git submodule {relative}: {exc}") from exc
+        if head.returncode != 0 or head.stdout.strip() != expected_sha:
+            raise WorkspaceError(f"Git submodule HEAD differs from index: {relative}")
+        if status.returncode != 0:
+            raise WorkspaceError(f"cannot inspect Git submodule status: {relative}")
+        if status.stdout:
+            raise WorkspaceError(f"Git submodule has unverified workspace changes: {relative}")
+        _ensure_clean_gitlinks(child, seen)
+
+
+def _git_filemode_enabled(root: pathlib.Path) -> bool:
+    try:
+        result = _run_git(root, ["config", "--bool", "core.filemode"], text=True)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot inspect Git filemode policy: {exc}") from exc
+    if result.returncode == 1:
+        return os.name != "nt"
+    if result.returncode != 0 or result.stdout.strip() not in {"true", "false"}:
+        raise WorkspaceError("cannot inspect Git filemode policy")
+    return result.stdout.strip() == "true"
+
+
+def _git_symlinks_enabled(root: pathlib.Path) -> bool:
+    try:
+        result = _run_git(root, ["config", "--bool", "core.symlinks"], text=True)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot inspect Git symlink policy: {exc}") from exc
+    if result.returncode == 1:
+        return os.name != "nt"
+    if result.returncode != 0 or result.stdout.strip() not in {"true", "false"}:
+        raise WorkspaceError("cannot inspect Git symlink policy")
+    return result.stdout.strip() == "true"
 
 
 def _git_index_file_state(root: pathlib.Path, relative: str) -> str:
@@ -126,6 +242,7 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
         return None
 
     installed_exclusions = discovery_excluded_paths(root)
+    _ensure_clean_gitlinks(root)
 
     try:
         head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
@@ -150,7 +267,8 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
     )
 
     digest = hashlib.sha256()
-    digest.update(b"PACT-WORKSPACE-V2\n")
+    # V3 invalidates prior receipts when stronger Git file identity is in effect.
+    digest.update(b"PACT-WORKSPACE-V3\n")
     digest.update(f"HEAD:{head or '<none>'}\n".encode())
 
     for relative in sorted(staged_paths):
@@ -262,7 +380,7 @@ def workspace_snapshot(cwd: pathlib.Path) -> dict:
 
 def _decode_nul_paths(data: bytes) -> list[str]:
     return [
-        item.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+        item.decode("utf-8", errors="surrogateescape")
         for item in data.split(b"\0")
         if item
     ]
