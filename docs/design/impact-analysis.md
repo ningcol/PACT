@@ -18,6 +18,14 @@ Examples:
 - a Product Rule explicitly names the changed file as a verification target;
 - a changed text file explicitly references a Stable ID.
 
+### Markdown link path semantics
+
+For an explicit Markdown link, Impact resolves its destination relative to the directory containing the Markdown document. For example, a link in `docs/product/rules/password.md` to `../../../src/api/reset.py` identifies the repository file `src/api/reset.py`. A nested document's link to `src/api/reset.py` means a sibling-relative path, **not** the repository root's `src/api/reset.py`.
+
+Leading-slash Markdown destinations are interpreted from the repository root, matching PACT's own link checker. URL fragments, query strings and percent-encoded path components are normalized when identifying the file. External URLs and paths that escape above the repository root are not counted as deterministic file relationships.
+
+This applies only to explicit Markdown destinations. The `verification` and declared domain-path metadata fields remain repository-relative by their existing contract. These checks establish that a textual link exists and points to the selected path, not that the target implementation is semantically correct.
+
 Deterministic means:
 
 > the relationship exists.
