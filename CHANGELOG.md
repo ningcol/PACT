@@ -10,7 +10,7 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 - The streamed verifier waits for stdout/stderr reader threads using one bounded 3-second drain deadline after its direct child exits, rather than joining indefinitely if a descendant inherited an output handle.
 - A direct child exit without output-pipe EOF cannot produce a run receipt: output digests may be incomplete, so `pact run` exits with an execution error instead of claiming a verified pass.
-- On an interrupt delivered to PACT alone, direct-child cleanup remains bounded and the output reader joins cannot block forever; the existing interrupt return code (130) and no-receipt behavior are preserved.
+- On an interrupt delivered to PACT alone, direct-child terminate-then-kill behavior is retained and output reader joins cannot block forever; the existing interrupt return code (130) and no-receipt behavior are preserved.
 - This change deliberately does not kill arbitrary descendant process trees. Noncooperating descendants may remain running and are outside this direct-child cleanup boundary; verification still fails closed.
 - The positive short-lived descendant and both inherited-pipe regressions now run as part of PACT Check and the 3-OS × 3-Python portability/release matrix.
 
