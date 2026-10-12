@@ -6,6 +6,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Upgrade plan freshness and target preservation (PR-07)
+
+- `upgrade --apply` rechecks the current install Manifest and regenerates the source/target plan before staging any replacements; a stale plan aborts rather than applying decisions made against outdated files.
+- Planned create, update, refresh-manifest and remove operations recheck their expected target existence/type/content. Destructive operations verify each target again immediately before replacement or removal; unexpected user edits are never treated as safe unchanged framework files.
+- Manifest publication detects concurrent changes, and rollback avoids replacing an externally edited install Manifest with an older backup. Staged source digests and per-file source metadata are cross-checked with the planned hashes.
+- Simulated stale-plan, post-backup local edits and rollback tests cover safe refusal and preservation of project-owned changes. These are optimistic checks, not filesystem locks: changes between a final check and an OS write remain a documented TOCTOU limitation.
+
 ### Discovery and Markdown Impact correctness (PR-06)
 
 - Code-aware discovery always preserves the strongest direct lexical code match when `--code-limit` leaves only one final result slot; generated import-neighbor context may use only the remaining budget. Existing ranking/scoring, multiple-query fusion, and larger-budget neighbor shares remain unchanged.
