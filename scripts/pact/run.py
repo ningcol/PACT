@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 
 from schema_validate import load_schema, validate_instance
@@ -23,6 +24,7 @@ from protocol_ids import validate_task_id
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "run-receipt.schema.json"
 DIRECT_CHILD_TERMINATE_GRACE_SECONDS = 2.0
+OUTPUT_DRAIN_GRACE_SECONDS = 3.0
 
 
 def now_iso() -> str:
@@ -74,6 +76,25 @@ def _terminate_direct_child(
     process.wait()
 
 
+
+def _join_output_threads(
+    threads: list[threading.Thread],
+    *,
+    grace_seconds: float = OUTPUT_DRAIN_GRACE_SECONDS,
+) -> bool:
+    """Return False if an inherited pipe prevents finite-time EOF.
+
+    One shared monotonic deadline bounds the *whole* join, not each stream.
+    Do not close buffered pipe wrappers from this thread while reader threads
+    are blocked in read(): close() may wait on the buffered reader's lock.
+    Their daemon threads/fds are reclaimed when this CLI process exits.
+    """
+    deadline = time.monotonic() + max(0.0, grace_seconds)
+    for thread in threads:
+        thread.join(timeout=max(0.0, deadline - time.monotonic()))
+    return not any(thread.is_alive() for thread in threads)
+
+
 def run_streamed(
     command: list[str],
     *,
@@ -117,12 +138,19 @@ def run_streamed(
         try:
             _terminate_direct_child(process)
         finally:
-            for thread in threads:
-                thread.join()
+            # Preserve the original interruption/exception. Descendants may
+            # outlive the direct child while still holding its output pipes.
+            _join_output_threads(threads)
         raise
 
-    for thread in threads:
-        thread.join()
+    if not _join_output_threads(threads):
+        # Without EOF the digests may be partial even when the command exited
+        # successfully. Fail closed and do not publish a success receipt.
+        raise OSError(
+            "command output streams did not close within "
+            f"{OUTPUT_DRAIN_GRACE_SECONDS:g}s after the direct child exited; "
+            "a descendant may still hold stdout/stderr (no receipt published)"
+        )
     if pump_errors:
         raise OSError(f"command output streaming failed: {pump_errors[0]}")
 
