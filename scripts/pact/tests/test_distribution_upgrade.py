@@ -611,6 +611,73 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), version_before)
         self.assertEqual((self.target / ".pact" / "install.json").read_bytes(), manifest_before)
 
+    def test_source_removed_during_staging_fails_without_unhandled_error(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        source = self.new_source / ".pact" / "VERSION"
+        old_version = (self.target / ".pact" / "VERSION").read_bytes()
+        old_manifest = (self.target / ".pact" / "install.json").read_bytes()
+        original_copy = upgrade_runtime.shutil.copy2
+        injected = {"done": False}
+
+        def disappear_during_stage(src, dst, *args, **kwargs):
+            if (
+                not injected["done"]
+                and pathlib.Path(src) == source
+                and "stage" in pathlib.Path(dst).parts
+            ):
+                source.unlink()
+                injected["done"] = True
+            return original_copy(src, dst, *args, **kwargs)
+
+        with mock.patch.object(
+            upgrade_runtime.shutil, "copy2", side_effect=disappear_during_stage
+        ):
+            with self.assertRaises(upgrade_runtime.UpgradeApplyError) as raised:
+                upgrade_runtime.apply_upgrade(
+                    self.new_source, self.target, manifest, plan
+                )
+        self.assertTrue(injected["done"])
+        self.assertFalse(raised.exception.rolled_back)
+        self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), old_version)
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(), old_manifest
+        )
+
+    def test_target_removed_during_backup_fails_without_unhandled_error(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        destination = self.target / ".pact" / "VERSION"
+        old_manifest = (self.target / ".pact" / "install.json").read_bytes()
+        original_copy = upgrade_runtime.shutil.copy2
+        injected = {"done": False}
+
+        def disappear_during_backup(src, dst, *args, **kwargs):
+            if (
+                not injected["done"]
+                and pathlib.Path(src) == destination
+                and "backup" in pathlib.Path(dst).parts
+            ):
+                destination.unlink()
+                injected["done"] = True
+            return original_copy(src, dst, *args, **kwargs)
+
+        with mock.patch.object(
+            upgrade_runtime.shutil, "copy2", side_effect=disappear_during_backup
+        ):
+            with self.assertRaises(upgrade_runtime.UpgradeApplyError) as raised:
+                upgrade_runtime.apply_upgrade(
+                    self.new_source, self.target, manifest, plan
+                )
+        self.assertTrue(injected["done"])
+        self.assertFalse(raised.exception.rolled_back)
+        self.assertFalse(destination.exists(), "foreign removal must be preserved")
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(), old_manifest
+        )
+
     def test_late_target_edit_after_backup_is_not_overwritten(self) -> None:
         manifest = self.scaffold()
         self.change_runtime_source()
