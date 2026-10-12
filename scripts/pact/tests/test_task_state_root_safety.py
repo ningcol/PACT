@@ -140,6 +140,22 @@ class TaskStateRootSafetyTests(unittest.TestCase):
         self.assertIn("state", result.stderr.lower())
         self.assertFalse((outside / task_id).exists())
 
+    def test_prepare_rejects_temporary_state_root_that_is_a_file(self) -> None:
+        state = self.root / ".pact" / "tmp"
+        if state.exists():
+            state.rename(self.root / "old-tmp")
+        state.write_text("not a directory\n", encoding="utf-8")
+        task_id = "TASK-PR04-NOT-A-DIR"
+        result = self.pact(
+            "task", "prepare", "Reject invalid state root",
+            "--success", "State stays in project",
+            "--risk", "low", "--task-id", task_id, "--json",
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("state root must be a directory", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse((self.root / ".pact" / "tasks" / task_id).exists())
+
     def test_prepare_rejects_external_temporary_state_root(self) -> None:
         outside = self.alias_state_root("tmp")
         task_id = "TASK-PR04-TMP-ROOT"
