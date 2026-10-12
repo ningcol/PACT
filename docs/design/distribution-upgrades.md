@@ -95,7 +95,7 @@ A dry-run plan is a snapshot, not a reservation of installed files. The CLI's `-
 
 Before create/update/remove/refresh, PACT verifies each planned destination still has the expected existence, regular-file type and SHA256. For destructive operations it also verifies the target just before the OS replacement/removal. A new user-created file, a locally edited framework file, a modified obsolete file or a stale manifest triggers an error instead of silent replacement or deletion. Unchanged files are still upgraded and the existing transaction rollback tests continue to apply.
 
-The install Manifest is written last. PACT refuses to overwrite a concurrently altered Manifest, and on failure it does not blindly restore the backup over a Manifest modified by another writer. If a concurrent edit makes full rollback unsafe, the error is reported rather than asserting successful rollback.
+The install Manifest is written last. PACT refuses to overwrite a concurrently altered Manifest. During rollback, it checks that a replaced file still has the exact bytes PACT wrote (or is still absent after removal) before restoring or deleting it. A file or install Manifest subsequently changed by another writer is preserved, and PACT reports incomplete rollback rather than asserting that all files were restored.
 
 This is an **optimistic fail-closed check**, not a cross-process lock or a proof that every race is impossible. Non-cooperating writers can still change a file between the final comparison and an OS-level operation. Stronger protection would require coordination or platform-specific atomic conditional operations; do not claim that this phase provides either.
 
