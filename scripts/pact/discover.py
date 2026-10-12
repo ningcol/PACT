@@ -303,9 +303,12 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     if not neighbors:
         return direct[:final_limit]
 
+    # Always keep at least the best direct lexical match. A single-slot
+    # code-limit must not be consumed by a graph neighbor.
     neighbor_budget = min(
         len(neighbors),
         max(1, final_limit // 3),
+        final_limit - 1,
     )
     direct_budget = max(final_limit - neighbor_budget, 0)
     selected = direct[:direct_budget] + neighbors[:neighbor_budget]
