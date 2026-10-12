@@ -54,7 +54,7 @@ def _terminate_direct_child(
     *,
     grace_seconds: float = DIRECT_CHILD_TERMINATE_GRACE_SECONDS,
 ) -> None:
-    """Best-effort bounded cleanup for the direct verification child."""
+    """Best-effort terminate-then-kill cleanup for the direct child."""
     if process.poll() is not None:
         return
 
@@ -74,7 +74,6 @@ def _terminate_direct_child(
     if process.poll() is None:
         process.kill()
     process.wait()
-
 
 
 def _join_output_threads(
