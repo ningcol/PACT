@@ -394,8 +394,9 @@ def _working_file_state(
     relative: str,
     *,
     filemode_enabled: bool | None = None,
+    compare_committed: bool = False,
 ) -> str:
-    """Comparable workspace file identity: type, Git execute bit, contents."""
+    """Comparable file identity; optionally honor Git's clean filters."""
     path = root / relative
     if path.is_symlink():
         payload = b"symlink\0" + os.readlink(path).encode(
@@ -422,23 +423,49 @@ def _working_file_state(
 
     if filemode_enabled is None:
         filemode_enabled = _git_filemode_enabled(root)
-    digest = hashlib.sha256()
     try:
         actual_exec = bool(path.stat().st_mode & 0o111)
+    except OSError as exc:
+        raise WorkspaceError(f"cannot inspect workspace file {relative}: {exc}") from exc
+
+    # Git with core.symlinks=false checks a tracked symlink out as text.
+    if index_mode == "120000" and not _git_symlinks_enabled(root):
+        try:
+            target_bytes = path.read_bytes()
+        except OSError as exc:
+            raise WorkspaceError(f"cannot read checked-out Git link {relative}: {exc}") from exc
+        return "symlink:sha256:" + hashlib.sha256(
+            b"symlink\0" + target_bytes
+        ).hexdigest()
+
+    executable = actual_exec if filemode_enabled else index_mode == "100755"
+    mode_prefix = f"mode:{'111' if executable else '0'}:"
+
+    if compare_committed:
+        # A committed clean file is stored *after* Git's clean filters
+        # (notably core.autocrlf). Compare Git blob identities, not raw
+        # working bytes, to avoid a false task delta on Windows.
+        try:
+            normalized = _run_git(
+                root, ["hash-object", f"--path={relative}", "--", str(path)],
+                text=True,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise WorkspaceError(f"cannot normalize Git file {relative}: {exc}") from exc
+        if normalized.returncode != 0:
+            raise WorkspaceError(f"cannot normalize Git file {relative}")
+        return mode_prefix + "git-oid:" + normalized.stdout.strip()
+
+    # A file already dirty at task preparation has no committed baseline.
+    # Preserve its exact *raw* bytes, including line endings.
+    digest = hashlib.sha256()
+    try:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
     except OSError as exc:
         raise WorkspaceError(f"cannot hash workspace file {relative}: {exc}") from exc
-
-    # Git with core.symlinks=false checks a tracked symlink out as text.
-    if index_mode == "120000" and not _git_symlinks_enabled(root):
-        return "symlink:sha256:" + hashlib.sha256(
-            b"symlink\0" + path.read_bytes()
-        ).hexdigest()
-
-    executable = actual_exec if filemode_enabled else index_mode == "100755"
-    return f"mode:{'111' if executable else '0'}:sha256:" + digest.hexdigest()
+    return mode_prefix + "sha256:" + digest.hexdigest()
 
 
 def _git_ref_file_state(root: pathlib.Path, ref: str, relative: str) -> str:
@@ -467,6 +494,9 @@ def _git_ref_file_state(root: pathlib.Path, ref: str, relative: str) -> str:
         return "gitlink:" + oid
     if mode not in {"100644", "100755", "120000"} or object_type != "blob":
         raise WorkspaceError(f"unsupported Git file type for {relative}: {mode}")
+    if mode in {"100644", "100755"}:
+        return f"mode:{'111' if mode == '100755' else '0'}:git-oid:" + oid
+
     try:
         blob = _run_git(root, ["cat-file", "blob", oid])
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -478,9 +508,6 @@ def _git_ref_file_state(root: pathlib.Path, ref: str, relative: str) -> str:
         return "symlink:sha256:" + hashlib.sha256(
             b"symlink\0" + blob.stdout
         ).hexdigest()
-    return f"mode:{'111' if mode == '100755' else '0'}:sha256:" + hashlib.sha256(
-        blob.stdout
-    ).hexdigest()
 
 
 def _compatible_prepared_state(state: str) -> str:
@@ -629,6 +656,7 @@ def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
     changed: list[str] = []
     filemode_enabled = _git_filemode_enabled(root) if candidates else None
     for path in sorted(candidates):
+        was_dirty_at_prepare = path in prepared_dirty
         prepared_state = prepared_dirty.get(path)
         if prepared_state is None:
             prepared_state = (
@@ -636,7 +664,11 @@ def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
                 if base_head
                 else "missing"
             )
-        current_state = _working_file_state(root, path, filemode_enabled=filemode_enabled)
+        current_state = _working_file_state(
+            root, path,
+            filemode_enabled=filemode_enabled,
+            compare_committed=not was_dirty_at_prepare,
+        )
         if not isinstance(prepared_state, str):
             raise WorkspaceError(f"invalid prepared Git file state for {path}")
         if current_state != _compatible_prepared_state(prepared_state):
