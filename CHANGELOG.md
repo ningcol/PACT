@@ -6,6 +6,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Completion Bundle retry path consistency (PR-05)
+
+- `task finish` without an explicit `--bundle` now resolves the persisted `completion_bundle` in the prepared Task Manifest, matching `task status` and machine task observations, instead of blindly resetting to `.pact/completions/<TASK-ID>`.
+- Explicit `--bundle` retains precedence, and successful completion persists that selected path for subsequent retries; both custom relative and absolute bundle locations remain supported.
+- A malformed stored Bundle path, including explicit `null`, now fails with a clear path error before Final Impact, task state or completion history writes. A missing Bundle field retains the existing default fallback.
+- The Convergence `updated` vs. intentionally deleted artifact classification (R05) has not been changed: the present design and schema do not explicitly settle that semantic distinction, so no unreviewed policy was introduced.
+
 ### Task state path confinement and completion preflight (PR-04)
 
 - `task prepare`, `task finish`, `task status` and task-backed `eval` reject symlinked, non-directory, or escaped PACT task-state roots instead of resolving an untrusted `.pact/tasks` alias; preparation also validates its completion and temporary state roots before any staging work.
