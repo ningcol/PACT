@@ -138,6 +138,91 @@ class MultiQueryRetrievalTests(unittest.TestCase):
         self.assertEqual(results[0]["parser_mode"], "generic-lexical")
         self.assertEqual(results[0]["confidence"], "direct")
 
+    def test_code_limit_one_preserves_a_direct_match_over_an_import_neighbor(self) -> None:
+        code_index = {
+            "files": [
+                {
+                    "path": "src/payment.py",
+                    "language": "python",
+                    "is_test": False,
+                    "symbols": ["execute_payment"],
+                    "identifiers": [],
+                    "imports": [],
+                },
+                {
+                    "path": "tests/test_payment.py",
+                    "language": "python",
+                    "is_test": True,
+                    "symbols": [],
+                    "identifiers": [],
+                    "imports": [],
+                },
+            ],
+            "edges": [
+                {
+                    "from": "tests/test_payment.py",
+                    "to": "src/payment.py",
+                    "confidence": "relative-resolved",
+                }
+            ],
+        }
+        result = discover.ranked_code_results(
+            code_index, "execute_payment", limit=1
+        )
+        self.assertEqual([item["path"] for item in result], ["src/payment.py"])
+        self.assertEqual(result[0]["relation"], "direct-match")
+        self.assertEqual(result[0]["confidence"], "direct")
+
+    def test_code_limit_two_retains_direct_match_and_graph_neighbor(self) -> None:
+        code_index = {
+            "files": [
+                {
+                    "path": "src/payment.py", "language": "python",
+                    "is_test": False, "symbols": ["execute_payment"],
+                    "identifiers": [], "imports": [],
+                },
+                {
+                    "path": "tests/test_payment.py", "language": "python",
+                    "is_test": True, "symbols": [], "identifiers": [], "imports": [],
+                },
+            ],
+            "edges": [{
+                "from": "tests/test_payment.py", "to": "src/payment.py",
+                "confidence": "relative-resolved",
+            }],
+        }
+        results = discover.ranked_code_results(
+            code_index, "execute_payment", limit=2
+        )
+        self.assertEqual(
+            [(item["path"], item["relation"]) for item in results],
+            [
+                ("src/payment.py", "direct-match"),
+                ("tests/test_payment.py", "import-neighbor"),
+            ],
+        )
+
+    def test_code_limit_zero_still_keeps_one_direct_match(self) -> None:
+        index = {
+            "files": [
+                {"path": "src/payment.py", "language": "python",
+                 "is_test": False, "symbols": ["execute_payment"],
+                 "identifiers": [], "imports": []},
+                {"path": "tests/test_payment.py", "language": "python",
+                 "is_test": True, "symbols": [], "identifiers": [], "imports": []},
+            ],
+            "edges": [{
+                "from": "tests/test_payment.py", "to": "src/payment.py",
+                "confidence": "relative-resolved",
+            }],
+        }
+        self.assertEqual(
+            [x["path"] for x in discover.ranked_code_results(
+                index, "execute_payment", limit=0
+            )],
+            ["src/payment.py"],
+        )
+
     def test_code_limit_is_a_hard_final_budget(self) -> None:
         files = []
         edges = []

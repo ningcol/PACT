@@ -6,6 +6,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Discovery and Markdown Impact correctness (PR-06)
+
+- Code-aware discovery always preserves the strongest direct lexical code match when `--code-limit` leaves only one final result slot; generated import-neighbor context may use only the remaining budget. Existing ranking/scoring, multiple-query fusion, and larger-budget neighbor shares remain unchanged.
+- Impact Analysis now resolves explicit Markdown links **relative to their source document's directory**, while links beginning with `/` use the repository root consistently with PACT's Markdown link checker.
+- Markdown link fragments/query strings and percent-encoded destination paths are handled before deterministic file matching; links escaping the repository and external URLs cannot silently impersonate a project file.
+- `pact.verification` metadata continues to use repository-relative paths. Project Map retains its existing raw-link index format and cache version; the fix is confined to deterministic Impact matching.
+- Regression tests cover direct-vs-neighbor limits, nested links, anchors, encoded spaces, root links, false positives, and repository boundaries across the normal CI and 3×3 portability/release matrix.
+
 ### Completion Bundle retry path consistency (PR-05)
 
 - `task finish` without an explicit `--bundle` now resolves the persisted `completion_bundle` in the prepared Task Manifest, matching `task status` and machine task observations, instead of blindly resetting to `.pact/completions/<TASK-ID>`.
