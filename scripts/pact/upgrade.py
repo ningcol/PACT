@@ -498,6 +498,8 @@ def apply_upgrade(
 
         replaced: list[str] = []
         created: list[str] = []
+        # For safe rollback, remember what PACT actually intended to write.
+        written_targets: dict[str, str | None] = {}
         manifest_committed = False
         committed_manifest_sha256: str | None = None
         fail_after_raw = os.environ.get("PACT_TEST_FAIL_AFTER_REPLACE")
@@ -515,6 +517,7 @@ def apply_upgrade(
                     if destination.is_file():
                         destination.unlink()
                     replaced.append(path)
+                    written_targets[path] = None  # PACT left the target absent
                     removed.append(path)
                 else:
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -527,6 +530,7 @@ def apply_upgrade(
                     os.replace(temp_destination, destination)
 
                     replaced.append(path)
+                    written_targets[path] = op["source_sha256"]
                     if not original_exists[path]:
                         created.append(path)
 
@@ -598,8 +602,24 @@ def apply_upgrade(
             rollback_errors: list[str] = []
 
             for path in reversed(replaced):
-                destination = resolve_install_target(target, path)
                 try:
+                    destination = resolve_install_target(target, path)
+                    expected_sha = written_targets[path]
+                    if expected_sha is None:
+                        if path_present(destination):
+                            raise RuntimeError(
+                                "changed concurrently after upgrade removal; "
+                                "cannot safely restore previous bytes"
+                            )
+                    elif (
+                        not destination.is_file()
+                        or sha256_file(destination) != expected_sha
+                    ):
+                        raise RuntimeError(
+                            "changed concurrently after upgrade replacement; "
+                            "cannot safely roll back over newer bytes"
+                        )
+
                     if original_exists.get(path):
                         backup = backups[path]
                         destination.parent.mkdir(parents=True, exist_ok=True)
