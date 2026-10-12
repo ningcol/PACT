@@ -75,7 +75,7 @@ def _hash_untracked_file(digest, root: pathlib.Path, relative: str) -> None:
 
         if not path.is_file():
             raise WorkspaceError(f"untracked path is not a regular file: {relative}")
-        digest.update(b"executable\\0" if path.stat().st_mode & 0o111 else b"regular\\0")
+        digest.update(b"executable\0" if path.stat().st_mode & 0o111 else b"regular\0")
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
@@ -201,7 +201,7 @@ def _git_index_file_state(root: pathlib.Path, relative: str) -> str:
     try:
         result = _run_git(
             root,
-            ["ls-files", "--stage", "-z", "--", relative],
+            ["ls-files", "--stage", "-z", "--", f":(literal){relative}"],
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise WorkspaceError(
