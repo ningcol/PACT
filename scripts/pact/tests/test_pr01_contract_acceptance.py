@@ -63,6 +63,19 @@ class PR01TrustRegressionTests(unittest.TestCase):
         errors, _ = task_contract.acceptance_review(contract, evidence, owner)
         self.assertTrue(any("AC-EXTRA" in error for error in errors), errors)
 
+    def test_acceptance_rejects_unrelated_or_unknown_evidence_ids(self):
+        contract, evidence, owner = contract_and_reports()
+        evidence["claims"].append({
+            "id": "EV-OTHER", "claim": "Another criterion",
+            "required": True, "status": "pass", "criteria": [],
+            "evidence": [],
+        })
+        owner["acceptance"][0]["evidence_ids"] = ["EV-ONE", "EV-OTHER", "EV-MISSING"]
+        errors, stats = task_contract.acceptance_review(contract, evidence, owner)
+        self.assertTrue(any("EV-OTHER" in error for error in errors), errors)
+        self.assertTrue(any("EV-MISSING" in error for error in errors), errors)
+        self.assertEqual(stats["owner_report_covered"], 0)
+
     def test_duplicate_claim_ids_are_rejected(self):
         _, evidence, owner = contract_and_reports()
         evidence["claims"].append({
