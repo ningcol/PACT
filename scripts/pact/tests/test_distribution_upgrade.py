@@ -611,6 +611,47 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), version_before)
         self.assertEqual((self.target / ".pact" / "install.json").read_bytes(), manifest_before)
 
+    def test_rollback_does_not_overwrite_file_edited_after_replacement(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        changed_path = self.target / ".pact" / "VERSION"
+        user_edit = b"USER EDIT AFTER UPGRADE REPLACEMENT\n"
+        original_manifest = (self.target / ".pact" / "install.json").read_bytes()
+        original_replace = upgrade_runtime.os.replace
+        modified = {"done": False}
+
+        def replace_then_external_edit(source, destination, *args, **kwargs):
+            result = original_replace(source, destination, *args, **kwargs)
+            if (
+                not modified["done"]
+                and pathlib.Path(destination) == changed_path
+                and pathlib.Path(source).name.endswith(".pact-upgrade-tmp")
+            ):
+                changed_path.write_bytes(user_edit)
+                modified["done"] = True
+            return result
+
+        with mock.patch.dict(
+            os.environ, {"PACT_TEST_FAIL_AFTER_REPLACE": "1"}
+        ), mock.patch.object(
+            upgrade_runtime.os, "replace", side_effect=replace_then_external_edit
+        ):
+            with self.assertRaises(upgrade_runtime.UpgradeApplyError) as raised:
+                upgrade_runtime.apply_upgrade(
+                    self.new_source, self.target, manifest, plan
+                )
+        self.assertTrue(modified["done"], "post-replace edit injection did not fire")
+        self.assertFalse(
+            raised.exception.rolled_back,
+            "concurrent user edit must prevent claiming successful full rollback",
+        )
+        self.assertEqual(changed_path.read_bytes(), user_edit)
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(),
+            original_manifest,
+        )
+
     def test_source_removed_during_staging_fails_without_unhandled_error(self) -> None:
         manifest = self.scaffold()
         self.change_runtime_source()
