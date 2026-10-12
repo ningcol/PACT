@@ -782,7 +782,10 @@ def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
         "completion_bundle",
         default=f".pact/completions/{task_id}",
     )
-    assert value is not None
+    if value is None:
+        raise ValueError(
+            "task manifest field 'completion_bundle' must be a non-empty string path"
+        )
     bundle = pathlib.Path(value).expanduser()
     if not bundle.is_absolute() and bundle.parts[:2] == (".pact", "completions"):
         confined_state_root(ROOT, COMPLETION_ROOT, field="completion")
