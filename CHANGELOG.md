@@ -10,7 +10,7 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 - `upgrade --apply` rechecks the current install Manifest and regenerates the source/target plan before staging any replacements; a stale plan aborts rather than applying decisions made against outdated files.
 - Planned create, update, refresh-manifest and remove operations recheck their expected target existence/type/content. Destructive operations verify each target again immediately before replacement or removal; unexpected user edits are never treated as safe unchanged framework files.
-- Manifest publication detects concurrent changes, and rollback avoids replacing an externally edited install Manifest with an older backup. Staged source digests and per-file source metadata are cross-checked with the planned hashes.
+- Manifest publication detects concurrent changes. Rollback checks the content PACT actually wrote before restoring a file, and avoids replacing externally edited targets or the install Manifest with older backup data. Staged source digests and per-file source metadata are cross-checked with planned hashes.
 - Simulated stale-plan, post-backup local edits and rollback tests cover safe refusal and preservation of project-owned changes. These are optimistic checks, not filesystem locks: changes between a final check and an OS write remain a documented TOCTOU limitation.
 
 ### Discovery and Markdown Impact correctness (PR-06)
