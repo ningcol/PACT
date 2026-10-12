@@ -6,6 +6,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Contract and acceptance trust fixes (PR-01)
+
+- High-level `task finish` rejects prepared Task Contracts whose bytes no longer match the original digest before task-change/Impact side effects. `task status` and contract-backed `eval --task` reject that drift as well; minimal historical eval observations without a tracked Contract remain readable.
+- Acceptance coverage now requires passing `required=true` Evidence claims, closing the optional-claim bypass for medium/high-risk completion while preserving low-risk static-file evidence when legitimately required.
+- Duplicate Evidence claim identifiers, Owner acceptance entries outside the Task Contract, and unrelated/unknown evidence references inside an acceptance entry are rejected.
+- These checks validate local recorded state; they do not establish remote/tamper-proof attestations when a writer can modify the prepared manifest and its dependent artifacts together.
+
+
 Development runtime on `main`: `0.4.0-dev.1`. No `v0.4.0` release has been published by this change.
 
 ### Minimal Adoption / Lazy Materialization
