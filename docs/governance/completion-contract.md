@@ -22,6 +22,12 @@ At `task finish`, the recorded Task Contract and Task Context must both exist in
 
 `task status` and contract-backed `eval --task` reject these invalid prepared paths and digests. Legacy minimal evaluation observations without a prepared Task Contract remain readable. Filesystem validation is not a lock: a concurrent noncooperating writer can still race with a later read or write. PACT does not claim signed or tamper-proof local state.
 
+## Completion Bundle path and retry consistency
+
+A prepared Task Manifest records its completion-bundle location. The default location is `.pact/completions/<TASK-ID>`; `task finish --bundle PATH` may select an alternative relative or absolute location under the existing custom-bundle contract. When successful completion records that location in the Manifest, a later `task finish TASK-ID` without another `--bundle` **reuses the saved path**, consistent with `task status` and task evaluation. A later explicit `--bundle` overrides the saved selection and becomes the new saved default on success.
+
+If `completion_bundle` is absent, the original default location is used. If explicitly stored as an invalid value (including `null`, non-string, or empty string), the saved-path operation fails before completion side effects. The repository-owned default completion root still receives the state-root confinement checks; explicitly selected custom/absolute paths keep their previously supported behavior.
+
 ## Task Context and Convergence
 
 A high-level prepared task also fingerprints its Task Context.

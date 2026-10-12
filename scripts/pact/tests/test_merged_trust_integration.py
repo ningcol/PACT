@@ -134,6 +134,143 @@ class MergedTrustRoundtripTests(unittest.TestCase):
             self.write_bundle_file(task_id, name, payload)
         return task, contract, evidence, owner
 
+    def test_custom_relative_bundle_remains_default_on_finish_retry(self) -> None:
+        task_id = "TASK-CUSTOM-RETRY"
+        self.prepared_verification(task_id)
+        original = self.root / ".pact" / "completions" / task_id
+        custom_relative = f".pact/completions/{task_id}-custom"
+        original.rename(self.root / custom_relative)
+
+        first = self.pact(
+            "task", "finish", task_id, "--bundle", custom_relative, "--json"
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        first_data = json.loads(first.stdout)
+        self.assertTrue(first_data["complete"])
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["completion_bundle"], custom_relative)
+        self.assertFalse(original.exists(), "default bundle was never populated")
+
+        status = self.pact("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        self.assertTrue(all(json.loads(status.stdout)["completion_files"].values()))
+
+        second = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(json.loads(second.stdout)["complete"])
+        saved_again = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved_again["completion_bundle"], custom_relative)
+
+        history = self.root / ".pact" / "tasks" / task_id / "completion-attempts.jsonl"
+        attempts = [
+            json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["complete"] for item in attempts))
+        observed = self.pact("eval", "--task", task_id, "--json")
+        self.assertEqual(observed.returncode, 0, observed.stdout + observed.stderr)
+        self.assertTrue(json.loads(observed.stdout)["completion"]["final_complete"])
+
+    def test_custom_absolute_bundle_remains_default_on_finish_retry(self) -> None:
+        task_id = "TASK-ABS-RETRY"
+        self.prepared_verification(task_id)
+        original = self.root / ".pact" / "completions" / task_id
+        outside = pathlib.Path(self.temp.name) / "external-completion"
+        original.rename(outside)
+        first = self.pact(
+            "task", "finish", task_id, "--bundle", str(outside), "--json"
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertTrue(json.loads(first.stdout)["complete"])
+
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["completion_bundle"], str(outside))
+        self.assertFalse(original.exists())
+
+        second = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(json.loads(second.stdout)["complete"])
+        self.assertEqual(
+            json.loads(manifest_path.read_text(encoding="utf-8"))["completion_bundle"],
+            str(outside),
+        )
+
+    def test_finish_rejects_invalid_manifest_completion_bundle_before_side_effects(self) -> None:
+        task_id = "TASK-BUNDLE-INVALID"
+        self.prepared_verification(task_id)
+        task_dir = self.root / ".pact" / "tasks" / task_id
+        manifest_path = task_dir / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["completion_bundle"] = {"unsafe": "path"}
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        original = manifest_path.read_bytes()
+
+        finished = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(finished.returncode, 2, finished.stdout + finished.stderr)
+        self.assertIn("completion_bundle", finished.stderr)
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertFalse((task_dir / "final-impact.json").exists())
+        self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
+
+    def test_explicit_bundle_override_replaces_saved_retry_default(self) -> None:
+        task_id = "TASK-BUNDLE-OVERRIDE"
+        self.prepared_verification(task_id)
+        original = self.root / ".pact" / "completions" / task_id
+        bundle_one = f".pact/completions/{task_id}-first"
+        bundle_two = f".pact/completions/{task_id}-second"
+        original.rename(self.root / bundle_one)
+
+        first = self.pact(
+            "task", "finish", task_id, "--bundle", bundle_one, "--json"
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        (self.root / bundle_one).rename(self.root / bundle_two)
+
+        second = self.pact(
+            "task", "finish", task_id, "--bundle", bundle_two, "--json"
+        )
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        self.assertEqual(
+            json.loads(manifest_path.read_text(encoding="utf-8"))["completion_bundle"],
+            bundle_two,
+        )
+        third = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertTrue(json.loads(third.stdout)["complete"])
+
+    def test_null_manifest_bundle_path_is_rejected_without_traceback(self) -> None:
+        task_id = "TASK-BUNDLE-NULL"
+        self.prepared_verification(task_id)
+        task_dir = self.root / ".pact" / "tasks" / task_id
+        manifest_path = task_dir / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["completion_bundle"] = None
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        original = manifest_path.read_bytes()
+
+        for args in (
+            ("task", "finish", task_id, "--json"),
+            ("task", "status", task_id, "--json"),
+        ):
+            with self.subTest(args=args):
+                observed = self.pact(*args)
+                self.assertEqual(observed.returncode, 2, observed.stdout + observed.stderr)
+                self.assertIn("completion_bundle", observed.stderr)
+                self.assertNotIn("Traceback", observed.stderr)
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
+        self.assertFalse((task_dir / "final-impact.json").exists())
+
     def test_medium_risk_git_prepare_run_finish_eval_roundtrip(self) -> None:
         task_id = "TASK-MERGED-ROUNDTRIP"
         self.prepared_verification(task_id)
