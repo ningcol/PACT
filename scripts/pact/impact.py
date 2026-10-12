@@ -7,9 +7,11 @@ import argparse
 import fnmatch
 import json
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
+from urllib.parse import unquote, urlsplit
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
@@ -25,6 +27,49 @@ def normalize_path(value: str) -> str:
     while value.startswith("./"):
         value = value[2:]
     return value
+
+
+def resolve_document_link(document_path: str, raw_link: str) -> str | None:
+    """Resolve a Markdown link to one repository-relative path, if local.
+
+    Project Map stores raw link destinations. Markdown relative destinations
+    are anchored at the directory containing the linking document; leading
+    "/" denotes a repository-root destination, like PACT's link checker.
+    Do not treat metadata \`verification\` references as Markdown links.
+    """
+    if not isinstance(raw_link, str):
+        return None
+    link = raw_link.strip()
+    if not link or link.startswith("#"):
+        return None
+
+    # Links such as [label](<../file with spaces.md> "optional title").
+    if link.startswith("<"):
+        end = link.find(">")
+        if end < 0:
+            return None
+        link = link[1:end].strip()
+    else:
+        link = link.split(maxsplit=1)[0] if link.split() else ""
+
+    try:
+        parsed = urlsplit(link)
+    except ValueError:
+        return None
+    if parsed.scheme or parsed.netloc or not parsed.path:
+        return None
+
+    destination = unquote(parsed.path)
+    if not destination or destination.startswith("//"):
+        return None
+    if destination.startswith("/"):
+        candidate = destination.lstrip("/")
+    else:
+        candidate = posixpath.join(posixpath.dirname(document_path), destination)
+    relative = posixpath.normpath(candidate)
+    if relative in {".", ".."} or relative.startswith(("../", "/")):
+        return None
+    return relative
 
 
 def target(doc: dict) -> dict:
@@ -211,8 +256,12 @@ def main() -> int:
                     if fnmatch.fnmatch(changed_file, pattern):
                         add_det(changed_file, "declared-domain-path", doc)
 
-            normalized_links = {normalize_path(x) for x in doc.get("links", [])}
-            if changed_file in normalized_links:
+            linked_paths = {
+                resolved
+                for link in doc.get("links", [])
+                if (resolved := resolve_document_link(doc["path"], link)) is not None
+            }
+            if changed_file in linked_paths:
                 add_det(changed_file, "explicit-doc-link", doc)
 
             normalized_verification = {normalize_path(x) for x in doc.get("verification", [])}
