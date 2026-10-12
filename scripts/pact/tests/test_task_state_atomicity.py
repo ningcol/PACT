@@ -85,6 +85,15 @@ class TaskStateAtomicityTests(unittest.TestCase):
                 pact / "tasks", "TASK-ALIAS", repository_root=repo
             )
 
+    def test_confined_state_root_rejects_regular_file_ancestor(self) -> None:
+        repo = self.root / "project"
+        repo.mkdir()
+        (repo / ".pact").write_text("not a directory", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "state root must be a directory"):
+            protocol_ids.confined_state_root(
+                repo, repo / ".pact" / "tasks", field="task"
+            )
+
     def test_confined_state_root_accepts_uncreated_repository_directory(self) -> None:
         repo = self.root / "project"
         repo.mkdir()
