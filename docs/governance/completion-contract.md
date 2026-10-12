@@ -28,6 +28,14 @@ Completion requires the Convergence Report to:
 This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
 
 
+## Git worktree fingerprint and submodule boundary
+
+PACT binds execution-backed Evidence to a Git worktree snapshot. For tracked files, the snapshot includes staged index state, unstaged content and Git file type/execute-bit semantics; it separately accounts for visible untracked files. Git -z path identities are preserved, including a literal backslash in a POSIX filename.
+
+Tracked Git submodules are supported when initialized, at the exact commit staged in the parent index, and recursively clean. A dirty, moved, uninitialized, or uninspectable submodule fails snapshot/baseline/attribution rather than claiming that two potentially different worktrees have the same verification identity. This deliberate fail-closed policy does not imply that all ignored, remote, environment-based, or otherwise external verification inputs are covered.
+
+Git fingerprint V3 intentionally invalidates previously recorded V2 `pact run` workspace hashes. A pending task with older run receipts must rerun verification before a trustworthy completion claim; pre-V3 *task preparation* dirty-file state encodings are normalized for changed-file attribution, not elevated into new execution evidence.
+
 ## Actual changed-file coverage
 
 For a prepared task in a Git worktree, PACT records the prepare-time Git HEAD plus the content state of paths that were already dirty before the task. It does **not** require a clean workspace.
