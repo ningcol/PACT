@@ -65,10 +65,13 @@ def cross_validate(
             + ", ".join(f"{key}={value!r}" for key, value in task_ids.items())
         )
 
-    claims_by_id = {
-        claim["id"]: claim
-        for claim in evidence.get("claims", [])
-    }
+    claims_by_id: dict[str, dict] = {}
+    for claim in evidence.get("claims", []):
+        claim_id = claim["id"]
+        if claim_id in claims_by_id:
+            errors.append(f"duplicate Evidence claim id {claim_id!r}")
+        else:
+            claims_by_id[claim_id] = claim
 
     for evidence_id in convergence.get("evidence", []):
         if evidence_id not in claims_by_id:

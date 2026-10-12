@@ -13,6 +13,7 @@ from collections import defaultdict
 from schema_validate import load_schema, validate_instance
 from protocol_ids import validate_task_id, confined_child, confined_repository_path
 from task_contract import acceptance_review
+from task import validate_finish_manifest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -351,6 +352,12 @@ def derive_task(task_id: str) -> dict:
     manifest = load_optional(manifest_path)
     if manifest is None:
         raise FileNotFoundError(f"task manifest not found for {task_id}")
+    # Historical/minimal local observations may have no prepared Contract.
+    # When one is tracked, never report it as trustworthy after hash drift.
+    if manifest.get("contract") is not None or manifest.get("contract_sha256") is not None:
+        manifest_errors = validate_finish_manifest(manifest, root=ROOT)
+        if manifest_errors:
+            raise ValueError("invalid prepared task manifest: " + "; ".join(manifest_errors))
 
     contract_path = manifest.get("contract")
     contract = (
