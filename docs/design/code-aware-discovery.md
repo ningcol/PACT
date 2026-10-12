@@ -87,7 +87,7 @@ Future adapters may add project-specific resolvers. Until then, generic lexical 
 - raw import names;
 - lower-weight bounded generic identifiers for unsupported structured languages.
 
-Structured symbol matches (including direct Python class methods) rank above generic identifier matches. Direct lexical matches are ranked ahead of one-hop import neighbors.
+Structured symbol matches (including direct Python class methods) rank above generic identifier matches. Direct lexical matches are ranked ahead of one-hop import neighbors. With a final code-result budget of one, a direct match always takes the slot; for larger budgets, import neighbors can appear only after reserving at least the best direct match. This affects selection, not the underlying lexical scores.
 
 ## Impact
 
