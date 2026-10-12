@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -18,6 +19,9 @@ SOURCE_VERSION = (PROJECT_ROOT / ".pact" / "VERSION").read_text(
     encoding="utf-8"
 ).strip()
 NEXT_VERSION = "9.9.9-test"
+
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "pact"))
+import upgrade as upgrade_runtime
 
 
 class DistributionUpgradeTests(unittest.TestCase):
@@ -404,6 +408,159 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.assertEqual(version_path.read_bytes(), original_version)
         self.assertEqual(bundle_path.read_bytes(), original_bundle)
         self.assertEqual(manifest_path.read_bytes(), original_manifest)
+
+    def test_stale_upgrade_plan_refuses_changed_framework_target(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        target_file = self.target / ".pact" / "pact.pyz"
+        self.assertTrue(any(
+            item["action"] == "update-framework"
+            and item["path"] == ".pact/pact.pyz"
+            for item in plan["operations"]
+        ))
+        user_content = target_file.read_bytes() + b"\nUSER-WORKTREE-EDIT\n"
+        target_file.write_bytes(user_content)
+        manifest_file = self.target / ".pact" / "install.json"
+        original_manifest = manifest_file.read_bytes()
+
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+
+        self.assertEqual(target_file.read_bytes(), user_content)
+        self.assertEqual(manifest_file.read_bytes(), original_manifest)
+
+    def test_stale_upgrade_plan_refuses_create_over_new_user_file(self) -> None:
+        manifest = self.scaffold()
+        target_file = self.target / ".pact" / "LICENSE"
+        target_file.unlink()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        self.assertTrue(any(
+            item["action"] == "create-framework"
+            and item["path"] == ".pact/LICENSE"
+            for item in plan["operations"]
+        ))
+        target_file.write_text("NEW USER FILE - MUST NOT OVERWRITE\n", encoding="utf-8")
+        manifest_file = self.target / ".pact" / "install.json"
+        original_manifest = manifest_file.read_bytes()
+
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+
+        self.assertEqual(target_file.read_text(encoding="utf-8"), "NEW USER FILE - MUST NOT OVERWRITE\n")
+        self.assertEqual(manifest_file.read_bytes(), original_manifest)
+
+    def test_stale_upgrade_plan_refuses_remove_after_local_edit(self) -> None:
+        manifest = self.scaffold()
+        obsolete = self.add_tracked_obsolete_framework(manifest)
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        self.assertTrue(any(
+            item["action"] == "remove-framework"
+            and item["path"] == ".pact/obsolete-framework.txt"
+            and not item.get("already_absent")
+            for item in plan["operations"]
+        ))
+        original_manifest = (self.target / ".pact" / "install.json").read_bytes()
+        obsolete.write_text("AN OWNER EDIT AFTER PLAN\n", encoding="utf-8")
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual(obsolete.read_text(encoding="utf-8"), "AN OWNER EDIT AFTER PLAN\n")
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(),
+            original_manifest,
+        )
+
+    def test_stale_refresh_plan_refuses_adopting_modified_target(self) -> None:
+        manifest = self.scaffold()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        self.assertTrue(any(
+            item["action"] == "refresh-manifest"
+            and item["path"] == ".pact/LICENSE"
+            for item in plan["operations"]
+        ))
+        target_file = self.target / ".pact" / "LICENSE"
+        target_file.write_text("UNTRACKED OWNER CONTENT\n", encoding="utf-8")
+        manifest_file = self.target / ".pact" / "install.json"
+        before = manifest_file.read_bytes()
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual(target_file.read_text(encoding="utf-8"), "UNTRACKED OWNER CONTENT\n")
+        self.assertEqual(manifest_file.read_bytes(), before)
+
+    def test_stale_apply_refuses_modified_install_manifest(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        disk_path = self.target / ".pact" / "install.json"
+        edited = json.loads(disk_path.read_text(encoding="utf-8"))
+        edited["runtime_version"] = "OWNER-EDITED-RUNTIME"
+        disk_path.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
+        before = disk_path.read_bytes()
+        version_before = (self.target / ".pact" / "VERSION").read_bytes()
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual(disk_path.read_bytes(), before)
+        self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), version_before)
+
+    def test_stale_source_change_stays_rejected_before_target_mutation(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        version_source = self.new_source / ".pact" / "VERSION"
+        version_source.write_text("9.9.8-CHANGED-AFTER-PLAN\n", encoding="utf-8")
+        version_before = (self.target / ".pact" / "VERSION").read_bytes()
+        manifest_before = (self.target / ".pact" / "install.json").read_bytes()
+        with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+            upgrade_runtime.apply_upgrade(
+                self.new_source, self.target, manifest, plan
+            )
+        self.assertEqual((self.target / ".pact" / "VERSION").read_bytes(), version_before)
+        self.assertEqual((self.target / ".pact" / "install.json").read_bytes(), manifest_before)
+
+    def test_late_target_edit_after_backup_is_not_overwritten(self) -> None:
+        manifest = self.scaffold()
+        self.change_runtime_source()
+        plan = upgrade_runtime.plan_upgrade(self.new_source, self.target, manifest)
+        victim = self.target / ".pact" / "VERSION"
+        original_manifest = (self.target / ".pact" / "install.json").read_bytes()
+        concurrent = b"EDITED-BETWEEN-BACKUP-AND-REPLACE\n"
+        original_copy = upgrade_runtime.shutil.copy2
+        injected = {"done": False}
+
+        def copy_and_inject(source, destination, *args, **kwargs):
+            result = original_copy(source, destination, *args, **kwargs)
+            if (
+                not injected["done"]
+                and pathlib.Path(source) == victim
+                and "backup" in pathlib.Path(destination).parts
+            ):
+                victim.write_bytes(concurrent)
+                injected["done"] = True
+            return result
+
+        with mock.patch.object(upgrade_runtime.shutil, "copy2", side_effect=copy_and_inject):
+            with self.assertRaises(upgrade_runtime.UpgradeApplyError):
+                upgrade_runtime.apply_upgrade(
+                    self.new_source, self.target, manifest, plan
+                )
+
+        self.assertTrue(injected["done"], "race injection did not fire")
+        self.assertEqual(victim.read_bytes(), concurrent)
+        self.assertEqual(
+            (self.target / ".pact" / "install.json").read_bytes(),
+            original_manifest,
+        )
 
     def test_doctor_detects_modified_compact_runtime(self) -> None:
         self.scaffold()
