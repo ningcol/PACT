@@ -218,6 +218,32 @@ class MergedTrustRoundtripTests(unittest.TestCase):
         self.assertFalse((task_dir / "final-impact.json").exists())
         self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
 
+    def test_null_manifest_bundle_path_is_rejected_without_traceback(self) -> None:
+        task_id = "TASK-BUNDLE-NULL"
+        self.prepared_verification(task_id)
+        task_dir = self.root / ".pact" / "tasks" / task_id
+        manifest_path = task_dir / "task.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["completion_bundle"] = None
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        original = manifest_path.read_bytes()
+
+        for args in (
+            ("task", "finish", task_id, "--json"),
+            ("task", "status", task_id, "--json"),
+        ):
+            with self.subTest(args=args):
+                observed = self.pact(*args)
+                self.assertEqual(observed.returncode, 2, observed.stdout + observed.stderr)
+                self.assertIn("completion_bundle", observed.stderr)
+                self.assertNotIn("Traceback", observed.stderr)
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
+        self.assertFalse((task_dir / "final-impact.json").exists())
+
     def test_medium_risk_git_prepare_run_finish_eval_roundtrip(self) -> None:
         task_id = "TASK-MERGED-ROUNDTRIP"
         self.prepared_verification(task_id)
