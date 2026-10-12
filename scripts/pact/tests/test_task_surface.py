@@ -1240,16 +1240,17 @@ class TaskSurfaceTests(unittest.TestCase):
         self.write_json(f".pact/completions/{task_id}/convergence.json", convergence)
         self.write_json(f".pact/completions/{task_id}/owner-report.json", owner)
 
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        original_manifest = manifest_path.read_bytes()
         finished = self.pact("task", "finish", task_id, "--json")
-        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
-        result = json.loads(finished.stdout)
-        self.assertFalse(result["complete"])
-        self.assertTrue(
-            any(
-                "current Task Context does not match prepared context" in error
-                for error in result["errors"]
-            )
+        self.assertEqual(finished.returncode, 2, finished.stdout + finished.stderr)
+        self.assertIn(
+            "context_sha256 does not match prepared Task Context",
+            finished.stderr,
         )
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertFalse((manifest_path.parent / "final-impact.json").exists())
+        self.assertFalse((manifest_path.parent / "completion-attempts.jsonl").exists())
 
     def test_task_finish_rejects_malformed_prepared_manifest_before_side_effects(self) -> None:
         cases = [
