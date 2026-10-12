@@ -437,7 +437,9 @@ def prepare(args) -> int:
     return 0
 
 
-def validate_finish_manifest(\n    manifest: dict, *, root: pathlib.Path | None = None\n) -> list[str]:
+def validate_finish_manifest(
+    manifest: dict, *, root: pathlib.Path | None = None
+) -> list[str]:
     errors: list[str] = []
 
     for field in ("contract", "context"):
