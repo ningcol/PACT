@@ -218,6 +218,33 @@ class MergedTrustRoundtripTests(unittest.TestCase):
         self.assertFalse((task_dir / "final-impact.json").exists())
         self.assertFalse((task_dir / "completion-attempts.jsonl").exists())
 
+    def test_explicit_bundle_override_replaces_saved_retry_default(self) -> None:
+        task_id = "TASK-BUNDLE-OVERRIDE"
+        self.prepared_verification(task_id)
+        original = self.root / ".pact" / "completions" / task_id
+        bundle_one = f".pact/completions/{task_id}-first"
+        bundle_two = f".pact/completions/{task_id}-second"
+        original.rename(self.root / bundle_one)
+
+        first = self.pact(
+            "task", "finish", task_id, "--bundle", bundle_one, "--json"
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        (self.root / bundle_one).rename(self.root / bundle_two)
+
+        second = self.pact(
+            "task", "finish", task_id, "--bundle", bundle_two, "--json"
+        )
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        manifest_path = self.root / ".pact" / "tasks" / task_id / "task.json"
+        self.assertEqual(
+            json.loads(manifest_path.read_text(encoding="utf-8"))["completion_bundle"],
+            bundle_two,
+        )
+        third = self.pact("task", "finish", task_id, "--json")
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertTrue(json.loads(third.stdout)["complete"])
+
     def test_null_manifest_bundle_path_is_rejected_without_traceback(self) -> None:
         task_id = "TASK-BUNDLE-NULL"
         self.prepared_verification(task_id)
