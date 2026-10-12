@@ -16,7 +16,7 @@ Task Contract intent is task-scoped authority. It does not silently override con
 
 ## Task state preflight and repository boundaries
 
-High-level prepared task state is repository-owned. Before preparation or task-backed reads/writes, PACT checks that its `.pact/tasks` root (and its `.pact` ancestor) does not traverse a symlink or escape the repository. `task prepare` additionally checks `.pact/completions` and `.pact/tmp`. Default completion state in `task finish` and `task status` is subject to the same root boundary. Explicit custom completion bundles remain supported according to their existing CLI contract.
+High-level prepared task state is repository-owned. Before preparation or task-backed reads/writes, PACT checks that its `.pact/tasks` root (and its `.pact` ancestor) does not traverse a symlink, a non-directory component, or a path outside the repository. `task prepare` additionally checks `.pact/completions` and `.pact/tmp`. Default completion state in `task finish` and `task status` is subject to the same root boundary. Explicit custom completion bundles remain supported according to their existing CLI contract.
 
 At `task finish`, the recorded Task Contract and Task Context must both exist inside the repository and match the prepared SHA256 values **before** the changed-file set is derived, Final Impact is generated, or `task.json` and attempt-history state is updated. An invalid Context is a preflight error (exit 2), not a completed validation attempt (exit 1), and has no task-completion-side-effect writes. Normal failed Evidence/Convergence acceptance still creates an auditable failed completion attempt after successful preflight.
 
