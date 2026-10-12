@@ -35,7 +35,7 @@ def resolve_document_link(document_path: str, raw_link: str) -> str | None:
     Project Map stores raw link destinations. Markdown relative destinations
     are anchored at the directory containing the linking document; leading
     "/" denotes a repository-root destination, like PACT's link checker.
-    Do not treat metadata \`verification\` references as Markdown links.
+    Do not treat metadata verification references as Markdown links.
     """
     if not isinstance(raw_link, str):
         return None
@@ -50,7 +50,8 @@ def resolve_document_link(document_path: str, raw_link: str) -> str | None:
             return None
         link = link[1:end].strip()
     else:
-        link = link.split(maxsplit=1)[0] if link.split() else ""
+        words = link.split(maxsplit=1)
+        link = words[0] if words else ""
 
     try:
         parsed = urlsplit(link)
