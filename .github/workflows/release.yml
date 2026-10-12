@@ -49,6 +49,7 @@ jobs:
           python -m unittest discover -s scripts/pact/tests -p "test_discovery_ownership.py"
           python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
           python -m unittest discover -s scripts/pact/tests -p "test_task_state_atomicity.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_task_state_root_safety.py"
           python -m unittest discover -s scripts/pact/tests -p "test_run_pipe_shutdown.py"
           python -m unittest discover -s scripts/pact/tests -p "test_streaming_reliability.py"
           python -m unittest discover -s scripts/pact/tests -p "test_workspace_git_identity.py"
