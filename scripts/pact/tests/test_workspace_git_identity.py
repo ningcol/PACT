@@ -136,6 +136,28 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         with self.assertRaises(workspace.WorkspaceError):
             workspace.workspace_snapshot(self.root)
 
+    def test_nested_uninitialized_gitlink_is_rejected(self) -> None:
+        child = self.gitlink()
+        nested = child / "nested"
+        nested.mkdir()
+        self.git("init", "-q", cwd=nested)
+        self.git("config", "user.email", "pact@example.invalid", cwd=nested)
+        self.git("config", "user.name", "PACT Test", cwd=nested)
+        (nested / "file.txt").write_text("nested\n", encoding="utf-8")
+        self.git("add", "file.txt", cwd=nested)
+        self.git("commit", "-qm", "nested initial", cwd=nested)
+        sha = self.git("rev-parse", "HEAD", cwd=nested)
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{sha},nested", cwd=child)
+        self.git("commit", "-qm", "child tracks nested", cwd=child)
+        self.git("add", "sub")
+        self.git("commit", "-qm", "parent tracks child pointer")
+        self.assertTrue(workspace.workspace_snapshot(self.root)["sha256"])
+
+        nested.rename(self.root.parent / "detached-nested")
+        nested.mkdir()
+        with self.assertRaises(workspace.WorkspaceError):
+            workspace.workspace_snapshot(self.root)
+
     def test_moved_gitlink_head_is_detected_before_staging(self) -> None:
         child = self.gitlink()
         (child / "source.txt").write_text("version-B\n", encoding="utf-8")
