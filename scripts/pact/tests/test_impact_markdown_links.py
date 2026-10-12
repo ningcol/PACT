@@ -85,7 +85,7 @@ class MarkdownImpactLinkTests(unittest.TestCase):
     def test_nested_anchor_and_percent_encoded_spaces_resolve_from_doc(self) -> None:
         report = self.analyze(
             document_path="docs/product/rules/password-reset.md",
-            markdown="# Reset\n\n[worker](../../../src/api/reset%20worker.py#L20)\n",
+            markdown="# Reset\n\n[worker](../../../src/api/reset%20worker.py?view=source#L20)\n",
             changed_path="src/api/reset worker.py",
         )
         self.assertEqual(
