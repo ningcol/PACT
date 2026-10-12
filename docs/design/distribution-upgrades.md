@@ -89,6 +89,16 @@ When a future release makes a framework path obsolete, upgrade deletes it only w
 
 Seed files are never overwritten. A changed upstream seed template is reported for manual reconciliation.
 
+## Stale-plan and concurrent-edit boundary
+
+A dry-run plan is a snapshot, not a reservation of installed files. The CLI's `--apply` path creates its own plan, and the apply phase rechecks the installation Manifest, source version/content and planned operations before any target mutation.
+
+Before create/update/remove/refresh, PACT verifies each planned destination still has the expected existence, regular-file type and SHA256. For destructive operations it also verifies the target just before the OS replacement/removal. A new user-created file, a locally edited framework file, a modified obsolete file or a stale manifest triggers an error instead of silent replacement or deletion. Unchanged files are still upgraded and the existing transaction rollback tests continue to apply.
+
+The install Manifest is written last. PACT refuses to overwrite a concurrently altered Manifest, and on failure it does not blindly restore the backup over a Manifest modified by another writer. If a concurrent edit makes full rollback unsafe, the error is reported rather than asserting successful rollback.
+
+This is an **optimistic fail-closed check**, not a cross-process lock or a proof that every race is impossible. Non-cooperating writers can still change a file between the final comparison and an OS-level operation. Stronger protection would require coordination or platform-specific atomic conditional operations; do not claim that this phase provides either.
+
 ## Transactional apply
 
 Automatic framework upgrade uses:
