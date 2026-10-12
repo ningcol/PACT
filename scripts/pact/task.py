@@ -437,13 +437,38 @@ def prepare(args) -> int:
     return 0
 
 
-def validate_finish_manifest(manifest: dict) -> list[str]:
+def validate_finish_manifest(\n    manifest: dict, *, root: pathlib.Path | None = None\n) -> list[str]:
     errors: list[str] = []
 
     for field in ("contract", "context"):
         value = manifest.get(field)
         if not isinstance(value, str) or not value.strip():
             errors.append(f"{field} must be a non-empty string path")
+
+    contract_sha256 = manifest.get("contract_sha256")
+    if (
+        not isinstance(contract_sha256, str)
+        or len(contract_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in contract_sha256)
+    ):
+        errors.append("contract_sha256 must be a 64-character lowercase hexadecimal digest")
+
+    if root is not None and not errors:
+        try:
+            contract_path = confined_repository_path(
+                root, manifest["contract"], field="contract"
+            )
+            if not contract_path.is_file():
+                errors.append(f"prepared Task Contract is missing: {contract_path}")
+            else:
+                actual_sha = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+                if actual_sha != contract_sha256:
+                    errors.append(
+                        "contract_sha256 does not match prepared Task Contract "
+                        f"({actual_sha!r} != {contract_sha256!r})"
+                    )
+        except (OSError, ValueError) as exc:
+            errors.append(f"invalid prepared Task Contract: {exc}")
 
     context_sha256 = manifest.get("context_sha256")
     if (
@@ -496,7 +521,7 @@ def finish(args) -> int:
         )
         return 2
 
-    manifest_errors = validate_finish_manifest(manifest)
+    manifest_errors = validate_finish_manifest(manifest, root=ROOT)
     if manifest_errors:
         print(
             "PACT task finish: prepared task manifest is invalid:",
@@ -763,6 +788,9 @@ def task_status(args) -> int:
                 field="contract",
             )
             contract = read_status_contract(path)
+            contract_errors = validate_finish_manifest(manifest, root=ROOT)
+            if contract_errors:
+                raise ValueError("invalid prepared task manifest: " + "; ".join(contract_errors))
         except ValueError as exc:
             print(f"PACT task status: {exc}", file=sys.stderr)
             return 2
