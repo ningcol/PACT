@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -77,6 +76,19 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         delta = workspace.task_changed_files(self.root, baseline)
         self.assertEqual(delta["changed_files"], [])
 
+    def test_git_autocrlf_normalized_restore_does_not_count_as_change(self) -> None:
+        self.git("config", "core.autocrlf", "true")
+        path = self.root / "line-endings.txt"
+        path.write_bytes(b"original\r\n")
+        self.commit_all("initial LF canonical blob")
+        baseline = workspace.task_workspace_baseline(self.root)
+
+        path.write_bytes(b"intermediate\r\n")
+        self.commit_all("intermediate LF canonical blob")
+        path.write_bytes(b"original\r\n")
+        delta = workspace.task_changed_files(self.root, baseline)
+        self.assertEqual(delta["changed_files"], [])
+
     def test_committed_change_is_attributed_when_final_content_differs(self) -> None:
         file = self.root / "source.txt"
         file.write_text("original\n", encoding="utf-8")
@@ -117,7 +129,10 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
 
     def test_uninitialized_gitlink_rejects_workspace_snapshot(self) -> None:
         child = self.gitlink()
-        shutil.rmtree(child)
+        # Moving the initialized submodule is portable even when Windows Git
+        # objects are read-only and cannot be removed with shutil.rmtree().
+        child.rename(self.root.parent / "detached-sub")
+        child.mkdir()
         with self.assertRaises(workspace.WorkspaceError):
             workspace.workspace_snapshot(self.root)
 
