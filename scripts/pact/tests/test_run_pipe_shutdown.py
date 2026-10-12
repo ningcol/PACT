@@ -7,6 +7,8 @@ must not publish a passing receipt, and must leave unrelated descendants alone.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import pathlib
 import signal
@@ -70,11 +72,13 @@ class RunPipeShutdownTests(unittest.TestCase):
                 wrapper.stderr.close()
         self.temp.cleanup()
 
-    def start(self, *, hold_direct_child: bool) -> subprocess.Popen[str]:
+    def start(
+        self, *, hold_direct_child: bool, grandchild_sleep: float = 30.0
+    ) -> subprocess.Popen[str]:
         # Spawn a descendant that intentionally retains both output pipe
         # handles and does not itself print. Direct child either exits at
         # once or waits for termination from PACT.
-        grandchild = "import time; time.sleep(30)"
+        grandchild = f"import time; time.sleep({grandchild_sleep!r})"
         child = (
             "import pathlib,subprocess,sys,time\n"
             "p=subprocess.Popen([sys.executable,'-c',"
@@ -105,6 +109,19 @@ class RunPipeShutdownTests(unittest.TestCase):
                 break
             time.sleep(0.03)
         self.assertTrue(self.grandchild_pid.exists(), "descendant did not become ready")
+
+    def test_descendant_closing_pipes_within_grace_can_publish_success(self) -> None:
+        wrapper = self.start(hold_direct_child=False, grandchild_sleep=0.2)
+        self.await_grandchild()
+        out, err = wrapper.communicate(timeout=8)
+        self.assertEqual(wrapper.returncode, 0, out + err)
+        self.assertTrue(self.receipt.is_file(), err)
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "pass")
+        self.assertEqual(
+            receipt["stdout_sha256"],
+            hashlib.sha256(b"direct-child-output\\n").hexdigest(),
+        )
 
     def test_direct_child_exit_cannot_wait_forever_for_descendant_pipe_eof(self) -> None:
         wrapper = self.start(hold_direct_child=False)
