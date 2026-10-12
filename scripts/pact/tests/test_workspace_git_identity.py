@@ -139,6 +139,66 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         delta = workspace.task_changed_files(self.root, baseline)
         self.assertEqual(delta["changed_files"], ["sub"])
 
+    def test_dirty_gitlink_prevents_successful_run_receipt(self) -> None:
+        child = self.gitlink()
+        (child / "source.txt").write_text("modified\n", encoding="utf-8")
+        output = self.root / "receipt.json"
+        result = subprocess.run(
+            [
+                sys.executable, str(RUNTIME / "run.py"),
+                "--task-id", "TASK-SUBMODULE", "--output", str(output),
+                "--cwd", str(self.root), "--quiet",
+                "--", sys.executable, "-c", "print('should-not-run')",
+            ],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("submodule", result.stderr.lower())
+        self.assertFalse(output.exists())
+
+    @unittest.skipIf(os.name == "nt", "Windows treats backslash as a separator")
+    def test_literal_backslash_does_not_impersonate_generated_state(self) -> None:
+        self.assertFalse(workspace._excluded(r".pact\tasks\other.txt", set()))
+
+    @unittest.skipIf(os.name == "nt", "chmod +x is not portable on Windows")
+    def test_untracked_file_execute_bit_alters_verification_fingerprint(self) -> None:
+        (self.root / "README.md").write_text("tracked\n", encoding="utf-8")
+        self.commit_all("baseline")
+        path = self.root / "scratch.sh"
+        path.write_text("#!/bin/sh\n", encoding="utf-8")
+        before = workspace.workspace_snapshot(self.root)["sha256"]
+        path.chmod(path.stat().st_mode | 0o111)
+        after = workspace.workspace_snapshot(self.root)["sha256"]
+        self.assertNotEqual(before, after)
+
+    @unittest.skipIf(os.name == "nt", "symlink creation is not portable on Windows")
+    def test_symlink_restored_to_prepared_target_is_unchanged(self) -> None:
+        (self.root / "a.txt").write_text("a", encoding="utf-8")
+        (self.root / "b.txt").write_text("b", encoding="utf-8")
+        link = self.root / "link.txt"
+        link.symlink_to("a.txt")
+        self.commit_all("initial")
+        baseline = workspace.task_workspace_baseline(self.root)
+        link.unlink()
+        link.symlink_to("b.txt")
+        self.commit_all("intermediate target")
+        link.unlink()
+        link.symlink_to("a.txt")
+        self.assertNotIn(
+            "link.txt",
+            workspace.task_changed_files(self.root, baseline)["changed_files"],
+        )
+
+    def test_old_dirty_baseline_mode_is_normalized_without_false_change(self) -> None:
+        self.assertEqual(
+            workspace._compatible_prepared_state("mode:100:sha256:abc"),
+            "mode:111:sha256:abc",
+        )
+        self.assertEqual(
+            workspace._compatible_prepared_state("sha256:abc"),
+            "symlink:sha256:abc",
+        )
+
     @unittest.skipIf(os.name == "nt", "chmod +x is not portable on Windows")
     def test_executable_bit_change_is_attributed(self) -> None:
         file = self.root / "run.sh"
