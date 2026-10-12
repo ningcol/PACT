@@ -194,11 +194,15 @@ def prepare(args) -> int:
     task_id = args.task_id or generated_task_id(args.task)
     try:
         validate_task_id(task_id)
+    except ValueError as exc:
+        print(f"PACT task prepare: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
         confined_state_root(ROOT, TMP_ROOT, field="temporary")
         task_dir = confined_child(TASK_ROOT, task_id, repository_root=ROOT)
         completion_dir = confined_child(COMPLETION_ROOT, task_id, repository_root=ROOT)
     except ValueError as exc:
-        print(f"PACT task prepare: invalid task id: {exc}", file=sys.stderr)
+        print(f"PACT task prepare: invalid task state: {exc}", file=sys.stderr)
         return 2
 
     if (task_dir.exists() or completion_dir.exists()) and not args.force:
@@ -520,6 +524,10 @@ def validate_finish_manifest(
 def finish(args) -> int:
     try:
         validate_task_id(args.task_id)
+    except ValueError as exc:
+        print(f"PACT task finish: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
         if args.bundle is None:
             confined_state_root(ROOT, COMPLETION_ROOT, field="completion")
@@ -782,6 +790,10 @@ def completion_bundle_path(manifest: dict, task_id: str) -> pathlib.Path:
 def task_status(args) -> int:
     try:
         validate_task_id(args.task_id)
+    except ValueError as exc:
+        print(f"PACT task status: invalid task id: {exc}", file=sys.stderr)
+        return 2
+    try:
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
     except ValueError as exc:
         print(f"PACT task status: invalid task state: {exc}", file=sys.stderr)
