@@ -67,13 +67,23 @@ Every knowledge artifact selected into the task Context needs one explicit dispo
 
 - `aligned`;
 - `updated`;
+- `removed`;
 - `stale`;
 - `owner-decision`;
 - `not-applicable`.
 
 This is a coverage guarantee, not a semantic oracle. PACT can prove that `README.md` was not silently omitted; it cannot mechanically prove that an Agent was correct to call the README aligned.
 
-Prepared Context artifacts also carry their content SHA when available. An `updated` disposition must correspond to an actual artifact content change.
+Prepared Context artifacts also carry their content SHA when available. The dispositions have distinct filesystem requirements:
+
+- `updated`: the artifact must still be a regular file, and its current SHA256 must differ from the prepared SHA256. Missing prepared hashes cannot prove an update.
+- `removed`: the artifact must have had a prepared content SHA256 and must now be absent. A recreated file, directory or symlink at that path is not a verified removal.
+- `aligned`, `stale` and `not-applicable`: none can excuse a missing prepared artifact. A missing artifact requires `removed` or a blocking `owner-decision` review.
+- `owner-decision`: when authority to delete is unsettled, an `owner-decision` finding containing an owner question blocks completion.
+
+A `removed` coverage entry must use its required `rationale` to cite the governing intent or decision authorizing the deletion; it is **not** a mechanism for overriding Product Truth. PACT checks prepared SHA and the current path state, but cannot mechanically prove authorization, distinguish intentional deletion from accidental deletion, or validate the reviewer's semantic judgment. Without adequate authority, restore the artifact or record a blocking owner decision.
+
+Legacy reports that called a now-absent artifact `updated` will fail the new mechanical check and must be reviewed again. The schema change is an additive `removed` enum value; existing valid reports for present artifacts remain valid.
 
 ## 5. Structured reviewer output
 
