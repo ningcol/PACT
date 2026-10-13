@@ -8,7 +8,7 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ### Disposable cache validation and atomic publication (PR-08)
 
-- Project Map and Code Map no longer treat a matching format version and source fingerprint as sufficient: cached required structure and indexed path coverage are checked, with Code Map reusing its existing JSON Schema. An invalid or incomplete cached map is rebuilt from source instead of creating false empty search results.
+- Project Map and Code Map no longer treat a matching format version and source fingerprint as sufficient: cached required structure and indexed path coverage are checked, with Code Map reusing its existing JSON Schema and cross-checking its generated edges against resolved imports. An invalid or incomplete cached map is rebuilt from source instead of creating false empty search results.
 - Incremental per-file parse caches now verify a self-integrity SHA256 of their cached parse payload before reuse. Older entries without this digest are safely reparsed once, with no change to source files or public index formats.
 - Project Map, Code Map and per-file parse cache writers now publish complete JSON via unique same-directory temporary files, flush/fsync and atomic `os.replace`. A failed publication preserves the prior target; concurrent readers see complete old or new JSON, never a partially-written version from these writers.
 - This is disposable cache damage detection, **not** signed attestation, cross-file transactionality, or a guarantee against a writer intentionally changing both cached content and its self-digest. Git HEAD remains descriptive metadata; unchanged source content does not trigger needless rebuilds solely because HEAD moved.
