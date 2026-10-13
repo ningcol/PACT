@@ -142,6 +142,25 @@ class CachePublishingSafetyTests(unittest.TestCase):
         self.assertIn("src/app.py", [entry["path"] for entry in repaired["files"]])
         self.assertNotIn("fresh ->", log)
 
+    def test_code_map_schema_valid_but_missing_edges_must_rebuild(self) -> None:
+        initial, _ = self.run_builder("code_map")
+        self.assertTrue(initial["edges"], "fixture must have a resolved import")
+        damaged = copy.deepcopy(initial)
+        damaged["edges"] = []
+        self.code_path.write_text(json.dumps(damaged) + "\n", encoding="utf-8")
+        repaired, log = self.run_builder("code_map")
+        self.assertEqual(repaired["edges"], initial["edges"])
+        self.assertNotIn("fresh ->", log)
+
+    def test_code_map_wrong_repository_root_metadata_must_rebuild(self) -> None:
+        initial, _ = self.run_builder("code_map")
+        damaged = copy.deepcopy(initial)
+        damaged["root"] = "elsewhere"
+        self.code_path.write_text(json.dumps(damaged) + "\n", encoding="utf-8")
+        repaired, log = self.run_builder("code_map")
+        self.assertEqual(repaired["root"], ".")
+        self.assertNotIn("fresh ->", log)
+
     def test_project_parse_cache_rechecks_modified_parsed_payload(self) -> None:
         self.run_builder("map")
         cache_path = self.root / ".pact" / "cache" / "project-file-cache.json"
