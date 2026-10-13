@@ -6,6 +6,13 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Explicit Convergence removal disposition (R05)
+
+- `updated` now requires an existing, hash-changed Context artifact; a missing file can no longer pass as an update.
+- Add `removed` coverage disposition for an artifact with a prepared content SHA256 that is now truly absent. Recreated files, directories and symlinks are not considered removed.
+- A missing prepared artifact cannot be hidden as `aligned`, `stale` or `not-applicable`. Unresolved deletion belongs in blocking `owner-decision`; actual authorization remains a semantic review obligation, not a filesystem claim.
+- Include focused regression tests in ordinary CI and the Linux/macOS/Windows × Python 3.11/3.12/3.13 portability/release matrices. The existing Convergence report schema version remains 1.
+
 ### Disposable cache validation and atomic publication (PR-08)
 
 - Project Map and Code Map no longer treat a matching format version and source fingerprint as sufficient: cached required structure and indexed path coverage are checked, with Code Map reusing its existing JSON Schema and cross-checking its generated edges against resolved imports. An invalid or incomplete cached map is rebuilt from source instead of creating false empty search results.

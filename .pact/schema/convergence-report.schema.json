@@ -65,6 +65,7 @@
             "enum": [
               "aligned",
               "updated",
+              "removed",
               "stale",
               "owner-decision",
               "not-applicable"

@@ -9,6 +9,7 @@ import pathlib
 VALID_DISPOSITIONS = {
     "aligned",
     "updated",
+    "removed",
     "stale",
     "owner-decision",
     "not-applicable",
@@ -82,6 +83,7 @@ def review(
         )
 
     updated_verified: list[str] = []
+    removed_verified: list[str] = []
     stale_paths: list[str] = []
     owner_decision_paths: list[str] = []
 
@@ -105,9 +107,17 @@ def review(
             continue
         current_exists = current_path.is_file()
 
-        if disposition == "updated" and prepared_sha256:
-            current_sha256 = sha256_file(current_path) if current_exists else None
-            if current_sha256 == prepared_sha256:
+        if disposition == "updated":
+            if not current_exists:
+                errors.append(
+                    f"Convergence marks {path!r} updated but artifact no longer exists; "
+                    "use 'removed' for an intentional deletion"
+                )
+            elif not prepared_sha256:
+                errors.append(
+                    f"Convergence marks {path!r} updated without a prepared content SHA256"
+                )
+            elif sha256_file(current_path) == prepared_sha256:
                 errors.append(
                     f"Convergence marks {path!r} updated but artifact content "
                     "matches the prepared Task Context"
@@ -115,9 +125,24 @@ def review(
             else:
                 updated_verified.append(path)
 
-        if disposition == "aligned" and not current_exists:
+        elif disposition == "removed":
+            if not prepared_sha256:
+                errors.append(
+                    f"Convergence marks {path!r} removed without a prepared content SHA256"
+                )
+            elif (root / path).is_symlink() or current_path.exists():
+                errors.append(
+                    f"Convergence marks {path!r} removed but artifact path still exists "
+                    "or is a symlink"
+                )
+            else:
+                removed_verified.append(path)
+
+        elif not current_exists and disposition in {"aligned", "stale", "not-applicable"}:
             errors.append(
-                f"Convergence marks {path!r} aligned but artifact no longer exists"
+                f"Convergence marks {path!r} {disposition} but artifact no longer exists; "
+                "use 'removed' for an intentional deletion or 'owner-decision' "
+                "when deletion is unresolved"
             )
 
         if disposition == "stale":
@@ -146,6 +171,7 @@ def review(
             set(duplicate_paths).union(context_duplicate_paths)
         ),
         "updated_verified": sorted(updated_verified),
+        "removed_verified": sorted(removed_verified),
         "stale_artifacts": sorted(stale_paths),
         "owner_decision_artifacts": sorted(owner_decision_paths),
     }
