@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 
-from cache import file_sha256
+from cache import atomic_write_json, file_sha256
 from collections.abc import Callable
 from typing import Any
+
+
+def parsed_digest(value: Any) -> str:
+    """Detect accidental cached parse-payload edits independently of source SHA.
+
+    This is a self-check for disposable data, not an authentication primitive:
+    someone able to edit the cache can also recompute this digest.
+    """
+    serialized = json.dumps(
+        value, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def signature(path: pathlib.Path) -> dict[str, int | str]:
@@ -22,7 +35,7 @@ def signature(path: pathlib.Path) -> dict[str, int | str]:
 def load_cache(path: pathlib.Path, *, version: int) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return {"version": version, "entries": {}}
 
     if not isinstance(data, dict) or data.get("version") != version:
@@ -35,11 +48,7 @@ def load_cache(path: pathlib.Path, *, version: int) -> dict:
 
 
 def save_cache(path: pathlib.Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, data)
 
 
 def parse_with_cache(
@@ -69,6 +78,8 @@ def parse_with_cache(
             isinstance(previous, dict)
             and previous.get("signature") == current_signature
             and "parsed" in previous
+            and isinstance(previous.get("parsed_sha256"), str)
+            and previous["parsed_sha256"] == parsed_digest(previous["parsed"])
         ):
             value = previous["parsed"]
             reused_count += 1
@@ -80,6 +91,7 @@ def parse_with_cache(
         new_entries[relative] = {
             "signature": current_signature,
             "parsed": value,
+            "parsed_sha256": parsed_digest(value),
         }
 
     save_cache(

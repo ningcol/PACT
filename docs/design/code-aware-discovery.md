@@ -63,6 +63,8 @@ Project Map and Code Map store a source fingerprint. Discovery/Context/Impact/Ex
 
 This avoids both stale indexes and unconditional full reparsing on every query.
 
+Cache freshness also verifies index structure, not just a matching `format_version` and `source_fingerprint`. Project Map checks its required document/ID fields against the visible source-document set. Code Map checks the existing Code Map JSON Schema, repository root and visible code-path set, and confirms its generated edges match the per-file resolved imports. Truncated/malformed but otherwise valid JSON is rebuilt, not treated as a zero-hit index. The Git HEAD is stored as metadata, not part of the source-content fingerprint.
+
 ## Unresolved imports
 
 PACT does not guess unsupported resolution rules.
@@ -135,10 +137,17 @@ It keeps a disposable per-file parse cache keyed by:
 - repository-relative path;
 - file size;
 - nanosecond modification time;
-- parser-cache version.
+- SHA256 of source bytes;
+- parser-cache version and a self-integrity digest over the cached parsed payload.
 
 Unchanged files reuse parsed symbols/raw imports. Changed/new files are reparsed; removed files are dropped. Global import resolution/edges are then rebuilt from these cheap cached parse results.
 
 The same model is used for Project Map Markdown parsing.
 
 This cache is never authority. Removing `.pact/cache/` must always restore a correct full rebuild.
+
+## Cache write and integrity boundary
+
+Project Map, Code Map and per-file parse caches are written through a shared stdlib-only atomic JSON publisher. Each writer prepares a complete JSON payload in its own uniquely named temporary file in the destination directory, flushes and fsyncs it, then atomically replaces the destination. If publication fails, an existing cache file remains intact and temporary data is cleaned up. Multiple writers may each publish a complete snapshot; the latest completed replacement wins. One reader sees a complete old or new snapshot, not a half-written JSON document.
+
+This atomicity applies to **one file only**. Project Map, Code Map and per-file parse caches do not form a joint transaction, and a concurrent source edit may invalidate a previously computed fingerprint; the next freshness check repairs stale output. The cache payload digest detects accidental changes, not an attacker with the ability to rewrite both parsed data and its digest. Neither local caches nor generated import relationships become proof of product behavior.
