@@ -9,7 +9,7 @@ import json
 import pathlib
 import re
 
-from cache import cache_is_fresh, fingerprint_files, git_head
+from cache import atomic_write_json, cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
 from parse_cache import parse_with_cache
 from repository_files import repository_files
@@ -451,6 +451,22 @@ def build_code_map(
     }
 
 
+def valid_code_index(
+    data: dict, *, schema: dict, expected_paths: set[str]
+) -> bool:
+    """Reuse only a complete, schema-valid index over current source paths."""
+    if validate_instance(data, schema):
+        return False
+    files = data["files"]
+    actual_paths = {entry["path"] for entry in files}
+    if len(actual_paths) != len(files) or actual_paths != expected_paths:
+        return False
+    return all(
+        edge["from"] in actual_paths and edge["to"] in actual_paths
+        for edge in data["edges"]
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build generated PACT code relationship map")
     parser.add_argument("--root", help="repository root; defaults to this script's repository")
@@ -471,10 +487,21 @@ def main() -> int:
     paths, enumeration_mode = discover_files(root)
     source_fingerprint = fingerprint_files(root, paths)
 
+    schema_path = root / ".pact" / "schema" / "code-map.schema.json"
+    try:
+        schema = load_schema(schema_path)
+    except Exception as exc:
+        print(f"PACT code-map: cannot load schema: {exc}")
+        return 2
+
+    expected_paths = {rel(path, root) for path in paths}
     if args.ensure and cache_is_fresh(
         output,
         format_version=FORMAT_VERSION,
         source_fingerprint=source_fingerprint,
+        validator=lambda data: valid_code_index(
+            data, schema=schema, expected_paths=expected_paths
+        ),
     ):
         print(f"PACT code-map: fresh -> {output}")
         return 0
@@ -495,23 +522,13 @@ def main() -> int:
         source_fingerprint,
     )
 
-    schema_path = root / ".pact" / "schema" / "code-map.schema.json"
-    try:
-        schema = load_schema(schema_path)
-    except Exception as exc:
-        print(f"PACT code-map: cannot load schema: {exc}")
-        return 2
     errors = validate_instance(data, schema)
     if errors:
         for error in errors:
             print(f"PACT code-map schema error: {error}")
         return 2
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(output, data)
 
     print(
         f"PACT code-map: {len(data['files'])} source file(s), "
