@@ -63,7 +63,7 @@ Project Map and Code Map store a source fingerprint. Discovery/Context/Impact/Ex
 
 This avoids both stale indexes and unconditional full reparsing on every query.
 
-Cache freshness also verifies index structure, not just a matching `format_version` and `source_fingerprint`. Project Map checks its required document/ID fields against the visible source-document set. Code Map checks the existing Code Map JSON Schema and the visible code-path set. Truncated/malformed but otherwise valid JSON is rebuilt, not treated as a zero-hit index. The Git HEAD is stored as metadata, not part of the source-content fingerprint.
+Cache freshness also verifies index structure, not just a matching `format_version` and `source_fingerprint`. Project Map checks its required document/ID fields against the visible source-document set. Code Map checks the existing Code Map JSON Schema, repository root and visible code-path set, and confirms its generated edges match the per-file resolved imports. Truncated/malformed but otherwise valid JSON is rebuilt, not treated as a zero-hit index. The Git HEAD is stored as metadata, not part of the source-content fingerprint.
 
 ## Unresolved imports
 
