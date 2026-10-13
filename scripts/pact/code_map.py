@@ -455,15 +455,35 @@ def valid_code_index(
     data: dict, *, schema: dict, expected_paths: set[str]
 ) -> bool:
     """Reuse only a complete, schema-valid index over current source paths."""
-    if validate_instance(data, schema):
+    if data.get("root") != "." or validate_instance(data, schema):
         return False
     files = data["files"]
     actual_paths = {entry["path"] for entry in files}
     if len(actual_paths) != len(files) or actual_paths != expected_paths:
         return False
-    return all(
-        edge["from"] in actual_paths and edge["to"] in actual_paths
+
+    # Import records and the generated edge table are two views of the same
+    # parsed relationships. A schema-valid empty edge table can otherwise
+    # silently erase all import-neighbor discovery.
+    expected_edges = set()
+    for entry in files:
+        for item in entry["imports"]:
+            related = item["resolved"]
+            if related is not None:
+                if related not in actual_paths:
+                    return False
+                if related != entry["path"]:
+                    expected_edges.add(
+                        (entry["path"], related, "import", item["confidence"])
+                    )
+
+    observed_edges = {
+        (edge["from"], edge["to"], edge["kind"], edge["confidence"])
         for edge in data["edges"]
+    }
+    return (
+        len(observed_edges) == len(data["edges"])
+        and observed_edges == expected_edges
     )
 
 
