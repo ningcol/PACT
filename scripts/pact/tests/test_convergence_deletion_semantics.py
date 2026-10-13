@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,7 +34,7 @@ class ConvergenceRemovalTests(unittest.TestCase):
         artifact = {"path": "docs/rule.md"}
         if prepared_hash:
             artifact["sha256"] = self.original_sha
-        context = {"artifacts": [artifact]}
+        context = {"risk_level": "low", "artifacts": [artifact]}
         self.context_path.write_text(
             json.dumps(context, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -137,6 +138,82 @@ class ConvergenceRemovalTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(stats["owner_decision_artifacts"], ["docs/rule.md"])
         self.assertEqual(outcome(report), "needs-owner")
+
+    def test_completion_gate_accepts_removal_but_rejects_deleted_update(self) -> None:
+        """The real completion CLI must consume the Schema + coverage decision."""
+        self.artifact.unlink()
+        errors, _, report = self.review("removed")
+        self.assertEqual(errors, [])
+        report["evidence"] = ["EV-R05"]
+        proof = self.root / "proof.txt"
+        proof.write_text("Review evidence fixture\n", encoding="utf-8")
+        evidence = {
+            "version": 1,
+            "task_id": "TASK-R05",
+            "task": "Review the rule",
+            "risk_level": "low",
+            "claims": [{
+                "id": "EV-R05",
+                "claim": "The rule change was reviewed.",
+                "required": True,
+                "status": "pass",
+                "evidence": [{"kind": "other", "provenance": "file", "ref": "proof.txt"}],
+            }],
+            "limitations": [],
+        }
+        owner = {
+            "version": 1,
+            "task_id": "TASK-R05",
+            "status": "completed",
+            "summary": "Rule change reviewed",
+            "before": "Rule existed",
+            "after": "Rule retired",
+            "verification": [{
+                "claim": "The rule change was reviewed.",
+                "evidence_ids": ["EV-R05"],
+            }],
+            "consistency": {"status": "aligned", "summary": "No blocking drift."},
+            "owner_decisions": [],
+        }
+        bundle = self.root / "bundle"
+        bundle.mkdir()
+        for name, value in (
+            ("convergence.json", report),
+            ("evidence.json", evidence),
+            ("owner-report.json", owner),
+        ):
+            (bundle / name).write_text(
+                json.dumps(value, indent=2) + "\n", encoding="utf-8"
+            )
+        command = [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "pact" / "complete.py"),
+            str(bundle),
+            "--root", str(self.root),
+            "--context", str(self.context_path),
+            "--context-sha256", report["context_sha256"],
+            "--json",
+        ]
+        accepted = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        summary = json.loads(accepted.stdout)
+        self.assertTrue(summary["complete"])
+        self.assertEqual(
+            summary["convergence_coverage"]["removed_verified"], ["docs/rule.md"]
+        )
+
+        report["coverage"][0]["disposition"] = "updated"
+        (bundle / "convergence.json").write_text(
+            json.dumps(report, indent=2) + "\n", encoding="utf-8"
+        )
+        rejected = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        rejected_result = json.loads(rejected.stdout)
+        self.assertFalse(rejected_result["complete"])
+        self.assertTrue(any(
+            "updated but artifact no longer exists" in error
+            for error in rejected_result["errors"]
+        ))
 
     def test_missing_owner_question_is_not_sufficient(self) -> None:
         self.artifact.unlink()
