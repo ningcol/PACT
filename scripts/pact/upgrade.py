@@ -334,6 +334,56 @@ def cleanup_empty_parents(path: pathlib.Path, stop: pathlib.Path) -> None:
         current = current.parent
 
 
+def assert_planned_target_unchanged(
+    target: pathlib.Path,
+    operation: dict,
+    manifest: dict,
+) -> None:
+    """Enforce the observed plan's target identity before acting on it.
+
+    The target may be missing at plan time (create/remove-absent), or be a
+    regular file with a known SHA. Do not overwrite new local files or detach
+    trust in locally modified files. Caller decides rollback semantics.
+    """
+    action = operation["action"]
+    path = operation["path"]
+    if action not in MUTATING_ACTIONS and action != "refresh-manifest":
+        return
+
+    destination = resolve_install_target(target, path)
+    must_be_missing = (
+        action in {"create-framework", "create-seed"}
+        or (action == "remove-framework" and operation.get("already_absent"))
+    )
+    if must_be_missing:
+        if path_present(destination):
+            raise RuntimeError(
+                f"upgrade target changed after plan: {path} was absent but now exists"
+            )
+        return
+
+    if action == "update-framework":
+        record = manifest.get("files", {}).get(path, {})
+        expected_sha = record.get("installed_sha256")
+    elif action == "refresh-manifest":
+        expected_sha = operation.get("source_sha256")
+    elif action == "remove-framework":
+        expected_sha = operation.get("installed_sha256")
+    else:
+        return
+
+    if not isinstance(expected_sha, str) or not destination.is_file():
+        raise RuntimeError(
+            f"upgrade target changed after plan: {path} is not a regular file"
+        )
+    actual_sha = sha256_file(destination)
+    if actual_sha != expected_sha:
+        raise RuntimeError(
+            f"upgrade target changed after plan: {path} SHA256 differs "
+            f"({actual_sha!r} != {expected_sha!r})"
+        )
+
+
 def apply_upgrade(
     source_root: pathlib.Path,
     target: pathlib.Path,
@@ -345,6 +395,23 @@ def apply_upgrade(
             "upgrade has framework conflicts; refusing automatic apply",
             rolled_back=False,
         )
+
+    # plan_upgrade() is normally called immediately before apply_upgrade(),
+    # but both can observe a concurrent writer. Recheck the complete
+    # ownership/operation decision before creating transaction state.
+    try:
+        if load_manifest(target) != manifest:
+            raise RuntimeError("install manifest changed after planning")
+        refreshed_plan = plan_upgrade(source_root, target, manifest)
+        if refreshed_plan != plan:
+            raise RuntimeError("upgrade source or target changed after planning")
+        for operation in plan["operations"]:
+            assert_planned_target_unchanged(target, operation, manifest)
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        raise UpgradeApplyError(
+            f"stale upgrade plan; no target changes applied: {exc}",
+            rolled_back=False,
+        ) from exc
 
     desired = {
         entry["target"].as_posix(): entry
@@ -375,41 +442,66 @@ def apply_upgrade(
         stage_root.mkdir()
         backup_root.mkdir()
 
-        # Stage and validate every source before target mutation begins.
-        staged: dict[str, pathlib.Path] = {}
-        for op in mutating_ops:
-            if op["action"] == "remove-framework":
-                continue
-            path = op["path"]
-            entry = desired[path]
-            staged_path = stage_root / pathlib.Path(path)
-            staged_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry["source"], staged_path)
-            actual_sha = sha256_file(staged_path)
-            if actual_sha != op["source_sha256"]:
+        try:
+            # Stage and validate every source before target mutation begins.
+            staged: dict[str, pathlib.Path] = {}
+            for op in mutating_ops:
+                if op["action"] == "remove-framework":
+                    continue
+                path = op["path"]
+                entry = desired[path]
+                staged_path = stage_root / pathlib.Path(path)
+                staged_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(entry["source"], staged_path)
+                actual_sha = sha256_file(staged_path)
+                if actual_sha != op["source_sha256"]:
+                    raise UpgradeApplyError(
+                        f"staged source hash mismatch for {path}",
+                        rolled_back=False,
+                    )
+                staged[path] = staged_path
+
+            original_exists: dict[str, bool] = {}
+            backups: dict[str, pathlib.Path] = {}
+            for op in mutating_ops:
+                path = op["path"]
+                destination = resolve_install_target(target, path)
+                original_exists[path] = destination.is_file()
+                if destination.is_file():
+                    backup = backup_root / pathlib.Path(path)
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(destination, backup)
+                    backups[path] = backup
+
+            manifest_backup = backup_root / "install.json"
+            shutil.copy2(manifest_path, manifest_backup)
+            original_manifest_sha256 = sha256_file(manifest_backup)
+            if sha256_file(manifest_path) != original_manifest_sha256:
                 raise UpgradeApplyError(
-                    f"staged source hash mismatch for {path}",
+                    "install manifest changed while staging upgrade; refusing apply",
                     rolled_back=False,
                 )
-            staged[path] = staged_path
+            # The on-disk object must still be the one we planned against.
+            if load_manifest(target) != manifest:
+                raise UpgradeApplyError(
+                    "install manifest changed while staging upgrade; refusing apply",
+                    rolled_back=False,
+                )
 
-        original_exists: dict[str, bool] = {}
-        backups: dict[str, pathlib.Path] = {}
-        for op in mutating_ops:
-            path = op["path"]
-            destination = resolve_install_target(target, path)
-            original_exists[path] = destination.is_file()
-            if destination.is_file():
-                backup = backup_root / pathlib.Path(path)
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(destination, backup)
-                backups[path] = backup
-
-        manifest_backup = backup_root / "install.json"
-        shutil.copy2(manifest_path, manifest_backup)
+        except UpgradeApplyError:
+            raise
+        except Exception as exc:
+            raise UpgradeApplyError(
+                f"upgrade staging or backup failed before target mutation: {exc}",
+                rolled_back=False,
+            ) from exc
 
         replaced: list[str] = []
         created: list[str] = []
+        # For safe rollback, remember what PACT actually intended to write.
+        written_targets: dict[str, str | None] = {}
+        manifest_committed = False
+        committed_manifest_sha256: str | None = None
         fail_after_raw = os.environ.get("PACT_TEST_FAIL_AFTER_REPLACE")
         fail_after = int(fail_after_raw) if fail_after_raw else None
 
@@ -417,12 +509,15 @@ def apply_upgrade(
             removed: list[str] = []
             for op in mutating_ops:
                 path = op["path"]
+                # Last possible non-locking guard before destructive writes.
+                assert_planned_target_unchanged(target, op, manifest)
                 destination = resolve_install_target(target, path)
 
                 if op["action"] == "remove-framework":
                     if destination.is_file():
                         destination.unlink()
                     replaced.append(path)
+                    written_targets[path] = None  # PACT left the target absent
                     removed.append(path)
                 else:
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -435,6 +530,7 @@ def apply_upgrade(
                     os.replace(temp_destination, destination)
 
                     replaced.append(path)
+                    written_targets[path] = op["source_sha256"]
                     if not original_exists[path]:
                         created.append(path)
 
@@ -457,8 +553,15 @@ def apply_upgrade(
                 path = op["path"]
                 entry = desired[path]
                 destination = resolve_install_target(target, path)
+                if op["action"] == "refresh-manifest":
+                    assert_planned_target_unchanged(target, op, manifest)
                 if destination.is_file():
-                    files[path] = manifest_record(entry, destination)
+                    record = manifest_record(entry, destination)
+                    if record.get("source_sha256") != op.get("source_sha256"):
+                        raise RuntimeError(
+                            f"upgrade source changed after staging: {path}"
+                        )
+                    files[path] = record
                     touched.append(path)
 
             new_manifest = {
@@ -473,7 +576,13 @@ def apply_upgrade(
                 json.dumps(new_manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
+            committed_manifest_sha256 = sha256_file(staged_manifest)
+            if sha256_file(manifest_path) != original_manifest_sha256:
+                raise RuntimeError(
+                    "install manifest changed during upgrade; refusing to overwrite"
+                )
             os.replace(staged_manifest, manifest_path)
+            manifest_committed = True
 
             # Re-validate after committing manifest.
             validate_new_manifest(target, new_manifest, touched)
@@ -493,8 +602,24 @@ def apply_upgrade(
             rollback_errors: list[str] = []
 
             for path in reversed(replaced):
-                destination = resolve_install_target(target, path)
                 try:
+                    destination = resolve_install_target(target, path)
+                    expected_sha = written_targets[path]
+                    if expected_sha is None:
+                        if path_present(destination):
+                            raise RuntimeError(
+                                "changed concurrently after upgrade removal; "
+                                "cannot safely restore previous bytes"
+                            )
+                    elif (
+                        not destination.is_file()
+                        or sha256_file(destination) != expected_sha
+                    ):
+                        raise RuntimeError(
+                            "changed concurrently after upgrade replacement; "
+                            "cannot safely roll back over newer bytes"
+                        )
+
                     if original_exists.get(path):
                         backup = backups[path]
                         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -506,10 +631,25 @@ def apply_upgrade(
                 except Exception as rollback_exc:
                     rollback_errors.append(f"{path}: {rollback_exc}")
 
-            try:
-                os.replace(manifest_backup, manifest_path)
-            except Exception as rollback_exc:
-                rollback_errors.append(f"install manifest: {rollback_exc}")
+            # Prior to commit, the manifest was not modified by PACT:
+            # preserving it is safer than restoring a potentially stale copy
+            # over an external concurrent edit. After commit, restore only
+            # if it still holds the exact bytes we wrote.
+            if manifest_committed:
+                try:
+                    if (
+                        committed_manifest_sha256 is None
+                        or not manifest_path.is_file()
+                        or sha256_file(manifest_path) != committed_manifest_sha256
+                    ):
+                        rollback_errors.append(
+                            "install manifest: changed concurrently after commit; "
+                            "cannot safely restore older bytes"
+                        )
+                    else:
+                        os.replace(manifest_backup, manifest_path)
+                except Exception as rollback_exc:
+                    rollback_errors.append(f"install manifest: {rollback_exc}")
 
             message = f"upgrade apply failed and rollback was attempted: {exc}"
             if rollback_errors:
