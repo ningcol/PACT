@@ -9,7 +9,7 @@ import pathlib
 import re
 from datetime import datetime, timezone
 
-from cache import cache_is_fresh, fingerprint_files, git_head
+from cache import atomic_write_json, cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
 from formats import parse_markdown_metadata
 from parse_cache import parse_with_cache
@@ -119,6 +119,48 @@ def build_index(
     }
 
 
+def valid_project_index(index: dict, *, expected_paths: set[str]) -> bool:
+    """Reject incomplete but syntactically valid disposable Project Maps."""
+    docs = index.get("documents")
+    by_id = index.get("id_to_path")
+    if (
+        index.get("repository_root") != "."
+        or not isinstance(docs, list)
+        or not isinstance(by_id, dict)
+        or not isinstance(index.get("enumeration_mode"), str)
+    ):
+        return False
+
+    observed_paths: set[str] = set()
+    expected_id_map: dict[str, str] = {}
+    for doc in docs:
+        if not isinstance(doc, dict):
+            return False
+        path = doc.get("path")
+        if (
+            not isinstance(path, str)
+            or path not in expected_paths
+            or path in observed_paths
+            or not isinstance(doc.get("title"), str)
+            or not isinstance(doc.get("text"), str)
+            or not isinstance(doc.get("artifact_type"), str)
+        ):
+            return False
+        for name in ("domains", "aliases", "paths", "related", "verification", "links"):
+            values = doc.get(name)
+            if not isinstance(values, list) or not all(
+                isinstance(value, str) for value in values
+            ):
+                return False
+        observed_paths.add(path)
+        if doc.get("id"):
+            if not isinstance(doc["id"], str):
+                return False
+            expected_id_map[doc["id"]] = path
+
+    return observed_paths == expected_paths and by_id == expected_id_map
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build PACT project discovery map")
     parser.add_argument(
@@ -141,10 +183,14 @@ def main() -> int:
     paths, enumeration_mode = source_paths(root)
     source_fingerprint = fingerprint_files(root, paths)
 
+    expected_paths = {rel(path, root) for path in paths}
     if args.ensure and cache_is_fresh(
         output,
         format_version=FORMAT_VERSION,
         source_fingerprint=source_fingerprint,
+        validator=lambda data: valid_project_index(
+            data, expected_paths=expected_paths
+        ),
     ):
         print(f"PACT map: fresh -> {output}")
         return 0
@@ -168,11 +214,7 @@ def main() -> int:
         source_fingerprint,
         enumeration_mode=enumeration_mode,
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(index, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(output, index)
 
     print(
         f"PACT map: indexed {len(index['documents'])} document(s) "
