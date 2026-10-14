@@ -6,6 +6,20 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### File-scoped Rule authority and mixed-confirmation warnings
+
+- Explicit pending/unconfirmed headings in a `confirmed` Product Rule are
+  flagged by `audit` and Discovery instead of silently expanding the whole
+  page's normative scope.
+- Task Context carries `mixed_authority` candidate metadata; mixed files do
+  not populate `applicable_rules` or provide automatically applicable
+  verification targets. The warning is intentionally review-only and bounded
+  to explicit headings; no new section-level protocol or automatic product
+  truth classification is introduced.
+- Product guidance recommends separate confirmed/candidate Rule files.
+
+## Unreleased
+
 ### Verification input origin guard
 
 - `pact run` rejects direct external script/config source paths by default;
