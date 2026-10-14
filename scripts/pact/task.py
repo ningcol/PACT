@@ -946,6 +946,14 @@ def main() -> int:
     )
     verify_parser.add_argument("--claim-id", help="optional unique Evidence ID")
     verify_parser.add_argument(
+        "--source", dest="sources", action="append", default=[],
+        help="repository-relative script/schema/config used by the check; repeatable",
+    )
+    verify_parser.add_argument(
+        "--allow-external-inputs", action="store_true",
+        help="explicitly permit external file inputs (not completion-grade for medium/high risk)",
+    )
+    verify_parser.add_argument(
         "--kind",
         choices=["test", "browser", "visual", "runtime", "contract",
                  "architecture", "other"],
