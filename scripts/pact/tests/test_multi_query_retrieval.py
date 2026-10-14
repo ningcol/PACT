@@ -366,7 +366,7 @@ class MultiQueryRetrievalTests(unittest.TestCase):
         self.assertEqual(fused[0]["relation"], "direct-match")
         self.assertEqual(fused[0]["confidence"], "direct")
 
-    def test_generic_query_prefers_current_to_equally_relevant_historical_decisions(self) -> None:
+    def test_generic_query_prefers_current_decisions(self) -> None:
         def decision(path: str, status: str, ident: str) -> dict:
             return {
                 "path": path,
@@ -410,14 +410,20 @@ class MultiQueryRetrievalTests(unittest.TestCase):
             "historical decision (not current guidance)", results[0]["reasons"]
         )
         single = discover.ranked_knowledge_results(
-            {"documents": [
-                decision(".agents/decisions/archived/old.md", "archived", "DEC-OLD"),
-                decision(
-                    ".agents/decisions/implemented/current.md",
-                    "implemented",
-                    "DEC-CURRENT",
-                ),
-            ]},
+            {
+                "documents": [
+                    decision(
+                        ".agents/decisions/archived/old.md",
+                        "archived",
+                        "DEC-OLD",
+                    ),
+                    decision(
+                        ".agents/decisions/implemented/current.md",
+                        "implemented",
+                        "DEC-CURRENT",
+                    ),
+                ],
+            },
             "cache",
             limit=1,
         )
