@@ -26,33 +26,37 @@ CONFIDENCE_ORDER = {
 
 
 UNCONFIRMED_SECTION = re.compile(
-    r"^\s{0,3}#{1,6}\s+(?:\d+[.、]\s*)?"
-    r"(?:待确认|未确认|尚未确认|待定|unconfirmed|pending confirmation|tbd)"
+    r"^ {0,3}#{1,6}\s+(?:\d+[.、]\s*)?"
+    r"(?:待确认(?:事项|内容|部分|需求)?|未确认|尚未确认|待定|"
+    r"unconfirmed|pending confirmation|tbd)"
     r"(?=$|[\s:：\-（(])",
     flags=re.IGNORECASE,
 )
+FENCE_START = re.compile(r"^ {0,3}(\x60{3,}|~{3,})")
 
 
 def explicit_unconfirmed_section(text: str) -> bool:
-    """Recognize only explicit unconfirmed headings, not semantic guesses.
+    """Recognize explicit unconfirmed headings, not semantic guesses.
 
-    Fenced Markdown examples must not turn an otherwise confirmed rule into a
-    mixed-authority warning.
+    Ignore fenced examples. The check cannot infer unlabelled product meaning.
     """
     fence: str | None = None
     for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
-            if fence is None:
-                fence = marker
-            elif fence == marker:
+        if fence is not None:
+            candidate = line.lstrip(" ")
+            if (
+                len(line) - len(candidate) <= 3
+                and candidate.startswith(fence[0] * len(fence))
+                and candidate.rstrip().strip(fence[0]) == ""
+            ):
                 fence = None
             continue
-        if fence is None and UNCONFIRMED_SECTION.search(line):
+        opening = FENCE_START.match(line)
+        if opening:
+            fence = opening.group(1)
+        elif UNCONFIRMED_SECTION.match(line):
             return True
     return False
-
 
 def mixed_rule_authority(doc: dict) -> bool:
     return (
