@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import pathlib
 import subprocess
@@ -60,6 +59,13 @@ class VerificationInputOriginsTests(unittest.TestCase):
         result = self.run_pact([], [sys.executable, str(self.outside)])
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("external script/schema/config path", result.stderr)
+        self.assertFalse(self.receipt.exists())
+
+    def test_external_script_with_spaces_is_not_mistaken_for_shell_tokens(self) -> None:
+        spaced = pathlib.Path(self.temp.name) / "external script.py"
+        spaced.write_text("print('unsafe')\\n", encoding="utf-8")
+        result = self.run_pact([], [sys.executable, str(spaced)])
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertFalse(self.receipt.exists())
 
     def test_external_script_requires_opt_in_and_cannot_complete_medium_risk(self) -> None:
