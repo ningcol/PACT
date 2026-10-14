@@ -48,26 +48,13 @@ If `pact readiness` reports a baseline area as pending, treat that area as incom
 
 ## Retrieval query expansion
 
-When owner/business wording may not match repository code vocabulary, generate a small set of search hypotheses before concluding that context is missing.
+Start with the owner's wording. If relevant knowledge is missing or project
+terminology is ambiguous, add only the useful search hypotheses (for example,
+a confirmed alias, a likely code symbol, or a state/contract term). Use
+repeatable `--query` on `inspect` or `task prepare` when needed.
 
-Prefer 2–4 distinct queries covering views such as:
-
-- the owner's/business wording;
-- canonical project vocabulary or aliases already discovered;
-- likely code/symbol terminology;
-- relevant state/contract terminology.
-
-Pass them through repeatable `--query` arguments on `pact task prepare`.
-
-```bash
-python3 pact.py task prepare "修复省份切换后数据不同步" \
-  --success "切换省份后列表和统计同步变化" \
-  --query "省份切换 数据同步" \
-  --query "province selectedProvince" \
-  --query "region context statistics"
-```
-
-Queries are retrieval hypotheses, not project truth. Guessed technical vocabulary must not be promoted to confirmed architecture or product meaning.
+There is no required query count. Retrieval hypotheses are not confirmed
+Product Truth, and guessed vocabulary must never be promoted to authority.
 
 ## Decision policy
 
