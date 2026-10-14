@@ -313,5 +313,53 @@ class CachePublishingSafetyTests(unittest.TestCase):
         )
 
 
+    def test_missing_snapshot_source_never_silently_hashes_to_success(self) -> None:
+        vanished = self.root / "docs" / "vanished.md"
+        with self.assertRaises(OSError):
+            cache_runtime.fingerprint_files(self.root, [vanished])
+
+    def test_transient_parse_failure_retries_without_partial_index(self) -> None:
+        real_parse = project_map.parse_with_cache
+        attempts = 0
+
+        def transient(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise FileNotFoundError("transient disappearing source")
+            return real_parse(*args, **kwargs)
+
+        with mock.patch.object(project_map, "parse_with_cache", side_effect=transient):
+            self.assertEqual(self.run_in_process("map"), 0)
+        self.assertEqual(attempts, 2)
+        indexed = json.loads(self.map_path.read_text(encoding="utf-8"))
+        self.assertIn("README.md", [doc["path"] for doc in indexed["documents"]])
+
+    def test_permanent_source_failure_does_not_publish_map(self) -> None:
+        original, _ = self.run_builder("map")
+        self.write("docs/guide.md", "# Changed while scanning\\n")
+        with mock.patch.object(
+            project_map,
+            "parse_with_cache",
+            side_effect=FileNotFoundError("permanent missing source"),
+        ):
+            self.assertEqual(self.run_in_process("map"), 2)
+        self.assertEqual(
+            json.loads(self.map_path.read_text(encoding="utf-8")),
+            original,
+        )
+
+    def test_parse_cache_rejects_disappeared_file(self) -> None:
+        missing = self.root / "docs" / "missing.md"
+        with self.assertRaises(OSError):
+            parse_runtime.parse_with_cache(
+                root=self.root,
+                paths=[missing],
+                cache_path=self.root / ".pact" / "cache" / "test-missing.json",
+                cache_version=1,
+                parser=lambda path: path.read_text(encoding="utf-8"),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
