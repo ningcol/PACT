@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from urllib.parse import unquote
 
 from cache import fingerprint_files
-from repository_files import repository_files
 from formats import parse_markdown_metadata
+from repository_files import repository_files
 from schema_validate import load_schema, validate_instance
 
 
@@ -90,7 +90,7 @@ def discover(
     artifacts: list[Artifact] = []
     errors: list[str] = []
 
-    for path in paths if paths is not None else managed_markdown_paths(root):
+    for path in (paths if paths is not None else managed_markdown_paths(root)):
         relative = rel(path, root)
         if relative.endswith("/TEMPLATE.md") or relative == "TEMPLATE.md":
             continue
@@ -246,7 +246,7 @@ def validate_links(
     errors: list[str] = []
     root_resolved = root.resolve()
 
-    for path in paths if paths is not None else managed_markdown_paths(root):
+    for path in (paths if paths is not None else managed_markdown_paths(root)):
 
         try:
             text = path.read_text(encoding="utf-8")
