@@ -25,6 +25,43 @@ CONFIDENCE_ORDER = {
 }
 
 
+UNCONFIRMED_SECTION = re.compile(
+    r"^\\s{0,3}#{1,6}\\s+(?:\\d+[.、]\\s*)?"
+    r"(?:待确认|未确认|尚未确认|待定|unconfirmed|pending confirmation|tbd)"
+    r"(?=$|[\\s:：\\-（(])",
+    flags=re.IGNORECASE,
+)
+
+
+def explicit_unconfirmed_section(text: str) -> bool:
+    """Recognize only explicit unconfirmed headings, not semantic guesses.
+
+    Fenced Markdown examples must not turn an otherwise confirmed rule into a
+    mixed-authority warning.
+    """
+    fence: str | None = None
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("\\x60\\x60\\x60", "~~~")):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is None and UNCONFIRMED_SECTION.search(line):
+            return True
+    return False
+
+
+def mixed_rule_authority(doc: dict) -> bool:
+    return (
+        doc.get("artifact_type") == "rule"
+        and doc.get("status") == "confirmed"
+        and explicit_unconfirmed_section(str(doc.get("text") or ""))
+    )
+
+
 def norm(value: str) -> str:
     return value.casefold().strip()
 
@@ -214,6 +251,7 @@ def ranked_knowledge_results(index: dict, query: str, limit: int) -> list[dict]:
             "title": doc.get("title"),
             "path": doc.get("path"),
             "status": doc.get("status"),
+            "mixed_authority": mixed_rule_authority(doc),
             "domains": doc.get("domains", []),
             "related": doc.get("related", []),
             "verification": doc.get("verification", []),
