@@ -246,9 +246,7 @@ def validate_links(
     errors: list[str] = []
     root_resolved = root.resolve()
 
-    for path in sorted(root.rglob("*.md")):
-        if not is_managed_markdown(path, root):
-            continue
+    for path in paths if paths is not None else managed_markdown_paths(root):
 
         try:
             text = path.read_text(encoding="utf-8")
