@@ -44,8 +44,8 @@ for the human-required dimensions and baseline comparison discipline.
 
 ## Execution evidence
 
-The first successful run from source commit
-`8626168195389d743d9df95ec28b91e8734267ce` was:
+The first successful run was associated with PR head
+`8626168195389d743d9df95ec28b91e8734267ce`:
 
 - [Owner-Brownfield Evidence Smoke #38656102271](https://github.com/ningcol/PACT/actions/runs/38656102271): **PASS**
 - Source: historical pinned `ningcol/ziliu@7542c755ebb0987aeb1415dba2c9f7a71b173993`
@@ -54,9 +54,11 @@ The first successful run from source commit
 - Unreviewed `task finish`: **correctly blocked**, despite passing Evidence
 - Upstream tracked application code: **unchanged**
 
-The automated check is reproducible from PR
-[#184](https://github.com/ningcol/PACT/pull/184) or a manual workflow run,
-but each observation must be tied to its exact PACT commit. This does **not**
+The maintained workflow explicitly checks out and validates the
+PR head SHA (or the dispatch SHA for manual execution), and pins the external
+repository SHA separately. The smoke can be rerun from
+[#184](https://github.com/ningcol/PACT/pull/184);
+its results must always be tied to the exact PACT commit and workflow run. This does **not**
 establish live product behavior or performance improvements. The human owner
 comprehension, escalation and process-cost dimensions of
 [#28](https://github.com/ningcol/PACT/issues/28) and
