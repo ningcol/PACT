@@ -103,7 +103,6 @@ class MixedAuthorityTests(unittest.TestCase):
         ))
 
 
-
 class MixedAuthorityIntegrationTests(unittest.TestCase):
     def test_initialized_project_keeps_mixed_rule_non_normative(self) -> None:
         """End-to-end: Project Map -> Discovery -> Context -> Audit."""
@@ -143,17 +142,9 @@ class MixedAuthorityIntegrationTests(unittest.TestCase):
             prepared = pact(
                 "context", "Home",
                 "--success", "Home behavior follows confirmed intent",
-                "--risk", "medium", "--no-code", "--json",
+                "--risk", "medium", "--no-code",
+                "--output", ".pact/cache/mixed-context.json",
             )
-            # context is an output command with --output; --json isn't
-            # part of its stable CLI.
-            if prepared.returncode != 0:
-                prepared = pact(
-                    "context", "Home",
-                    "--success", "Home behavior follows confirmed intent",
-                    "--risk", "medium", "--no-code",
-                    "--output", ".pact/cache/mixed-context.json",
-                )
             self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
             context_file = target / ".pact" / "cache" / "mixed-context.json"
             envelope = json.loads(context_file.read_text(encoding="utf-8"))
