@@ -176,12 +176,23 @@ def estimated_file_tokens(relative: str) -> int:
     return max((int(size) + 3) // 4, 1)
 
 
+def applicable_rule_ids(results: list[dict]) -> list[str]:
+    """Promote only wholly confirmed rule artifacts to normative Context."""
+    return sorted({
+        result.get("id") or result["path"]
+        for result in results
+        if result.get("artifact_type") == "rule"
+        and result.get("status") == "confirmed"
+        and not result.get("mixed_authority")
+    })
+
+
 def knowledge_priority(item: dict) -> tuple[int, bool]:
     """Preserve retrieval ranking; authority only affects soft-budget treatment."""
     typ = item.get("artifact_type")
     status = item.get("status")
     mandatory = (
-        (typ == "rule" and status == "confirmed")
+        (typ == "rule" and status == "confirmed" and not item.get("mixed_authority"))
         or (typ == "decision" and status == "implemented")
     )
     return int(item.get("score", 0)), mandatory
@@ -457,12 +468,7 @@ def main() -> int:
         for domain in result.get("domains", [])
     })
 
-    rules = sorted({
-        result["id"] or result["path"]
-        for result in results
-        if result.get("artifact_type") == "rule"
-        and result.get("status") == "confirmed"
-    })
+    rules = applicable_rule_ids(results)
     decisions = sorted({
         result["id"] or result["path"]
         for result in results
@@ -472,6 +478,7 @@ def main() -> int:
     verification = sorted({
         target
         for result in results
+        if not result.get("mixed_authority")
         for target in result.get("verification", [])
     })
     architecture = [
@@ -495,6 +502,18 @@ def main() -> int:
     ]
 
     unknowns: list[str] = []
+    mixed_candidates = sorted({
+        str(result.get("path"))
+        for result in candidate_results
+        if result.get("mixed_authority") and result.get("path")
+    })
+    if mixed_candidates:
+        unknowns.append(
+            "Confirmed Rule artifact(s) contain explicitly unconfirmed sections: "
+            + ", ".join(mixed_candidates)
+            + ". Their file-level status is ambiguous; split confirmed and "
+            "candidate rules before treating them as applicable normative truth."
+        )
     if not candidate_results:
         unknowns.append(
             "Project Discovery found no matching knowledge artifact; expand search semantically."
@@ -584,6 +603,7 @@ def main() -> int:
                 "path": item["path"],
                 "id": item.get("id"),
                 "artifact_type": item["artifact_type"],
+                "mixed_authority": bool(item.get("mixed_authority", False)),
                 "title": item["title"],
                 "score": item["score"],
                 "reasons": item.get("reasons", []),

@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import sys
 
+from discover import mixed_rule_authority
 from runtime_exec import runtime_command
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -76,12 +77,29 @@ def evaluate(index: dict, *, deterministic_check: str) -> dict:
         for item in known_drift
     ]
 
+    mixed_rule_candidates = [
+        {
+            "id": d.get("id"),
+            "title": d.get("title"),
+            "path": d.get("path"),
+            "reason": (
+                "confirmed rule contains explicitly unconfirmed heading(s); "
+                "review and split by authority before treating the whole "
+                "document as normative"
+            ),
+        }
+        for d in docs
+        if mixed_rule_authority(d)
+    ]
+    semantic_review_targets.extend(mixed_rule_candidates)
+
     return {
         "deterministic_check": deterministic_check,
         "artifact_counts": dict(sorted(type_counts.items())),
         "status_counts": dict(sorted(status_counts.items())),
         "active_changes": active_changes,
         "known_drift": known_drift,
+        "mixed_rule_candidates": mixed_rule_candidates,
         "semantic_review_targets": semantic_review_targets,
     }
 
@@ -121,6 +139,7 @@ def main() -> int:
             print(f"- {kind}: {count}")
         print(f"Active changes: {len(result['active_changes'])}")
         print(f"Known drift: {len(result['known_drift'])}")
+        print(f"Mixed-authority rule candidates: {len(result['mixed_rule_candidates'])}")
         if result["semantic_review_targets"]:
             print("Semantic review targets:")
             for item in result["semantic_review_targets"]:

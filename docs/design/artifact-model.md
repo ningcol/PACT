@@ -70,7 +70,12 @@ Only fields that carry durable meaning should be added.
 candidate → confirmed → superseded | retired
 ```
 
-A candidate rule is not normative Product Truth.
+A candidate rule is not normative Product Truth. The Rule lifecycle is **file-scoped**, not
+paragraph- or heading-scoped. A confirmed file must not also contain unconfirmed
+business requirements. Keep uncertain material in a separate candidate Rule;
+a domain landing page can route to both without claiming confirmation.
+An explicit unconfirmed heading inside a confirmed Rule is an Audit/Context
+review warning, not a new per-section status protocol.
 
 ### Decision
 

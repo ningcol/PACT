@@ -76,6 +76,15 @@ Discovery may inspect a wider candidate pool than the final Context. Selection t
 
 Confirmed Product Rules and implemented Decisions are authority evidence. They are not silently dropped only because of the soft token budget; any resulting overage is recorded explicitly. Hard artifact-count limits remain hard.
 
+Confirmed Rule files that also have **explicitly unconfirmed headings** are flagged
+`mixed_authority: true` on the candidate artifact and surfaced under
+`known_unknowns`. Such a mixed file is **not** promoted to `applicable_rules`,
+does not receive confirmed-Rule soft-budget protection, and does not
+automatically contribute verification targets. This is a conservative signal
+for human/Agent review, not a machine proof of the semantic state of every
+section. Split mixed material into distinct confirmed and candidate Rule
+Artifacts instead of marking an entire page `confirmed`.
+
 The Context Envelope records:
 
 - `discovery_queries`;
