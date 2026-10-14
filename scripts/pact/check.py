@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from urllib.parse import unquote
 
+from cache import fingerprint_files
+from repository_files import repository_files
 from formats import parse_markdown_metadata
 from schema_validate import load_schema, validate_instance
 
@@ -62,6 +64,15 @@ def is_managed_markdown(path: pathlib.Path, root: pathlib.Path) -> bool:
     return relative in MANAGED_ROOT_FILES or relative.startswith(MANAGED_PREFIXES)
 
 
+def managed_markdown_paths(root: pathlib.Path) -> list[pathlib.Path]:
+    """Use the same Git/ignore-aware source set as Project Discovery."""
+    visible, _ = repository_files(root)
+    return [
+        path for path in visible
+        if path.suffix.lower() == ".md" and is_managed_markdown(path, root)
+    ]
+
+
 def read_artifact(path: pathlib.Path) -> Artifact | None:
     raw = path.read_text(encoding="utf-8")
     data, _, metadata_format = parse_markdown_metadata(raw)
@@ -73,13 +84,13 @@ def read_artifact(path: pathlib.Path) -> Artifact | None:
     return Artifact(path=path, pact=pact, metadata_format=metadata_format)
 
 
-def discover(root: pathlib.Path) -> tuple[list[Artifact], list[str]]:
+def discover(
+    root: pathlib.Path, paths: list[pathlib.Path] | None = None
+) -> tuple[list[Artifact], list[str]]:
     artifacts: list[Artifact] = []
     errors: list[str] = []
 
-    for path in sorted(root.rglob("*.md")):
-        if not is_managed_markdown(path, root):
-            continue
+    for path in paths if paths is not None else managed_markdown_paths(root):
         relative = rel(path, root)
         if relative.endswith("/TEMPLATE.md") or relative == "TEMPLATE.md":
             continue
@@ -87,6 +98,8 @@ def discover(root: pathlib.Path) -> tuple[list[Artifact], list[str]]:
             artifact = read_artifact(path)
             if artifact:
                 artifacts.append(artifact)
+        except OSError:
+            raise  # Retry a changed source set in the CLI, never mislabel it as bad TOML.
         except Exception as exc:
             errors.append(f"{relative}: invalid PACT front matter: {exc}")
 
@@ -227,7 +240,9 @@ def clean_link(raw: str) -> str:
     return unquote(value)
 
 
-def validate_links(root: pathlib.Path) -> list[str]:
+def validate_links(
+    root: pathlib.Path, paths: list[pathlib.Path] | None = None
+) -> list[str]:
     errors: list[str] = []
     root_resolved = root.resolve()
 
@@ -293,10 +308,29 @@ def main() -> int:
         print(f"PACT: cannot load artifact schema: {exc}", file=sys.stderr)
         return 2
 
-    artifacts, errors = discover(root)
-    errors.extend(validate_artifacts(artifacts, root))
-    if not args.artifact_only:
-        errors.extend(validate_links(root))
+    for attempt in range(3):
+        try:
+            paths = managed_markdown_paths(root)
+            initial = fingerprint_files(root, paths)
+            artifacts, errors = discover(root, paths)
+            errors.extend(validate_artifacts(artifacts, root))
+            if not args.artifact_only:
+                errors.extend(validate_links(root, paths))
+            updated = managed_markdown_paths(root)
+            if (
+                [rel(path, root) for path in updated]
+                != [rel(path, root) for path in paths]
+                or fingerprint_files(root, updated) != initial
+            ):
+                raise OSError("Markdown source set changed while checking")
+            break
+        except OSError as exc:
+            if attempt == 2:
+                print(
+                    f"PACT check: unstable Markdown source snapshot: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
 
     print(f"PACT: discovered {len(artifacts)} machine-readable artifact(s).")
 
