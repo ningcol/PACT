@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -41,6 +44,8 @@ class MixedAuthorityTests(unittest.TestCase):
             "## TBD: outstanding behavior",
             "# Unconfirmed: business meaning",
             "### Pending confirmation",
+            "## 待确认事项",
+            "## 待确认需求：门户页面",
         ):
             with self.subTest(heading=heading):
                 self.assertTrue(
@@ -52,6 +57,8 @@ class MixedAuthorityTests(unittest.TestCase):
             "## Confirmed\nDo not treat the word 待确认 as a heading.",
             "# Confirmed\n\n```markdown\n## 待确认\n```",
             "# Confirmed\n\n~~~markdown\n## Unconfirmed\n~~~",
+            "# Good\n\n````markdown\n```\n## 待确认\n```\n````",
+            "# Good\n\n~~~~markdown\n~~~\n## 未确认\n~~~\n~~~~",
             "## Confirmed\n### Candidate ideas (not a pending heading)",
             "  ## 待确认",  # four spaces: indented code, not an ATX heading
         )
@@ -75,6 +82,7 @@ class MixedAuthorityTests(unittest.TestCase):
         self.assertTrue(mixed["mixed_authority"])
         self.assertFalse(next(item for item in ranked if item["id"] == clean["id"])["mixed_authority"])
         self.assertEqual(context.applicable_rule_ids(ranked), [clean["id"]])
+        self.assertEqual(mixed["mixed_authority"], True
         self.assertEqual(context.knowledge_priority(mixed)[1], False)
         self.assertEqual(context.knowledge_priority(
             next(item for item in ranked if item["id"] == clean["id"])
@@ -93,6 +101,79 @@ class MixedAuthorityTests(unittest.TestCase):
             item.get("path") == mixed["path"]
             for item in report["semantic_review_targets"]
         ))
+
+
+
+class MixedAuthorityIntegrationTests(unittest.TestCase):
+    def test_initialized_project_keeps_mixed_rule_non_normative(self) -> None:
+        """End-to-end: Project Map -> Discovery -> Context -> Audit."""
+        init = ROOT / "scripts" / "pact" / "init.py"
+        with tempfile.TemporaryDirectory(prefix="pact-mixed-rule-") as tmp:
+            target = pathlib.Path(tmp) / "project"
+            target.mkdir()
+            (target / "README.md").write_text("# User project\n", encoding="utf-8")
+            initialized = subprocess.run(
+                [sys.executable, str(init), "--target", str(target), "--apply"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(
+                initialized.returncode, 0,
+                initialized.stdout + initialized.stderr,
+            )
+            rules = target / "docs" / "product" / "rules"
+            rules.mkdir(parents=True, exist_ok=True)
+            (rules / "home-mixed.md").write_text(
+                '+++\n[pact]\ntype = "rule"\nid = "RULE-HOME-MIXED"\n'
+                'status = "confirmed"\nverification = ["tests/mixed.py"]\n'
+                '+++\n# Home\n\n## 已确认\nWork.\n\n## 待确认\nQuestion.\n',
+                encoding="utf-8",
+            )
+            (rules / "home-clean.md").write_text(
+                '+++\n[pact]\ntype = "rule"\nid = "RULE-HOME-CLEAN"\n'
+                'status = "confirmed"\nverification = ["tests/clean.py"]\n'
+                '+++\n# Home\n\nThe existing confirmed behavior.\n',
+                encoding="utf-8",
+            )
+            def pact(*args: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(target / "pact.py"), *args],
+                    cwd=target, capture_output=True, text=True,
+                )
+
+            prepared = pact(
+                "context", "Home",
+                "--success", "Home behavior follows confirmed intent",
+                "--risk", "medium", "--no-code", "--json",
+            )
+            # context is an output command with --output; --json isn't
+            # part of its stable CLI.
+            if prepared.returncode != 0:
+                prepared = pact(
+                    "context", "Home",
+                    "--success", "Home behavior follows confirmed intent",
+                    "--risk", "medium", "--no-code",
+                    "--output", ".pact/cache/mixed-context.json",
+                )
+            self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+            context_file = target / ".pact" / "cache" / "mixed-context.json"
+            envelope = json.loads(context_file.read_text(encoding="utf-8"))
+            selected = {item["id"]: item for item in envelope["artifacts"] if item.get("id")}
+            self.assertTrue(selected["RULE-HOME-MIXED"]["mixed_authority"])
+            self.assertFalse(selected["RULE-HOME-CLEAN"]["mixed_authority"])
+            self.assertEqual(envelope["applicable_rules"], ["RULE-HOME-CLEAN"])
+            self.assertEqual(envelope["verification_targets"], ["tests/clean.py"])
+            self.assertTrue(any(
+                "mixed" in item.lower() or "unconfirmed" in item.lower()
+                for item in envelope["known_unknowns"]
+            ))
+
+            audited = pact("audit", "--json")
+            self.assertEqual(audited.returncode, 0, audited.stdout + audited.stderr)
+            report = json.loads(audited.stdout)
+            self.assertEqual(
+                [item["id"] for item in report["mixed_rule_candidates"]],
+                ["RULE-HOME-MIXED"],
+            )
 
 
 if __name__ == "__main__":
