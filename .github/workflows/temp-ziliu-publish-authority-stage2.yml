@@ -168,6 +168,13 @@ jobs:
           ctx = json.loads(context_path.read_text(encoding="utf-8"))
           knowledge = [a["path"] for a in ctx.get("artifacts", [])]
           code = [a["path"] for a in ctx.get("code_artifacts", [])]
+          exact = subprocess.run([sys.executable, "pact.py", "discover", "src/app/api/publish/route.ts", "--code", "--code-limit", "6", "--json"], capture_output=True, text=True)
+          if exact.returncode != 0:
+              raise AssertionError("Exact path discovery failed: " + exact.stderr)
+          exact_results = [a["path"] for a in json.loads(exact.stdout).get("code_results", [])]
+          inspect = json.loads(pathlib.Path("/tmp/ziliu-publish-inspect.json").read_text(encoding="utf-8"))
+          print("RETRIEVAL_DIAGNOSTIC=" + json.dumps({"task_queries": ctx.get("queries", []), "selected_code_paths": code, "code_candidate_hints": ctx.get("code_candidate_hints", []), "context_budget": ctx.get("context_budget", {}), "inspect_discovery_paths": [a.get("path") for a in inspect.get("discovery", {}).get("code_results", [])], "exact_source_query_code_paths": exact_results}, ensure_ascii=False))
+          assert "src/app/api/publish/route.ts" in exact_results, "Exact source index lookup also failed"
           rule = "docs/product/rules/publishing-success.md"
           assert rule in knowledge, "candidate Product Rule missing from Context: " + repr(knowledge)
           assert "src/app/api/publish/route.ts" in code, "server API route missing from Context: " + repr(code)
