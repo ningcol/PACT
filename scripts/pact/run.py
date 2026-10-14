@@ -60,7 +60,9 @@ def declared_source_hashes(root: pathlib.Path, sources: list[str]) -> list[dict]
     return recorded
 
 
-def external_source_count(root: pathlib.Path, command: list[str]) -> int:
+def external_source_count(
+    root: pathlib.Path, cwd: pathlib.Path, command: list[str]
+) -> int:
     """Conservatively detect direct external script/schema/config path arguments.
 
     This is a scope guard, not shell interpretation, process sandboxing or
@@ -68,6 +70,7 @@ def external_source_count(root: pathlib.Path, command: list[str]) -> int:
     open external resources that argv does not declare.
     """
     root = root.resolve()
+    cwd = cwd.resolve()
     found: set[str] = set()
     for arg in command:
         try:
@@ -83,7 +86,7 @@ def external_source_count(root: pathlib.Path, command: list[str]) -> int:
                 continue
             if not (source.is_absolute() or candidate_text.startswith(("..", "~"))):
                 continue
-            resolved = source.resolve() if source.is_absolute() else (root / source).resolve()
+            resolved = source.resolve() if source.is_absolute() else (cwd / source).resolve()
             try:
                 resolved.relative_to(root)
             except ValueError:
@@ -324,8 +327,8 @@ def main() -> int:
         output = ROOT / output
 
     try:
-        verification_sources = declared_source_hashes(cwd, args.source)
-        external_count = external_source_count(cwd, command)
+        verification_sources = declared_source_hashes(ROOT, args.source)
+        external_count = external_source_count(ROOT, cwd, command)
     except (OSError, ValueError) as exc:
         print(f"PACT run: invalid verification input: {exc}", file=sys.stderr)
         return 2
@@ -359,7 +362,7 @@ def main() -> int:
     finished = now_iso()
 
     try:
-        if declared_source_hashes(cwd, args.source) != verification_sources:
+        if declared_source_hashes(ROOT, args.source) != verification_sources:
             print(
                 "PACT run: declared verification source changed during execution; "
                 "no receipt published",
