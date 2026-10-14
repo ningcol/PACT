@@ -478,6 +478,7 @@ def main() -> int:
     verification = sorted({
         target
         for result in results
+        if not result.get("mixed_authority")
         for target in result.get("verification", [])
     })
     architecture = [
@@ -602,6 +603,7 @@ def main() -> int:
                 "path": item["path"],
                 "id": item.get("id"),
                 "artifact_type": item["artifact_type"],
+                "mixed_authority": bool(item.get("mixed_authority", False)),
                 "title": item["title"],
                 "score": item["score"],
                 "reasons": item.get("reasons", []),
