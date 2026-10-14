@@ -312,7 +312,6 @@ class CachePublishingSafetyTests(unittest.TestCase):
             json.loads(target.read_text(encoding="utf-8"))["version"], 1
         )
 
-
     def test_missing_snapshot_source_never_silently_hashes_to_success(self) -> None:
         vanished = self.root / "docs" / "vanished.md"
         with self.assertRaises(OSError):
@@ -337,7 +336,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
 
     def test_permanent_source_failure_does_not_publish_map(self) -> None:
         original, _ = self.run_builder("map")
-        self.write("docs/guide.md", "# Changed while scanning\\n")
+        self.write("docs/guide.md", "# Changed while scanning\n")
         with mock.patch.object(
             project_map,
             "parse_with_cache",
