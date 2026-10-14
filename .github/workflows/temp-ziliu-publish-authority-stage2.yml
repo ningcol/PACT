@@ -177,7 +177,8 @@ jobs:
           assert "src/app/api/publish/route.ts" in exact_results, "Exact source index lookup also failed"
           rule = "docs/product/rules/publishing-success.md"
           assert rule in knowledge, "candidate Product Rule missing from Context: " + repr(knowledge)
-          assert "src/app/api/publish/route.ts" in code, "server API route missing from Context: " + repr(code)
+          target_selected = "src/app/api/publish/route.ts" in code
+          hint_paths = [h["path"] for h in ctx.get("code_candidate_hints", [])]
           report = {
               "version": 1,
               "task_id": os.environ["TASK_ID"],
@@ -221,6 +222,9 @@ jobs:
               "task_id": os.environ["TASK_ID"],
               "knowledge_artifacts": len(knowledge),
               "knowledge_paths": knowledge,
+              "exact_route_selected_in_context": target_selected,
+              "exact_route_in_fallback_hints": "src/app/api/publish/route.ts" in hint_paths,
+              "retrieval_gate": "PASS" if target_selected else "FAIL_MISSING_CONTEXT_CODE",
               "code_artifacts": len(code),
               "code_paths": code,
               "known_unknowns": ctx.get("known_unknowns", []),
@@ -233,4 +237,9 @@ jobs:
               "live_provider_called": False,
               "human_value_metrics": "NOT_MEASURED",
           }, ensure_ascii=False, indent=2))
+          if not target_selected:
+              raise AssertionError(
+                  "PACT Context retrieval gate FAILED: exact source found by inspect/discover "
+                  "and exposed as a fallback hint, but NOT materialized under 12-code limit"
+              )
           PY
