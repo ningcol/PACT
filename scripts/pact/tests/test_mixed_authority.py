@@ -60,7 +60,7 @@ class MixedAuthorityTests(unittest.TestCase):
             "# Good\n\n````markdown\n```\n## 待确认\n```\n````",
             "# Good\n\n~~~~markdown\n~~~\n## 未确认\n~~~\n~~~~",
             "## Confirmed\n### Candidate ideas (not a pending heading)",
-            "  ## 待确认",  # four spaces: indented code, not an ATX heading
+            "    ## 待确认",  # four spaces: indented code, not an ATX heading
         )
         for text in cases:
             with self.subTest(text=text):
@@ -82,7 +82,7 @@ class MixedAuthorityTests(unittest.TestCase):
         self.assertTrue(mixed["mixed_authority"])
         self.assertFalse(next(item for item in ranked if item["id"] == clean["id"])["mixed_authority"])
         self.assertEqual(context.applicable_rule_ids(ranked), [clean["id"]])
-        self.assertEqual(mixed["mixed_authority"], True
+        self.assertTrue(mixed["mixed_authority"])
         self.assertEqual(context.knowledge_priority(mixed)[1], False)
         self.assertEqual(context.knowledge_priority(
             next(item for item in ranked if item["id"] == clean["id"])
