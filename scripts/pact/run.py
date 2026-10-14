@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from cache import file_sha256
 from schema_validate import load_schema, validate_instance
 from security import redact_argv
-from workspace import workspace_snapshot
+from workspace import git_root, workspace_snapshot
 from protocol_ids import validate_task_id
 
 
@@ -326,9 +326,12 @@ def main() -> int:
     if not output.is_absolute():
         output = ROOT / output
 
+    # The verified workspace may be a separately selected brownfield Git
+    # repository; never bind source files to the PACT implementation checkout.
+    source_root = git_root(cwd) or cwd
     try:
-        verification_sources = declared_source_hashes(ROOT, args.source)
-        external_count = external_source_count(ROOT, cwd, command)
+        verification_sources = declared_source_hashes(source_root, args.source)
+        external_count = external_source_count(source_root, cwd, command)
     except (OSError, ValueError) as exc:
         print(f"PACT run: invalid verification input: {exc}", file=sys.stderr)
         return 2
@@ -362,7 +365,7 @@ def main() -> int:
     finished = now_iso()
 
     try:
-        if declared_source_hashes(ROOT, args.source) != verification_sources:
+        if declared_source_hashes(source_root, args.source) != verification_sources:
             print(
                 "PACT run: declared verification source changed during execution; "
                 "no receipt published",
