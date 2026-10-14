@@ -922,6 +922,38 @@ def main() -> int:
     status_parser.add_argument("task_id")
     status_parser.add_argument("--json", action="store_true")
 
+    draft_parser = sub.add_parser(
+        "draft", help="create safe, explicitly incomplete completion review files"
+    )
+    draft_parser.add_argument("task_id")
+    draft_parser.add_argument("--json", action="store_true")
+
+    verify_parser = sub.add_parser(
+        "verify", help="run a command and record explicit acceptance-bound Evidence"
+    )
+    verify_parser.add_argument("task_id")
+    verify_parser.add_argument(
+        "--criterion",
+        dest="criteria",
+        action="append",
+        required=True,
+        help="acceptance criterion ID from prepared Task Contract; repeatable",
+    )
+    verify_parser.add_argument(
+        "--claim",
+        required=True,
+        help="literal claim the verification command is intended to support",
+    )
+    verify_parser.add_argument("--claim-id", help="optional unique Evidence ID")
+    verify_parser.add_argument(
+        "--kind",
+        choices=["test", "browser", "visual", "runtime", "contract",
+                 "architecture", "other"],
+        default="test",
+    )
+    verify_parser.add_argument("--json", action="store_true")
+    verify_parser.add_argument("verification_command", nargs=argparse.REMAINDER)
+
     args = parser.parse_args()
 
     if args.command == "prepare":
@@ -932,6 +964,12 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command in {"draft", "verify"}:
+        # These helpers depend on the prepared Task state/API but do not
+        # invent semantic Convergence or completed Owner Reports.
+        from task_workflow import draft, verify
+
+        return draft(args) if args.command == "draft" else verify(args)
     return task_status(args)
 
 
