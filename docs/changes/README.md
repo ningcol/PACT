@@ -17,7 +17,10 @@ docs/changes/
 └── abandoned/
 ```
 
-Use a change artifact for work large enough that another agent may need to resume or review it.
+Use a change artifact for work large enough that another agent may need to resume
+or review it. A plan records **how** work proceeds; a Decision Record records
+**why** a long-lived, non-obvious engineering choice must be preserved. A plan
+does not automatically require a new Decision Record.
 
 A change artifact can include:
 
