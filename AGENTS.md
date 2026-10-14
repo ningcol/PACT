@@ -33,6 +33,8 @@ python3 pact.py status
 python3 pact.py inspect "<remembered feature/business behavior>"
 python3 pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>
 # Add repeatable --accept / --constraint when the task has multiple explicit conditions.
+python3 pact.py task draft <TASK-ID>    # optional, explicitly incomplete scaffold
+python3 pact.py task verify <TASK-ID> --criterion AC-1 --claim "<specific check>" -- <command>
 python3 pact.py task finish <TASK-ID>
 ```
 
