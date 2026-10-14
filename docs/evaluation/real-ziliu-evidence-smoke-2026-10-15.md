@@ -44,7 +44,20 @@ for the human-required dimensions and baseline comparison discipline.
 
 ## Execution evidence
 
-See the workflow run on the proposed PR and rerun it on any PACT change that
-touches the guarded task/run/Evidence path. Record the exact successful run
-before claiming that this pilot passed. The human decision/overhead and
-live-product gates remain explicitly **unverified**.
+The first successful run from source commit
+`8626168195389d743d9df95ec28b91e8734267ce` was:
+
+- [Owner-Brownfield Evidence Smoke #38656102271](https://github.com/ningcol/PACT/actions/runs/38656102271): **PASS**
+- Source: historical pinned `ningcol/ziliu@7542c755ebb0987aeb1415dba2c9f7a71b173993`
+- `AC-1`: **PASS**, a real README check bound to its local source digest
+- Receipt input provenance: `verification_input_scope = "declared-files"`
+- Unreviewed `task finish`: **correctly blocked**, despite passing Evidence
+- Upstream tracked application code: **unchanged**
+
+The automated check is reproducible from PR
+[#184](https://github.com/ningcol/PACT/pull/184) or a manual workflow run,
+but each observation must be tied to its exact PACT commit. This does **not**
+establish live product behavior or performance improvements. The human owner
+comprehension, escalation and process-cost dimensions of
+[#28](https://github.com/ningcol/PACT/issues/28) and
+[#32](https://github.com/ningcol/PACT/issues/32) remain **unverified**.
