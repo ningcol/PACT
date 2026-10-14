@@ -176,6 +176,17 @@ def estimated_file_tokens(relative: str) -> int:
     return max((int(size) + 3) // 4, 1)
 
 
+def applicable_rule_ids(results: list[dict]) -> list[str]:
+    """Promote only wholly confirmed rule artifacts to normative Context."""
+    return sorted({
+        result.get("id") or result["path"]
+        for result in results
+        if result.get("artifact_type") == "rule"
+        and result.get("status") == "confirmed"
+        and not result.get("mixed_authority")
+    })
+
+
 def knowledge_priority(item: dict) -> tuple[int, bool]:
     """Preserve retrieval ranking; authority only affects soft-budget treatment."""
     typ = item.get("artifact_type")
@@ -457,13 +468,7 @@ def main() -> int:
         for domain in result.get("domains", [])
     })
 
-    rules = sorted({
-        result["id"] or result["path"]
-        for result in results
-        if result.get("artifact_type") == "rule"
-        and result.get("status") == "confirmed"
-        and not result.get("mixed_authority")
-    })
+    rules = applicable_rule_ids(results)
     decisions = sorted({
         result["id"] or result["path"]
         for result in results
