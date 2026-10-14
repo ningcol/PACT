@@ -18,8 +18,6 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
   truth classification is introduced.
 - Product guidance recommends separate confirmed/candidate Rule files.
 
-## Unreleased
-
 ### Verification input origin guard
 
 - `pact run` rejects direct external script/config source paths by default;
