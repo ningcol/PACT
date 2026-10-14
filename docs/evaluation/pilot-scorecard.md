@@ -126,6 +126,18 @@ A second real owner-project lifecycle is recorded in:
 
 It replays a real six-file historical ziliu change, compares baseline vs post-change TypeScript/Next.js verification, records near-budget Context pressure, exact changed-file attribution, and one malformed completion bundle that PACT correctly blocked before a corrected rerun completed. Human-only dimensions remain unmeasured.
 
+## Current Evidence smoke (machine-only)
+
+The October 2026
+[ziliu Evidence smoke](real-ziliu-evidence-smoke-2026-10-15.md)
+replays PACT `task prepare → task draft → task verify → task finish` in
+an isolated pinned real owner-maintained repository. Its narrow assertions
+exercise declared verification source hashes, AC-1 Evidence mapping, and
+the correct refusal to complete an unreviewed task. It is not a live business
+behavior check, a controlled baseline-vs-PACT productivity experiment, or
+an observation of owner clarification burden. Keep all human-only metrics
+marked unverified until directly observed.
+
 ## Blind query evaluation
 
 The owner-language -> code-language query experiments and the resulting retrieval design decisions are recorded in:
