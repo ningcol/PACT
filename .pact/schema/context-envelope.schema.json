@@ -115,6 +115,9 @@
           "estimated_tokens": {
             "type": "integer",
             "minimum": 1
+          },
+          "mixed_authority": {
+            "type": "boolean"
           }
         }
       }
