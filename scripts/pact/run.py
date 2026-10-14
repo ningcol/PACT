@@ -86,7 +86,10 @@ def external_source_count(
             if token.startswith("--") and "=" in token:
                 candidate_text = token.split("=", 1)[1]
             source = pathlib.Path(candidate_text).expanduser()
-            if source.suffix.lower() not in VERIFICATION_SOURCE_EXTENSIONS:
+            if (
+                source.suffix.lower() not in VERIFICATION_SOURCE_EXTENSIONS
+                and not source.name.startswith(".env")
+            ):
                 continue
             if not (source.is_absolute() or candidate_text.startswith(("..", "~"))):
                 continue
