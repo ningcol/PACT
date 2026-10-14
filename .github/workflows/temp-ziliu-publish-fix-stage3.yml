@@ -237,15 +237,25 @@ jobs:
           ctx=json.loads(pathlib.Path(prep["context"]).read_text())
           contract=json.loads(pathlib.Path(prep["contract"]).read_text())
           acceptance=contract["acceptance_criteria"]
-          assert {c["id"] for c in acceptance}=={"AC-1","AC-2","AC-3"}
+          # Constraints are also acceptance criteria; bind IDs from the actual
+          # prepared Task Contract, never guess the list or hardcode mappings.
+          assert [item["kind"] for item in acceptance]==[
+              "outcome","outcome","outcome","constraint"
+          ],acceptance
+          success_id,validation_id,scope_id,constraint_id=[
+              item["id"] for item in acceptance
+          ]
+          print("PREPARED_ACCEPTANCE_IDS="+str([
+              (item["id"],item["kind"],item["text"]) for item in acceptance
+          ]))
           for name in ("scope","contract","typescript","build"):
               receipt=json.loads((pathlib.Path(".pact/runs")/tid/(name+".json")).read_text())
               assert receipt["status"]=="pass" and receipt["exit_code"]==0,(name,receipt)
           definitions=[
-              ("EV-ZILIU-HTTP","The 10 actual handler/loopback contract tests pass, including 401/400 and non-success for four platforms.",["AC-1","AC-2"],"contract"),
-              ("EV-ZILIU-SCOPE","The patch contains only the three frozen route/test/CI files; no editor/extension modifications.",["AC-3"],"scope"),
-              ("EV-ZILIU-TSC","The patched application passes the TypeScript compiler.",["AC-1"],"typescript"),
-              ("EV-ZILIU-BUILD","The patched application passes isolated Next.js production build.",["AC-1"],"build"),
+              ("EV-ZILIU-HTTP","The 10 actual handler/loopback contract tests pass, including 401/400 and non-success for four platforms.",[success_id,validation_id,constraint_id],"contract"),
+              ("EV-ZILIU-SCOPE","The patch contains only the three frozen route/test/CI files; no editor/extension modifications.",[scope_id,constraint_id],"scope"),
+              ("EV-ZILIU-TSC","The patched application passes the TypeScript compiler.",[success_id],"typescript"),
+              ("EV-ZILIU-BUILD","The patched application passes isolated Next.js production build.",[success_id],"build"),
           ]
           claims=[{
               "id":id,"claim":claim,"required":True,"status":"pass","criteria":ids,
