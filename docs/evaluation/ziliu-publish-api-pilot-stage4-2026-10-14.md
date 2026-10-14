@@ -30,7 +30,52 @@
 
 ## CI observations
 
-**PENDING** at document creation. The PR must be updated from the actual immutable workflow run; never mark these checks as pass without the run evidence.
+**Observed exact audit run:** [GitHub Actions run 38529359870](https://github.com/ningcol/PACT/actions/runs/38529359870) completed **SUCCESS** on Stage 4 initial PR revision `1d5f4faea196d0afbc5c7c5975027c3645d9c72d`.
+
+### Packaged artifact + caller inventory
+
+- Git tracked **180 files**. Apart from the publishing route itself, **140 plain-text files** were scanned for literal `/api/publish` or `api/publish`: **zero matches**.
+- The actual tracked `public/ziliu-extension-v1.3.3.zip` was opened **read-only**; **29 code/config/HTML text members** inspected: **zero literal endpoint matches**. ZIP member execution, extension browser startup and external network access did not occur.
+- Scanned binary/oversize path exclusions are logged by name (mostly images and the ZIP itself); ZIP text members were separately scanned. This is still not evidence about older installed archives, dynamically composed URLs, private consumers, gateways or real request traffic.
+
+### Real Next.js `next start` response comparison
+
+Both immutable versions passed a production Next.js build and started on **127.0.0.1:31857**. The runner used the real NextAuth JWT encoding and session decoding with a short-lived **synthetic test JWT** and intentionally blank remote Turso configuration (local-only SQLite). This is materially stronger than a bare handler mock but not a genuine user login, browser session or Vercel deployment.
+
+| Actual HTTP request | Old Git source | Patched source | Interpretation |
+| --- | --- | --- | --- |
+| Unauthenticated POST | 401 / `success:false` | 401 / `success:false` | Preserved |
+| Authenticated POST, invalid title | 400 / `success:false` | 400 / `success:false` | Preserved |
+| Authenticated POST, invalid platform enum | 400 / `success:false` | 400 / `success:false` | Preserved |
+| Authorized valid POST to WeChat | 200 / `success:true`, `data` | 501 / `success:false`, `error` | Deliberately breaking response contract |
+| Authorized valid POST to Zhihu | 200 / `success:true`, `data` | 501 / `success:false`, `error` | Deliberately breaking response contract |
+| Authorized valid POST to Juejin | 200 / `success:true`, `data` | 501 / `success:false`, `error` | Deliberately breaking response contract |
+| Authorized valid POST to Knowledge Planet | 200 / `success:true`, synthetic group `results` | 501 / `success:false`, `error` | Deliberately breaking response contract |
+| GET | 405 | 405 | Preserved |
+| OPTIONS | 204, `Allow: OPTIONS, POST` | 204, same `Allow` | Preserved |
+
+`Content-Type: application/json` was observed on relevant POST responses. The cross-origin OPTIONS probe with a synthetic `chrome-extension://` Origin received **no Access-Control-Allow-Origin header on either version**. This appears to be a **pre-existing cross-origin limitation of this route**, not a regression introduced by PR #1. Raw Node clients do not enforce browser CORS, so the local probe does not establish whether a browser extension can invoke this API.
+
+### Exact source/runner boundaries
+
+- The runner verified the only three product patch paths: `src/app/api/publish/route.ts`, contract tests, and CI workflow; editor/extension code remains untouched.
+- No production database, real account, Vercel project settings, provider token, publishing event, or external service was contacted. Source and ZIP static scans prove only absence of **literal** callers in the inspected artifacts.
+- No PACT runtime changes were needed to run this audit. Stage 3 PACT acceptance remains independently backed by [complete:true](https://github.com/ningcol/PACT/actions/runs/38525315177).
+
+### Release gates — technical audit versus actual deployment decision
+
+| Gate | Stage 4 status | Next action outside this GitHub-only test |
+| --- | --- | --- |
+| Real Next.js unchanged 401/400/405/OPTIONS | **PASS** | Retain as build-time acceptance |
+| Four platforms truthfully reject unimplemented provider calls | **PASS** | Keep 501/non-success contract explicit |
+| Current tracked + released ZIP literal-caller census | **PASS within static scope** | Do not infer no outside callers |
+| Inventory actual production/staging `/api/publish` use | **UNKNOWN — RELEASE HOLD** | Authorized operator reviews aggregate request telemetry and clients across a representative traffic period, without sharing credentials or personal request data |
+| External SDK/client handling of new 501 and body | **UNKNOWN — RELEASE HOLD** | Confirm any known integration treats 501 as non-success, has bounded retries, and doesn't falsely mark published |
+| Real staging NextAuth/browser extension end-to-end | **NOT RUN — RELEASE HOLD** | Check login/session and editor-to-extension path in approved isolated staging before public deploy |
+| Monitoring and rollback plan | **NOT APPROVED — RELEASE HOLD** | Prepare 5xx/501 dashboards, safe abort/canary path; avoid rolling back silently to the old false-success behavior |
+| PACT economic/human outcomes | **NOT MEASURED** | Continue #28/#32 real owner observations; CI speed isn't a before/after value result |
+
+**Technical outcome: PASS for isolated compatibility verification. Operational decision: HOLD — do not deploy or merge based on this test alone.**
 
 ## Risk disposition and stop rule
 
