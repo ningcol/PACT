@@ -952,9 +952,18 @@ def main() -> int:
         default="test",
     )
     verify_parser.add_argument("--json", action="store_true")
-    verify_parser.add_argument("verification_command", nargs=argparse.REMAINDER)
-
-    args = parser.parse_args()
+    # Split the subprocess argv at the explicit '--' sentinel. A positional
+    # argparse.REMAINDER would greedily swallow --claim/--criterion appearing
+    # after the task ID, bypassing option validation.
+    raw_args = sys.argv[1:]
+    if raw_args and raw_args[0] == "verify" and "--" in raw_args:
+        boundary = raw_args.index("--")
+        args = parser.parse_args(raw_args[:boundary])
+        args.verification_command = raw_args[boundary + 1:]
+    else:
+        args = parser.parse_args(raw_args)
+        if args.command == "verify":
+            args.verification_command = []
 
     if args.command == "prepare":
         if args.files and args.base:
