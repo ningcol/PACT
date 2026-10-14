@@ -40,6 +40,16 @@ If the map disagrees with repository artifacts, rebuild the map.
 
 A matching source fingerprint is necessary but not sufficient to reuse a cache. PACT verifies expected document paths and essential record fields before considering the Project Map fresh. A structurally corrupted index is rebuilt using repository Markdown as the input. Index and per-file cache files are atomically replaced one by one; no joint multi-cache transaction or tamper-proof guarantee is implied.
 
+Source enumeration is shared with deterministic Markdown checks: in Git
+repositories, tracked and non-ignored untracked files are candidates, while
+project-specific transient files belong in `.gitignore`. Do not globally
+exclude names such as `tmp*` that could hide tracked project truth. A vanished
+or changing source triggers a bounded whole-scan retry; after three unstable
+attempts the operation fails without publishing a new Project Map. The
+input-list/content fingerprint is checked again before publication. This is
+best-effort consistency under noncooperating writers, **not** an atomic
+filesystem snapshot or a lock across all source files.
+
 ## 3. Discovery sources
 
 v1 indexes repository Markdown plus PACT metadata:
