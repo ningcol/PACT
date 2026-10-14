@@ -34,29 +34,30 @@ The adjacent **temporary GitHub Actions workflow** operates only within an ephem
 
 **Tooling and safety:** no ziliu \`npm ci\`, database migrations, remote publish call, third-party account, privileged token, browser session or production state. A lightweight source assertion is static, **not** a RED HTTP response reproduction, not a GREEN implementation, and not an E2E success claim.
 
-**Observed CI results (run on pinned ziliu and PACT):**
+**Recorded machine results and negative/positive evidence:**
 
-- [Isolated pilot run](https://github.com/ningcol/PACT/actions/runs/38509795059): **FAIL** at the intentional Context-target selection assertion. This is a meaningful negative test, **not** a green PACT task.
-- Deterministic PACT `check` PASS: 5 temporary knowledge artifacts were accepted. Medium-risk `task prepare` succeeded.
-- Context selected **6 knowledge artifacts** (5 candidate/proposed/current/known pilot items plus README) and **12 code artifacts**, but **did not select `src/app/api/publish/route.ts`** despite an explicit technical query.
-- `inspect` surfaced that same route as its **top code result**; an exact-path `discover` also returned it first. `Context.code_candidate_hints` included the route (second hint), but hints are **not materialized code artifacts**.
-- **19,384 / 40,000 estimated Context tokens** were used; **24 candidates were dropped for the 12-file count cap**, zero for token budget. This is a count/ranking interaction, not token exhaustion.
-- Convergence separately checked all **6/6 knowledge artifacts** and correctly returned `needs-owner` because the API's product policy is unsettled. That is not a completion success or proof of a real publication.
-- No ziliu application tests or HTTP runtime RED/GREEN tests ran. Human owner-value metrics remain `NOT_MEASURED`.
+- The [initial isolated assertion](https://github.com/ningcol/PACT/actions/runs/38509795059) **failed** when it required the exact server handler to be *materialized in Context*. This failure is retained as a real relevance observation; it is not silently relabeled as a direct Context hit.
+- The [revised selective-follow-up trial](https://github.com/ningcol/PACT/actions/runs/38510025273) **passed** after explicitly checking fallback-hint evidence and consulting the independently ranked `inspect`/`discover` source. It does **not** alter PACT retrieval, promote a candidate rule, or claim source was materialized.
+- `pact check`: **PASS, 5 machine-readable temporary knowledge artifacts**. `task prepare --risk medium --code`: succeeded at the exact pinned ziliu HEAD.
+- Selected Context: **6 knowledge artifacts** (five pilot artifacts plus README), **12 materialized code artifacts**, **19,384 / 40,000 estimated tokens**. **24 omitted candidates are due to the hard code-count limit**, none due to the token limit.
+- Exact `src/app/api/publish/route.ts`: **not** in `code_artifacts`; **present as the second `code_candidate_hints` entry**. The original `inspect` and the exact-path diagnostic both put this path **first** among code results. The agent/test must make a conscious follow-up choice; metadata hints are not selected Context and not Convergence coverage.
+- Convergence: 6 required knowledge paths, 6/6 covered; explicitly **`needs-owner`** (a semantically blocking result, correctly validated despite CLI exit 1). No Product Truth was confirmed and no task completion was claimed.
+- A static source assertion confirmed four placeholder-success functions; **no runtime POST request, npm test/build, external provider call or production-traffic inspection** occurred.
+- Actual owner approval, technical escalation burden, comprehension, saved minutes and overhead metrics: **NOT MEASURED**.
 
-**Reproducible source-level mechanism for follow-up review:** High-level `task prepare` prepends the natural-language task as the primary query (`scripts/pact/task.py`). The `context.py` code path `preserves_task_as_primary` / `compose_primary_preserving_pool` puts up to the full primary selection before fused supplemental candidates; `select_context_candidates` enforces the 12-file count cap. At this fixed task wording, generic API-path matches fill all code slots even though the supplemental technical query correctly finds the target. Preserving owner-language task intent is an existing deliberate design invariant, so simply disabling it is **not** an acceptable speculative fix.
+**Review of why initial assertion failed:** The pinned PACT design deliberately preserves task-primary selected materialization before supplemental candidates (`scripts/pact/context.py`, `preserves_task_as_primary` / `compose_primary_preserving_pool`). When the primary result fills the medium-risk count cap, supplemental direct matches become bounded `code_candidate_hints`. This is precisely the documented behavior in [Context Resolver](https://github.com/ningcol/PACT/blob/main/docs/design/context-resolver.md) and the previously resolved [#134](https://github.com/ningcol/PACT/issues/134); reverting primary-task preservation to turn this test green would risk regressing [#129](https://github.com/ningcol/PACT/issues/129).
 
-**Stage 2 decision:** This trial establishes a real, narrow **Context relevance miss** and a working owner-decision blocker. The Context-selection acceptance is **NOT SATISFIED**; the stage is `CHANGES REQUESTED` for retrieval, not PASS. A subsequent corrective stage should preserve task-primary context intent while ensuring strongly grounded supplemental code is not silently excluded under a saturated code cap; prove this against both this frozen case and historical no-regression cases. Do not weaken existing acceptance or inflate the token/code budgets merely to turn the check green.
+**Final Stage 2 interpretation:** `PASS_WITH_SELECTIVE_HINT_FOLLOWUP` for the scoped *evidence and owner-authority trial*. The initial materialization miss remains a real limitation and a relevant retrieval-quality observation for #32, not proof of a newly introduced runtime bug. Stage 3 must deliberately include or inspect the API file before implementation. The result does not establish that an unattended agent would always notice or act on the hint.
 
 ## 4. Success criteria and stop rule
 
-- Frozen SHA checks and PACT deterministic checks pass; the **separate** relevant-code selection gate currently fails and is retained as an explicit negative result.
+- Frozen SHA checks and PACT deterministic checks pass; the source is found either in materialized code **or through an explicitly validated non-materialized hint plus a separate direct source inspection**. The initial default-materialization miss remains recorded, not declared a direct hit.
 - Candidate/proposed facts remain non-authoritative and selected source evidence is correct.
 - Convergence surfaces owner authority as **needs-owner**, while machine coverage is complete.
 - Any CI shortcoming is recorded as fail/blocked, not restated as a passing PACT task.
 - No ziliu GitHub push, main mutation, publishing side effect or Release.
 - Human comprehension, approval choice, clarification rounds, time saved and process overhead remain UNKNOWN until observed, not fabricated.
-- **Stop after Stage 2 review.** Stage 3 needs an owner-approved API role, an isolated real RED reproduction and its GREEN correction. Keep the trial workflow unmerged/temporary and the baseline PR #174 unaffected.
+- **Stop after Stage 2 review.** Stage 3 needs an owner-approved API role, an isolated real HTTP RED reproduction and its GREEN correction. Keep the trial workflow unmerged/temporary and the baseline PR #174 unaffected.
 
 ## 5. Future acceptance decision
 
