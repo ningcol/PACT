@@ -82,11 +82,11 @@ review warning, not a new per-section status protocol.
 ```text
 proposed → implemented | rejected
 implemented → superseded | archived
+```
 
 An explicitly superseded Decision becomes an Audit retention-review candidate,
 not an instruction to archive it. Archiving must preserve the history of
 trade-offs and explicit references.
-```
 
 ### Change
 
