@@ -366,6 +366,118 @@ class MultiQueryRetrievalTests(unittest.TestCase):
         self.assertEqual(fused[0]["relation"], "direct-match")
         self.assertEqual(fused[0]["confidence"], "direct")
 
+    def test_generic_query_prefers_current_decisions(self) -> None:
+        def decision(path: str, status: str, ident: str) -> dict:
+            return {
+                "path": path,
+                "artifact_type": "decision",
+                "id": ident,
+                "status": status,
+                "title": "Cache rationale",
+                "text": "cache constraints and limits",
+                "domains": [],
+                "aliases": [],
+            }
+
+        results = discover.ranked_knowledge_results(
+            {
+                "documents": [
+                    decision(
+                        ".agents/decisions/archived/old.md",
+                        "archived",
+                        "DEC-OLD",
+                    ),
+                    decision(
+                        ".agents/decisions/implemented/old.md",
+                        "superseded",
+                        "DEC-SUPERSEDED",
+                    ),
+                    decision(
+                        ".agents/decisions/implemented/current.md",
+                        "implemented",
+                        "DEC-CURRENT",
+                    ),
+                ],
+            },
+            "cache",
+            limit=3,
+        )
+        self.assertEqual(
+            [item["id"] for item in results],
+            ["DEC-CURRENT", "DEC-OLD", "DEC-SUPERSEDED"],
+        )
+        self.assertNotIn(
+            "historical decision (not current guidance)", results[0]["reasons"]
+        )
+        single = discover.ranked_knowledge_results(
+            {
+                "documents": [
+                    decision(
+                        ".agents/decisions/archived/old.md",
+                        "archived",
+                        "DEC-OLD",
+                    ),
+                    decision(
+                        ".agents/decisions/implemented/current.md",
+                        "implemented",
+                        "DEC-CURRENT",
+                    ),
+                ],
+            },
+            "cache",
+            limit=1,
+        )
+        self.assertEqual([item["id"] for item in single], ["DEC-CURRENT"])
+        for item in results[1:]:
+            self.assertIn(
+                "historical decision (not current guidance)", item["reasons"]
+            )
+
+    def test_exact_historical_lookup_is_not_penalized_or_hidden(self) -> None:
+        historical = {
+            "path": ".agents/decisions/archived/old.md",
+            "artifact_type": "decision",
+            "id": "DEC-CACHE-OLD",
+            "status": "archived",
+            "title": "Previous cache boundary",
+            "aliases": ["old cache trade-off"],
+            "text": "cache reasoning remains useful as history",
+        }
+        for query in (
+            "DEC-CACHE-OLD", "Previous cache boundary", "old cache trade-off"
+        ):
+            score, reasons = discover.score_document(historical, query)
+            self.assertNotIn(
+                "historical decision (not current guidance)", reasons
+            )
+            self.assertGreater(score, 100)
+
+        generic = discover.ranked_knowledge_results(
+            {"documents": [historical]},
+            "cache",
+            limit=1,
+        )
+        self.assertEqual([item["id"] for item in generic], ["DEC-CACHE-OLD"])
+        self.assertEqual(generic[0]["status"], "archived")
+
+    def test_rejected_decision_remains_a_current_warning_not_old_history(self) -> None:
+        rejected = {
+            "path": ".agents/decisions/rejected/avoid.md",
+            "artifact_type": "decision",
+            "id": "DEC-REJECTED",
+            "status": "rejected",
+            "title": "Cache alternative",
+            "aliases": [],
+            "text": "cache alternative rejected for correctness",
+        }
+        current = {**rejected, "status": "implemented"}
+        rejected_score, rejected_reasons = discover.score_document(rejected, "cache")
+        current_score, _ = discover.score_document(current, "cache")
+        self.assertEqual(rejected_score, current_score)
+        self.assertNotIn(
+            "historical decision (not current guidance)", rejected_reasons
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

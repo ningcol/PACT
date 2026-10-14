@@ -6,6 +6,20 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Durable Decision retention and focused retrieval
+
+- Decision Records are now guidance for genuinely long-lived, non-derivable
+  engineering rationale, not default notes for every substantial change.
+  Plans and progress remain in Change/Task artifacts.
+- Generic discovery queries softly downrank decisions marked `archived` or
+  `superseded`, without hiding historical records or degrading exact
+  ID/title/alias lookups. Rejected alternatives retain their search weight.
+  Lifecycle status is still advisory, not proof of current product truth.
+- Agent bootstrap no longer recommends a fixed number of query expansions.
+  Extra hypotheses are used only when they improve retrieval.
+- Focused regressions cover search budgets, history lookups and rejected
+  decisions; this change adds no CLI commands, schemas or mandatory gate.
+
 ### Explicit Convergence removal disposition (R05)
 
 - `updated` now requires an existing, hash-changed Context artifact; a missing file can no longer pass as an update.
