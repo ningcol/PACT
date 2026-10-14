@@ -27,11 +27,10 @@ def fingerprint_files(root: pathlib.Path, paths: Iterable[pathlib.Path]) -> str:
     """
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda p: p.as_posix()):
-        try:
-            relative = path.relative_to(root).as_posix()
-            content_sha = file_sha256(path)
-        except (OSError, ValueError):
-            continue
+        # Never treat an unreadable/disappearing input as an absent source.
+        # A fresh index must represent the full enumerated source set.
+        relative = path.relative_to(root).as_posix()
+        content_sha = file_sha256(path)
         digest.update(relative.encode("utf-8", errors="surrogateescape"))
         digest.update(b"\0")
         digest.update(content_sha.encode("ascii"))
