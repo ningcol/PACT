@@ -107,6 +107,21 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         score += 20
         reasons.append("all query terms matched")
 
+    # Preserve historical rationale without letting it compete equally with
+    # current guidance in a generic task query. Explicit ID/title/alias lookups
+    # still retrieve historical decisions at their full lexical relevance.
+    # Rejected decisions are intentionally not demoted: their rationale may
+    # still prohibit a repeatedly tempting alternative.
+    if (
+        score > 0
+        and doc.get("artifact_type") == "decision"
+        and doc.get("status") in {"archived", "superseded"}
+        and q not in {ident, title}
+        and q not in aliases
+    ):
+        score = max(score // 2, 1)
+        reasons.append("historical decision (not current guidance)")
+
     return score, reasons
 
 
