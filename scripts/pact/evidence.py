@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import hashlib
 import sys
 
 from schema_validate import load_schema, validate_instance
@@ -54,6 +55,7 @@ def verify_item(
         "execution_backed": False,
         "ci_metadata": False,
         "workspace_bound": False,
+        "external_input": False,
     }
 
     if provenance == "manual":
@@ -89,6 +91,26 @@ def verify_item(
         if schema_errors:
             return errors, metrics
 
+        # The general worktree identity remains authoritative. Explicit
+        # source digests add a readable, narrower audit trail and reject
+        # forged/out-of-repository source paths.
+        for source in run_receipt.get("verification_sources", []):
+            name = source["path"]
+            try:
+                if pathlib.Path(name).is_absolute():
+                    raise ValueError("declared source path must be relative")
+                resolved = resolve_ref(root, name)
+                if not resolved.is_file() or resolved.is_symlink():
+                    raise ValueError("declared source is missing or a symlink")
+                actual = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                if actual != source["sha256"]:
+                    raise ValueError("declared source digest has changed")
+            except (OSError, ValueError) as exc:
+                errors.append(f"run receipt {ref} source {name!r}: {exc}")
+
+        metrics["external_input"] = (
+            run_receipt.get("verification_input_scope") == "external-opt-in"
+        )
         exit_code = run_receipt.get("exit_code")
         status = run_receipt.get("status")
         if (exit_code == 0) != (status == "pass"):
@@ -177,6 +199,8 @@ def provenance_review(
         machine_count = 0
         ci_count = 0
         workspace_bound_count = 0
+        external_count = 0
+        bounded_without_external = 0
 
         for index, item in enumerate(refs):
             item_errors, metrics = verify_item(
@@ -193,6 +217,10 @@ def provenance_review(
             machine_count += int(metrics["execution_backed"])
             ci_count += int(metrics["ci_metadata"])
             workspace_bound_count += int(metrics["workspace_bound"])
+            external_count += int(metrics["external_input"])
+            bounded_without_external += int(
+                metrics["workspace_bound"] and not metrics["external_input"]
+            )
 
         if machine_count:
             execution_backed_claims += 1
@@ -200,6 +228,18 @@ def provenance_review(
             ci_metadata_claims += 1
         if workspace_bound_count:
             workspace_bound_claims += 1
+
+        if (
+            claim.get("required")
+            and status == "pass"
+            and risk in {"medium", "high"}
+            and external_count
+            and bounded_without_external == 0
+        ):
+            policy_gaps.append(
+                f"{claim_id}: external verification sources were explicitly allowed "
+                "but lack repository-local provenance; rerun with trusted inputs"
+            )
 
         if (
             claim.get("required")

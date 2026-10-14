@@ -6,6 +6,15 @@ The Evidence layer answers:
 
 > What was actually checked, what passed, what failed, and what could not be verified?
 
+A `pact run` receipt binds a command result to the exact inspected workspace.
+For replayability it can additionally declare repository-local verification
+source paths with `--source`; their file hashes are checked both at execution
+and when referenced as Evidence. External script/config paths are refused by
+default, or explicitly recorded as `external-opt-in` for diagnostics. Those
+external-input receipts cannot alone prove medium/high-risk required claims.
+A receipt is **not** a hermetic execution or a guarantee that arbitrary
+runtime environment dependencies can be reproduced.
+
 ## 1. Evidence is not agent opinion
 
 Invalid:

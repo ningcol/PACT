@@ -31,6 +31,22 @@ Evidence rather than being rewritten as success. Manual review of the
 Evidence-to-outcome relationship, Convergence and Owner Report is still
 required. Existing advanced primitives remain available.
 
+### Verification input provenance
+
+By default `pact run` refuses directly named external script/config/schema
+paths, including file paths embedded in simple shell command strings.
+`--source <repo-relative-path>` records the SHA256 of an explicit verification
+file and rechecks it after the command; if the file changes, no receipt is
+published. `task verify` forwards these declarations to `pact run`.
+
+`--allow-external-inputs` explicitly permits those paths for diagnostics,
+marking the receipt `external-opt-in`. A medium/high-risk required pass
+claim cannot use **only** such receipts to satisfy completion Evidence.
+Existing v2 receipts without these optional provenance fields remain
+readable. Opaque commands, interpreter versions, shell expansions, network
+dependencies and all implicit environment inputs are not attested; neither
+a `pact run` success nor declared file hashes guarantee portable replay.
+
 ## Task state preflight and repository boundaries
 
 High-level prepared task state is repository-owned. Before preparation or task-backed reads/writes, PACT checks that its `.pact/tasks` root (and its `.pact` ancestor) does not traverse a symlink, a non-directory component, or a path outside the repository. `task prepare` additionally checks `.pact/completions` and `.pact/tmp`. Default completion state in `task finish` and `task status` is subject to the same root boundary. Explicit custom completion bundles remain supported according to their existing CLI contract.

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -15,9 +16,10 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from cache import file_sha256
 from schema_validate import load_schema, validate_instance
 from security import redact_argv
-from workspace import workspace_snapshot
+from workspace import git_root, workspace_snapshot
 from protocol_ids import validate_task_id
 
 
@@ -25,6 +27,78 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "run-receipt.schema.json"
 DIRECT_CHILD_TERMINATE_GRACE_SECONDS = 2.0
 OUTPUT_DRAIN_GRACE_SECONDS = 3.0
+
+
+VERIFICATION_SOURCE_EXTENSIONS = {
+    ".py", ".sh", ".js", ".mjs", ".cjs", ".ts", ".json", ".toml",
+    ".yaml", ".yml", ".sql", ".md", ".env", ".ps1",
+}
+
+
+def declared_source_hashes(root: pathlib.Path, sources: list[str]) -> list[dict]:
+    """Hash explicitly declared project-local verification inputs."""
+    root = root.resolve()
+    recorded: list[dict] = []
+    seen: set[str] = set()
+    for raw in sources:
+        relative = pathlib.Path(raw)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ValueError(f"verification source must be repository-relative: {raw!r}")
+        candidate = root / relative
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"verification source escapes repository: {raw!r}") from exc
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError(f"verification source must be a regular repository file: {raw!r}")
+        name = candidate.relative_to(root).as_posix()
+        if name in seen:
+            raise ValueError(f"duplicate declared verification source: {name}")
+        seen.add(name)
+        recorded.append({"path": name, "sha256": file_sha256(candidate)})
+    return recorded
+
+
+def external_source_count(
+    root: pathlib.Path, cwd: pathlib.Path, command: list[str]
+) -> int:
+    """Conservatively detect direct external script/schema/config path arguments.
+
+    This is a scope guard, not shell interpretation, process sandboxing or
+    dependency attestation. An opaque script string or subprocess may still
+    open external resources that argv does not declare.
+    """
+    root = root.resolve()
+    cwd = cwd.resolve()
+    found: set[str] = set()
+    for arg in command:
+        # argv items are already individual tokens: preserve a pathname
+        # containing spaces, then additionally inspect simple shell fragments.
+        tokens = [arg]
+        if " " in arg:
+            try:
+                tokens.extend(shlex.split(arg))
+            except ValueError:
+                pass
+        for token in tokens:
+            candidate_text = token
+            if token.startswith("--") and "=" in token:
+                candidate_text = token.split("=", 1)[1]
+            source = pathlib.Path(candidate_text).expanduser()
+            if (
+                source.suffix.lower() not in VERIFICATION_SOURCE_EXTENSIONS
+                and not source.name.startswith(".env")
+            ):
+                continue
+            if not (source.is_absolute() or candidate_text.startswith(("..", "~"))):
+                continue
+            resolved = source.resolve() if source.is_absolute() else (cwd / source).resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                found.add(str(resolved))
+    return len(found)
 
 
 def now_iso() -> str:
@@ -220,6 +294,14 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--cwd", help="command working directory; defaults to repository root")
     parser.add_argument(
+        "--source", action="append", default=[],
+        help="repository-relative script/schema/config file used by verification; repeatable",
+    )
+    parser.add_argument(
+        "--allow-external-inputs", action="store_true",
+        help="explicitly allow external script/config paths; receipt records untrusted scope",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="do not replay captured command stdout/stderr to the terminal",
@@ -251,6 +333,23 @@ def main() -> int:
     if not output.is_absolute():
         output = ROOT / output
 
+    # The verified workspace may be a separately selected brownfield Git
+    # repository; never bind source files to the PACT implementation checkout.
+    source_root = git_root(cwd) or cwd
+    try:
+        verification_sources = declared_source_hashes(source_root, args.source)
+        external_count = external_source_count(source_root, cwd, command)
+    except (OSError, ValueError) as exc:
+        print(f"PACT run: invalid verification input: {exc}", file=sys.stderr)
+        return 2
+    if external_count and not args.allow_external_inputs:
+        print(
+            "PACT run: external script/schema/config path detected; "
+            "declare project-local sources or explicitly use --allow-external-inputs",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
         workspace_before = workspace_snapshot(cwd)
     except Exception as exc:
@@ -273,6 +372,18 @@ def main() -> int:
     finished = now_iso()
 
     try:
+        if declared_source_hashes(source_root, args.source) != verification_sources:
+            print(
+                "PACT run: declared verification source changed during execution; "
+                "no receipt published",
+                file=sys.stderr,
+            )
+            return 2
+    except (OSError, ValueError) as exc:
+        print(f"PACT run: cannot recheck verification sources: {exc}", file=sys.stderr)
+        return 2
+
+    try:
         workspace_after = workspace_snapshot(cwd)
     except Exception as exc:
         print(f"PACT run: cannot fingerprint workspace after command: {exc}", file=sys.stderr)
@@ -289,6 +400,13 @@ def main() -> int:
         "argv": persisted_argv,
         "argv_redacted": True,
         "redacted_argument_count": redacted_count,
+        "verification_sources": verification_sources,
+        "verification_input_scope": (
+            "external-opt-in" if external_count
+            else "declared-files" if verification_sources
+            else "unattributed"
+        ),
+        "external_input_count": external_count,
         "cwd": str(cwd),
         "started_at": started,
         "finished_at": finished,

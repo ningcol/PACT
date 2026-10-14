@@ -80,9 +80,10 @@ python3 pact.py task prepare "fix province switching" \
 python3 pact.py task draft <TASK-ID>
 
 # Run an explicit check and attach its receipt to chosen acceptance criterion:
-python3 pact.py task verify <TASK-ID> \\
-  --criterion AC-1 \\
-  --claim "The targeted test command passes" \\
+python3 pact.py task verify <TASK-ID> \
+  --criterion AC-1 \
+  --claim "The targeted test command passes" \
+  --source tests/test_feature.py \
   -- python3 -m unittest tests.test_feature
 
 # After reviewing Evidence + Convergence + Owner Report semantically:
