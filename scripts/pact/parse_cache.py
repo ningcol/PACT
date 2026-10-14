@@ -68,10 +68,9 @@ def parse_with_cache(
 
     for path in paths:
         relative = path.relative_to(root).as_posix()
-        try:
-            current_signature = signature(path)
-        except OSError:
-            continue
+        # A visible source that disappears must trigger a scan retry, not
+        # silently vanish from a successfully published index.
+        current_signature = signature(path)
 
         previous = old_entries.get(relative)
         if (
@@ -86,6 +85,12 @@ def parse_with_cache(
         else:
             value = parser(path)
             parsed_count += 1
+
+        # The content used to build the parsed record must still be the
+        # content identified by its signature. Otherwise the index and its
+        # fingerprint can describe different versions of the same file.
+        if signature(path) != current_signature:
+            raise OSError(f"source changed while parsing: {relative}")
 
         parsed[relative] = value
         new_entries[relative] = {
