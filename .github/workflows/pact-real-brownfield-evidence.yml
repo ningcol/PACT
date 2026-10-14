@@ -125,3 +125,21 @@ jobs:
           print("Unreviewed task completion: correctly blocked")
           print("No test of live business behavior or human overhead was performed")
           PY
+
+      - name: Preserve machine-only Evidence artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pinned-ziliu-evidence
+          retention-days: 14
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            /tmp/pact-pilot-prepare.json
+            /tmp/pact-pilot-draft.json
+            /tmp/pact-pilot-verify.json
+            /tmp/pact-pilot-finish.json
+            /tmp/pact-pilot-machine-observation.json
+            /tmp/pact-owner-ziliu-smoke/.pact/completions/PILOT-ZILIU-EVIDENCE-001/evidence.json
+            /tmp/pact-owner-ziliu-smoke/.pact/completions/PILOT-ZILIU-EVIDENCE-001/convergence.json
+            /tmp/pact-owner-ziliu-smoke/.pact/completions/PILOT-ZILIU-EVIDENCE-001/owner-report.json
+            /tmp/pact-owner-ziliu-smoke/.pact/runs/PILOT-ZILIU-EVIDENCE-001/verify-*.json
