@@ -1,0 +1,285 @@
+name: Temporary Ziliu Publishing Release Compatibility Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-publish-release-compat
+  BASE_REF: 61af579266848ee50d12a0b658d1e32a49dabfde
+  FIX_REF: 6463b2a315d3619f8427c8ff83c1fe57e0385322
+  PORT: "31857"
+  NEXTAUTH_URL: http://127.0.0.1:31857
+  NEXTAUTH_SECRET: temporary-compatibility-test-secret-not-for-production
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:31857
+  NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:31857
+  DATABASE_URL: file:./publish-compat-temporary.db
+  TURSO_DATABASE_URL: ""
+  TURSO_AUTH_TOKEN: ""
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "22"
+
+      - name: Freeze exact public ziliu source and approved patch
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" fetch --quiet origin refs/heads/fix/publish-api-no-false-success
+          test "$(git -C "$TARGET_DIR" rev-parse FETCH_HEAD)" = "$FIX_REF"
+          git -C "$TARGET_DIR" checkout --quiet --detach "$BASE_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_REF"
+          git -C "$TARGET_DIR" diff --quiet
+          git -C "$TARGET_DIR" diff --name-only "$BASE_REF" "$FIX_REF"
+          python3 - <<'PY'
+          import os,subprocess
+          root=os.environ["TARGET_DIR"]
+          got=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["BASE_REF"],os.environ["FIX_REF"]],cwd=root,text=True).splitlines())
+          expected={
+              "src/app/api/publish/route.ts",
+              "scripts/tests/publish-api-contract.test.cjs",
+              ".github/workflows/publish-api-contract.yml",
+          }
+          assert got==expected,(got,expected)
+          print("RELEASE_SCOPE_SOURCE_DIFF="+str(sorted(got)))
+          PY
+
+      - name: Audit tracked project consumers and packaged public extension
+        working-directory: /tmp/ziliu-publish-release-compat
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess,pathlib,zipfile,re,os
+          root=pathlib.Path.cwd()
+          names=subprocess.check_output(["git","ls-files","-z"]).decode().strip("\x00").split("\x00")
+          pattern=re.compile(rb"/api/publish\b|api/publish\b",re.I)
+          scanned=0
+          skipped_binary=[]
+          hits=[]
+          for name in names:
+              p=root/name
+              if not p.is_file() or name=="src/app/api/publish/route.ts":
+                  continue
+              data=p.read_bytes()
+              if len(data)>4_000_000 or b"\x00" in data[:8192]:
+                  skipped_binary.append(name)
+                  continue
+              if not any(name.endswith(ext) for ext in (".ts",".tsx",".js",".jsx",".cjs",".mjs",".json",".md",".yml",".yaml",".html",".css",".toml",".example",".txt")):
+                  continue
+              scanned+=1
+              for hit in pattern.finditer(data):
+                  hits.append({"file":name,"offset":hit.start(),"text":hit.group().decode("utf-8","replace")})
+          bundle=root/"public/ziliu-extension-v1.3.3.zip"
+          assert bundle.is_file(),"shipped plugin ZIP missing"
+          archived=[]
+          zip_hits=[]
+          with zipfile.ZipFile(bundle) as archive:
+              for item in archive.infolist():
+                  if item.is_dir() or item.file_size>4_000_000 or not item.filename.endswith((".js",".json",".html",".mjs",".cjs",".ts",".tsx")):
+                      continue
+                  archived.append(item.filename)
+                  data=archive.read(item)
+                  for hit in pattern.finditer(data):
+                      zip_hits.append({"member":item.filename,"offset":hit.start()})
+          report={
+              "source_ref":os.environ["BASE_REF"],
+              "tracked_paths":len(names),
+              "text_files_inspected_excluding_target_route":scanned,
+              "source_literal_api_publish_references":hits,
+              "excluded_binary_or_oversize_paths":skipped_binary,
+              "bundled_extension":"public/ziliu-extension-v1.3.3.zip",
+              "bundle_text_members_inspected":len(archived),
+              "bundled_extension_literal_api_publish_references":zip_hits,
+              "caller_audit_scope":"tracked plain text + tracked shipped archive; not runtime traffic/external or dynamically assembled paths"
+          }
+          pathlib.Path("/tmp/ziliu-stage4-caller-audit.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print("CALLER_AUDIT_JSON="+json.dumps(report,ensure_ascii=False))
+          assert not hits and not zip_hits,"Potential direct consumer must be triaged before release"
+          PY
+
+      - name: Install exact lockfile without local hooks or production credentials
+        working-directory: /tmp/ziliu-publish-release-compat
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Create isolated real Next.js HTTP probe
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ziliu-stage4-probe.cjs" <<'NODE'
+          'use strict';
+          const assert = require('node:assert/strict');
+          const path = require('node:path');
+          const { createRequire } = require('node:module');
+          const isolatedRequire = createRequire(path.join(process.env.TARGET_DIR,'package.json'));
+          const { encode } = isolatedRequire('next-auth/jwt');
+          const port = Number(process.env.PORT);
+          const url = 'http://127.0.0.1:' + port + '/api/publish';
+          const validSession = {
+            sub:'stage4-user-ci',
+            email:'stage4-test@example.invalid',
+            name:'Staging Contract Fixture'
+          };
+          const settings={id:'compat-preset',name:'Compatibility Fixture',platform:'wechat',isDefault:false};
+          const payload=(platform,groups)=>({
+            title:'Compatibility test',
+            content:'Never publish externally',
+            platform,
+            settings:{...settings,platform,platformConfig:groups===undefined?undefined:{groupIds:groups}}
+          });
+          const request=async(method,body,cookie,origin)=>{
+            const headers={};
+            if(body!==undefined)headers['Content-Type']='application/json';
+            if(cookie)headers['cookie']=cookie;
+            if(origin)headers['origin']=origin;
+            const response=await fetch(url,{
+              method,headers,
+              body:body===undefined?undefined:JSON.stringify(body),
+              redirect:'manual',
+              signal:AbortSignal.timeout(15000)
+            });
+            const raw=await response.text();
+            let data;
+            try{data=JSON.parse(raw);}catch{data=null;}
+            return {
+              status:response.status,
+              contentType:response.headers.get('content-type'),
+              corsAllowOrigin:response.headers.get('access-control-allow-origin'),
+              allow:response.headers.get('allow'),
+              success:data&&Object.hasOwn(data,'success')?data.success:null,
+              keys:data&&typeof data==='object'?Object.keys(data).sort():[],
+              dataKeys:data&&data.data&&typeof data.data==='object'?Object.keys(data.data).sort():[],
+              errorIsString:Boolean(data&&typeof data.error==='string'&&data.error.length>0)
+            };
+          };
+          (async()=>{
+            let ready=false;
+            for(let tries=0;tries<90;tries++){
+              try{
+                const p=await fetch(url,{method:'GET',signal:AbortSignal.timeout(1200)});
+                if(p.status!==503){ready=true;break;}
+              }catch(e){}
+              await new Promise(resolve=>setTimeout(resolve,800));
+            }
+            assert.ok(ready,'real Next.js server did not start on local interface');
+            const jwt=await encode({token:validSession,secret:process.env.NEXTAUTH_SECRET,maxAge:300});
+            const cookie='next-auth.session-token='+jwt;
+            const report={
+              sourceRef:process.env.RELEASE_PROBE_SOURCE_REF,
+              server:"next start, loopback-only, real route and NextAuth session decoder, fake test-only JWT",
+              unauthenticated:await request('POST',payload('wechat'),null),
+              malformed:await request('POST',{...payload('wechat'),title:''},cookie),
+              wrongPlatform:await request('POST',payload('not-a-platform'),cookie),
+              wechat:await request('POST',payload('wechat'),cookie),
+              zhihu:await request('POST',payload('zhihu'),cookie),
+              juejin:await request('POST',payload('juejin'),cookie),
+              zsxq:await request('POST',payload('zsxq',['ci-group-only']),cookie),
+              get:await request('GET',undefined,cookie),
+              options:await request('OPTIONS',undefined,cookie,'chrome-extension://ci-fixture.invalid')
+            };
+            console.log('REAL_NEXT_HTTP_PROBE='+JSON.stringify(report));
+          })().catch(error=>{console.error('RUNTIME_PROBE_FAILURE='+String(error&&error.stack||error));process.exitCode=1});
+          NODE
+
+      - name: Baseline full Next.js build and real localhost HTTP response
+        working-directory: /tmp/ziliu-publish-release-compat
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE_REF"
+          rm -rf .next
+          npm run build
+          node node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$PORT" > "$RUNNER_TEMP/ziliu-stage4-base-server.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          RELEASE_PROBE_SOURCE_REF="$BASE_REF" node "$RUNNER_TEMP/ziliu-stage4-probe.cjs" | tee /tmp/ziliu-stage4-baseline.jsonl
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          echo "BASELINE_REAL_NEXT_HTTP=COMPLETE"
+
+      - name: Patch only approved API/test/CI paths
+        working-directory: /tmp/ziliu-publish-release-compat
+        run: |
+          set -euo pipefail
+          git diff --binary "$BASE_REF" "$FIX_REF" > /tmp/ziliu-stage4-fix.patch
+          git apply --check /tmp/ziliu-stage4-fix.patch
+          git apply /tmp/ziliu-stage4-fix.patch
+          test "$(git rev-parse HEAD)" = "$BASE_REF"
+          python3 - <<'PY'
+          import os,subprocess
+          wanted={".github/workflows/publish-api-contract.yml","scripts/tests/publish-api-contract.test.cjs","src/app/api/publish/route.ts"}
+          actual={line[3:] for line in subprocess.check_output(["git","status","--porcelain=v1","--untracked-files=all"],text=True).splitlines()}
+          assert actual==wanted,(actual,wanted)
+          print("FIX_APPLIED_WITH_UNCHANGED_EDITOR_AND_EXTENSION=true")
+          PY
+
+      - name: Corrected full Next.js build and real localhost HTTP response
+        working-directory: /tmp/ziliu-publish-release-compat
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .next
+          npm run build
+          node node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$PORT" > "$RUNNER_TEMP/ziliu-stage4-fix-server.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          RELEASE_PROBE_SOURCE_REF="$FIX_REF" node "$RUNNER_TEMP/ziliu-stage4-probe.cjs" | tee /tmp/ziliu-stage4-fixed.jsonl
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          echo "FIX_REAL_NEXT_HTTP=COMPLETE"
+
+      - name: Compare old and new HTTP compatibility contracts and record risk
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,pathlib
+          def read(path):
+              lines=pathlib.Path(path).read_text(encoding="utf-8").splitlines()
+              found=[json.loads(line.split("REAL_NEXT_HTTP_PROBE=",1)[1]) for line in lines if "REAL_NEXT_HTTP_PROBE=" in line]
+              assert len(found)==1,found
+              return found[0]
+          base=read("/tmp/ziliu-stage4-baseline.jsonl")
+          fix=read("/tmp/ziliu-stage4-fixed.jsonl")
+          assert base["sourceRef"]=="61af579266848ee50d12a0b658d1e32a49dabfde"
+          assert fix["sourceRef"]=="6463b2a315d3619f8427c8ff83c1fe57e0385322"
+          assert base["unauthenticated"]["status"]==fix["unauthenticated"]["status"]==401
+          assert base["malformed"]["status"]==fix["malformed"]["status"]==400
+          assert base["wrongPlatform"]["status"]==fix["wrongPlatform"]["status"]==400
+          for key in ("wechat","zhihu","juejin","zsxq"):
+              assert base[key]["status"]==200 and base[key]["success"] is True,(key,base[key])
+              assert fix[key]["status"]==501 and fix[key]["success"] is False,(key,fix[key])
+              assert "data" not in fix[key]["keys"] and fix[key]["errorIsString"],(key,fix[key])
+          for key in ("get","options"):
+              assert base[key]["status"]==fix[key]["status"],(key,base[key],fix[key])
+              assert base[key]["corsAllowOrigin"]==fix[key]["corsAllowOrigin"],(key,base[key],fix[key])
+          report={
+              "old_ref":base["sourceRef"],
+              "new_ref":fix["sourceRef"],
+              "unchanged_auth_validation":{"anonymous":401,"malformed":400,"unsupported_enum":400},
+              "intended_breaking_change":{
+                  "four_provider_endpoints":"old 200/success:true -> new 501/success:false",
+                  "provider_result_removed":True
+              },
+              "get_and_options_status_unchanged":True,
+              "server_executed":"real Next.js next start bound to 127.0.0.1; test-only NextAuth JWT",
+              "production_deployment_tested":False,
+              "actual_external_callers_known":False,
+              "third_party_publication_attempted":False,
+              "human_efficiency_metrics":"NOT_MEASURED",
+              "full_base":base,
+              "full_fix":fix
+          }
+          pathlib.Path("/tmp/ziliu-stage4-runtime-compat.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print("RUNTIME_COMPATIBILITY="+json.dumps(report,ensure_ascii=False))
+          PY
