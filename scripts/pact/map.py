@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import sys
 import re
+import sys
 from datetime import datetime, timezone
 
 from cache import atomic_write_json, cache_is_fresh, fingerprint_files, git_head
