@@ -14,6 +14,23 @@ Evidence claims may bind to one or more acceptance IDs. Prepared Task Contracts 
 
 Task Contract intent is task-scoped authority. It does not silently override confirmed durable Product Truth; conflicts require reconciliation or an owner-level product decision.
 
+## Optional mechanical completion helpers
+
+`task draft <TASK-ID>` writes schema-shaped, explicitly **incomplete**
+Evidence/Convergence/Owner Report files inside a repository-owned completion
+bundle. It never overwrites an existing file, and refuses corrupt Evidence.
+The draft Convergence has a blocking `partial` finding and no automatic
+knowledge/change coverage; the draft Owner Report is `partial`, not completed.
+
+`task verify <TASK-ID> --criterion AC-1 --claim "..."` runs a concrete command
+through `pact run` and records its real exit status and workspace-bound receipt
+against an **explicitly chosen** criterion. It does not infer that the command
+proves the product outcome, it does not mark all criteria passed, and it cannot
+write to an external completion bundle. Failed checks are retained as failed
+Evidence rather than being rewritten as success. Manual review of the
+Evidence-to-outcome relationship, Convergence and Owner Report is still
+required. Existing advanced primitives remain available.
+
 ## Task state preflight and repository boundaries
 
 High-level prepared task state is repository-owned. Before preparation or task-backed reads/writes, PACT checks that its `.pact/tasks` root (and its `.pact` ancestor) does not traverse a symlink, a non-directory component, or a path outside the repository. `task prepare` additionally checks `.pact/completions` and `.pact/tmp`. Default completion state in `task finish` and `task status` is subject to the same root boundary. Explicit custom completion bundles remain supported according to their existing CLI contract.

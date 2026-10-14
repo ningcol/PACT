@@ -922,7 +922,48 @@ def main() -> int:
     status_parser.add_argument("task_id")
     status_parser.add_argument("--json", action="store_true")
 
-    args = parser.parse_args()
+    draft_parser = sub.add_parser(
+        "draft", help="create safe, explicitly incomplete completion review files"
+    )
+    draft_parser.add_argument("task_id")
+    draft_parser.add_argument("--json", action="store_true")
+
+    verify_parser = sub.add_parser(
+        "verify", help="run a command and record explicit acceptance-bound Evidence"
+    )
+    verify_parser.add_argument("task_id")
+    verify_parser.add_argument(
+        "--criterion",
+        dest="criteria",
+        action="append",
+        required=True,
+        help="acceptance criterion ID from prepared Task Contract; repeatable",
+    )
+    verify_parser.add_argument(
+        "--claim",
+        required=True,
+        help="literal claim the verification command is intended to support",
+    )
+    verify_parser.add_argument("--claim-id", help="optional unique Evidence ID")
+    verify_parser.add_argument(
+        "--kind",
+        choices=["test", "browser", "visual", "runtime", "contract",
+                 "architecture", "other"],
+        default="test",
+    )
+    verify_parser.add_argument("--json", action="store_true")
+    # Split the subprocess argv at the explicit '--' sentinel. A positional
+    # argparse.REMAINDER would greedily swallow --claim/--criterion appearing
+    # after the task ID, bypassing option validation.
+    raw_args = sys.argv[1:]
+    if raw_args and raw_args[0] == "verify" and "--" in raw_args:
+        boundary = raw_args.index("--")
+        args = parser.parse_args(raw_args[:boundary])
+        args.verification_command = raw_args[boundary + 1:]
+    else:
+        args = parser.parse_args(raw_args)
+        if args.command == "verify":
+            args.verification_command = []
 
     if args.command == "prepare":
         if args.files and args.base:
@@ -932,6 +973,12 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command in {"draft", "verify"}:
+        # These helpers depend on the prepared Task state/API but do not
+        # invent semantic Convergence or completed Owner Reports.
+        from task_workflow import draft, verify
+
+        return draft(args) if args.command == "draft" else verify(args)
     return task_status(args)
 
 

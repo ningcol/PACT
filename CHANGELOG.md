@@ -6,6 +6,17 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Prepared-task Evidence helpers
+
+- `pact task draft` creates non-overwriting, structurally incomplete completion
+  review templates; it never asserts alignment or completion.
+- `pact task verify` runs a concrete check via `pact run` and appends a
+  real pass/fail receipt associated with caller-chosen acceptance criteria.
+  Stale Task Contracts/Contexts, invalid Evidence and external completion
+  destinations block before running.
+- Explicit semantic review remains mandatory; no automatic success
+  interpretation or new mandatory step was introduced.
+
 ### Durable Decision retention and focused retrieval
 
 - Decision Records are now guidance for genuinely long-lived, non-derivable
