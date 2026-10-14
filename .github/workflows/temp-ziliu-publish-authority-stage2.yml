@@ -1,0 +1,229 @@
+name: Temporary Ziliu Publishing API Authority Pilot
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/temp-ziliu-publish-authority-stage2.yml'
+      - 'docs/evaluation/ziliu-publish-api-pilot-stage2-2026-10-14.md'
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-publish-authority-stage2
+  TARGET_REF: 61af579266848ee50d12a0b658d1e32a49dabfde
+  TASK_ID: REAL-ZILIU-PUBLISH-ROLE-001
+
+jobs:
+  authority-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone frozen public ziliu source and adopt PACT in disposable workspace
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" checkout --detach --quiet "$TARGET_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$TARGET_REF"
+          python3 scripts/pact/pact.py init --target "$TARGET_DIR" --apply
+          python3 "$TARGET_DIR/pact.py" doctor --strict
+          echo "TARGET_GIT_HEAD=$(git -C "$TARGET_DIR" rev-parse HEAD)"
+          echo "PACT_SOURCE_HEAD=$(git rev-parse HEAD)"
+
+      - name: Add non-authoritative candidate rule and source-backed architecture
+        working-directory: /tmp/ziliu-publish-authority-stage2
+        run: |
+          set -euo pipefail
+          mkdir -p docs/product/domains docs/product/rules docs/architecture docs/drift/known .agents/decisions/proposed
+          cat > docs/product/domains/publishing-api.md <<'EOF'
+          +++
+          [pact]
+          type = "domain"
+          id = "DOMAIN-PUBLISHING-API"
+          status = "candidate"
+          owners = ["product"]
+          aliases = ["服务端发布", "Publishing API", "publishToWechat", "publishToZsxq"]
+          paths = ["src/app/api/publish/route.ts", "src/components/editor/platform-preview.tsx", "extension/plugins/platforms/**"]
+          +++
+
+          # Candidate domain: server-side publishing API
+          The repository has a server-side /api/publish route and a distinct editor/extension publishing flow.
+          This is navigation metadata, not a product-approved publishing policy.
+          EOF
+          cat > docs/product/rules/publishing-success.md <<'EOF'
+          +++
+          [pact]
+          type = "rule"
+          id = "RULE-PUBLISHING-SUCCESS-001"
+          status = "candidate"
+          owners = ["product"]
+          domains = ["DOMAIN-PUBLISHING-API"]
+          aliases = ["发布成功", "false success", "publishing result", "/api/publish"]
+          verification = ["src/app/api/publish/route.ts"]
+          +++
+
+          # Candidate product rule: truthful publishing response
+          A server-side publishing response ought not claim delivery success solely because a placeholder function returns success.
+          This rule is CANDIDATE and requires the product owner's approval; no remote-delivery result is verified by this test.
+          EOF
+          cat > .agents/decisions/proposed/DEC-PUBLISHING-API-ROLE.md <<'EOF'
+          +++
+          [pact]
+          type = "decision"
+          id = "DEC-PUBLISHING-API-ROLE"
+          status = "proposed"
+          owners = ["engineering"]
+          domains = ["DOMAIN-PUBLISHING-API"]
+          related = ["RULE-PUBLISHING-SUCCESS-001"]
+          +++
+
+          # Proposal: resolve the intended server-side publishing API role
+          Options awaiting product authority: keep the endpoint and fail closed for placeholders; retire after caller and compatibility audit; or scope real platform integration as a separate feature.
+          The current preferred bounded safety recommendation is to avoid fabricated success, but this proposal has NOT been adopted.
+          EOF
+          cat > docs/architecture/publishing-current.md <<'EOF'
+          +++
+          [pact]
+          type = "architecture"
+          status = "current"
+          owners = ["engineering"]
+          domains = ["DOMAIN-PUBLISHING-API"]
+          related = ["DEC-PUBLISHING-API-ROLE"]
+          +++
+
+          # Current code architecture at the pinned ziliu SHA
+          - src/app/api/publish/route.ts defines authenticated POST and local placeholder platform handlers.
+          - src/components/editor/platform-preview.tsx handles copying content, an extension message and opening a third-party publishing page.
+          - extension/plugins/platforms/ contains separate browser-integrated adapters.
+          No conclusion is drawn about outside callers or actual production traffic.
+          EOF
+          cat > docs/drift/known/DRIFT-PUBLISHING-EXTERNAL-UNVERIFIED.md <<'EOF'
+          +++
+          [pact]
+          type = "drift"
+          id = "DRIFT-PUBLISHING-EXTERNAL-UNVERIFIED"
+          status = "known"
+          owners = ["engineering"]
+          domains = ["DOMAIN-PUBLISHING-API"]
+          related = ["RULE-PUBLISHING-SUCCESS-001"]
+          +++
+
+          # Known verification gap: server publishing contract and external usage
+          The static source returns optimistic outcomes without provider confirmations.
+          No live server request, production traffic inspection or platform E2E has been carried out by this pilot.
+          EOF
+
+      - name: Check source-only placeholder evidence and validate knowledge format
+        working-directory: /tmp/ziliu-publish-authority-stage2
+        run: |
+          set -euo pipefail
+          python3 pact.py check
+          python3 pact.py map --ensure
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("src/app/api/publish/route.ts").read_text(encoding="utf-8")
+          assert 'export async function POST(' in text
+          for method in ("publishToWechat", "publishToZhihu", "publishToJuejin"):
+              block = text.split("async function " + method, 1)[1].split("async function ", 1)[0]
+              assert "success: true" in block and "TODO:" in block, method
+          block = text.split("async function publishToZsxq", 1)[1].split("async function ", 1)[0]
+          assert "success: true" in block and "目前返回模拟结果" in block
+          print("STATIC_SOURCE_EVIDENCE: four placeholder-success branches; runtime response NOT executed")
+          PY
+
+      - name: Prepare a real candidate-knowledge task Context
+        working-directory: /tmp/ziliu-publish-authority-stage2
+        run: |
+          set -euo pipefail
+          python3 pact.py inspect "服务端发布API 假成功响应" \
+            --query "publishToZsxq publishToWechat route.ts" --json > /tmp/ziliu-publish-inspect.json
+          python3 pact.py task prepare \
+            "复核服务端发布 API 的假成功响应和产品决策边界" \
+            --success "Context包含服务端发布路径、候选规则与owner待决问题，且未声称占位结果代表真实发布" \
+            --risk medium --code \
+            --query "服务端发布API 发布成功 RULE-PUBLISHING-SUCCESS-001" \
+            --query "publishToWechat publishToZsxq src/app/api/publish/route.ts" \
+            --query "DEC-PUBLISHING-API-ROLE product owner" \
+            --task-id "$TASK_ID" --json > /tmp/ziliu-publish-prepare.json
+
+      - name: Validate selected Context and record unresolved owner decision
+        working-directory: /tmp/ziliu-publish-authority-stage2
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+          prep = json.loads(pathlib.Path("/tmp/ziliu-publish-prepare.json").read_text(encoding="utf-8"))
+          context_path = pathlib.Path(prep["context"])
+          ctx = json.loads(context_path.read_text(encoding="utf-8"))
+          knowledge = [a["path"] for a in ctx.get("artifacts", [])]
+          code = [a["path"] for a in ctx.get("code_artifacts", [])]
+          rule = "docs/product/rules/publishing-success.md"
+          assert rule in knowledge, "candidate Product Rule missing from Context: " + repr(knowledge)
+          assert "src/app/api/publish/route.ts" in code, "server API route missing from Context: " + repr(code)
+          report = {
+              "version": 1,
+              "task_id": os.environ["TASK_ID"],
+              "change": "Review the server publishing API; do not implement until product authority is clear.",
+              "owner_summary": "Code facts verified statically; server API policy remains an owner decision.",
+              "context_sha256": prep["context_sha256"],
+              "coverage": [{
+                  "path": item["path"],
+                  "disposition": "owner-decision" if item["path"] == rule else "aligned",
+                  "rationale": (
+                      "Candidate server response rule is not confirmed; owner must select API policy."
+                      if item["path"] == rule else "Source-backed or explicitly non-authoritative pilot context reviewed."
+                  ),
+              } for item in ctx.get("artifacts", [])],
+              "findings": [{
+                  "classification": "owner-decision",
+                  "severity": "medium",
+                  "subject": "Server API /api/publish success semantics",
+                  "observed": "Placeholder handlers can return affirmative success without provider delivery.",
+                  "expected": "Product-approved API contract: fail closed, retire, or implement provider integration.",
+                  "authority": "Product owner; no confirmed Product Rule for this endpoint",
+                  "evidence": ["src/app/api/publish/route.ts (pinned source)", "docs/product/rules/publishing-success.md (candidate)"],
+                  "recommended_action": "Obtain owner's API role decision; then implement and verify in isolation.",
+                  "owner_question": "Keep /api/publish with truthful non-success for placeholders, retire it, or separately authorize provider integrations?",
+              }],
+          }
+          report_path = pathlib.Path("/tmp/ziliu-publish-convergence.json")
+          report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          cmd = [
+              sys.executable, "pact.py", "converge", str(report_path),
+              "--context", str(context_path),
+              "--context-sha256", prep["context_sha256"], "--json",
+          ]
+          result = subprocess.run(cmd, capture_output=True, text=True)
+          if result.returncode != 1:
+              raise AssertionError("Expected needs-owner nonzero outcome: " + str(result.returncode) + " " + result.stdout + result.stderr)
+          output = json.loads(result.stdout)
+          assert output["outcome"] == "needs-owner", output
+          print(json.dumps({
+              "target_ref": os.environ["TARGET_REF"],
+              "task_id": os.environ["TASK_ID"],
+              "knowledge_artifacts": len(knowledge),
+              "knowledge_paths": knowledge,
+              "code_artifacts": len(code),
+              "code_paths": code,
+              "known_unknowns": ctx.get("known_unknowns", []),
+              "selected_estimated_tokens": ctx.get("context_budget", {}).get("selected_estimated_tokens"),
+              "required_context_artifacts": output["coverage"]["required_artifacts"],
+              "covered_context_artifacts": output["coverage"]["covered_artifacts"],
+              "convergence_outcome": output["outcome"],
+              "owner_question_required": True,
+              "ziliu_business_files_modified": False,
+              "live_provider_called": False,
+              "human_value_metrics": "NOT_MEASURED",
+          }, ensure_ascii=False, indent=2))
+          PY
