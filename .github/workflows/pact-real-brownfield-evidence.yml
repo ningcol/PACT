@@ -1,0 +1,118 @@
+name: PACT Owner-Brownfield Evidence Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/pact-real-brownfield-evidence.yml"
+      - "scripts/pact/task.py"
+      - "scripts/pact/task_workflow.py"
+      - "scripts/pact/run.py"
+      - "scripts/pact/evidence.py"
+      - "scripts/pact/complete.py"
+      - "scripts/pact/parse_cache.py"
+      - ".pact/schema/run-receipt.schema.json"
+      - ".pact/schema/evidence-receipt.schema.json"
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-owner-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BASE_SHA: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+      TASK_ID: PILOT-ZILIU-EVIDENCE-001
+      TARGET: /tmp/pact-owner-ziliu-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone historical owner-maintained project
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/ningcol/ziliu.git "$TARGET"
+          git -C "$TARGET" checkout --detach "$BASE_SHA"
+          test "$(git -C "$TARGET" rev-parse HEAD)" = "$BASE_SHA"
+
+      - name: Adopt current PACT source in isolated clone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pact/init.py --target "$TARGET" --apply
+          test -z "$(git -C "$TARGET" diff --name-only)"
+          test -f "$TARGET/pact.py"
+
+      - name: Exercise evidence without fabricating completion
+        working-directory: /tmp/pact-owner-ziliu-smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python pact.py doctor --strict
+          python pact.py task prepare \
+            "Verify documented historical project overview without changing code" \
+            --task-id "$TASK_ID" \
+            --success "The historical repository README identifies the owner product" \
+            --risk medium --no-code \
+            --json > /tmp/pact-pilot-prepare.json
+
+          python pact.py task draft "$TASK_ID" --json > /tmp/pact-pilot-draft.json
+
+          python pact.py task verify "$TASK_ID" \
+            --criterion AC-1 \
+            --claim "Historical README contains a nonempty ziliu product overview" \
+            --source README.md \
+            --json -- python -c \
+            'from pathlib import Path; t = Path("README.md").read_text(encoding="utf-8"); assert "字流" in t and len(t) >= 200' \
+            > /tmp/pact-pilot-verify.json
+
+          if python pact.py task finish "$TASK_ID" \
+            --json > /tmp/pact-pilot-finish.json; then
+            echo "ERROR: an unreviewed draft unexpectedly completed" >&2
+            exit 1
+          fi
+
+          python pact.py eval --task "$TASK_ID" --json \
+            > /tmp/pact-pilot-machine-observation.json
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path.cwd()
+          task = os.environ["TASK_ID"]
+          prepare = json.loads(Path("/tmp/pact-pilot-prepare.json").read_text())
+          verify = json.loads(Path("/tmp/pact-pilot-verify.json").read_text())
+          finish = json.loads(Path("/tmp/pact-pilot-finish.json").read_text())
+
+          assert prepare["task_id"] == task, prepare
+          assert verify["task_id"] == task, verify
+          assert verify["status"] == "pass", verify
+          assert verify["criteria"] == ["AC-1"], verify
+          assert finish["complete"] is False, finish
+
+          bundle = root / ".pact" / "completions" / task
+          evidence = json.loads((bundle / "evidence.json").read_text())
+          owner = json.loads((bundle / "owner-report.json").read_text())
+          convergence = json.loads((bundle / "convergence.json").read_text())
+          assert evidence["claims"][0]["status"] == "pass", evidence
+          assert evidence["claims"][0]["criteria"] == ["AC-1"], evidence
+          assert owner["status"] == "partial", owner
+          assert convergence["findings"][0]["classification"] == "partial", convergence
+          source = root / verify["run_receipt"]
+          receipt = json.loads(source.read_text())
+          assert receipt["verification_input_scope"] == "declared-files", receipt
+          assert receipt["verification_sources"][0]["path"] == "README.md", receipt
+
+          print("Pinned ziliu verification pilot: PASS")
+          print("Declared source hash: verified")
+          print("Command-backed criterion: AC-1 PASS")
+          print("Unreviewed task completion: correctly blocked")
+          print("No test of live business behavior or human overhead was performed")
+          PY
