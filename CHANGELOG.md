@@ -6,6 +6,17 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Verification input origin guard
+
+- `pact run` rejects direct external script/config source paths by default;
+  `--allow-external-inputs` records an explicit non-portable exception.
+- `--source` records/rechecks repository-relative verification input hashes;
+  stale or escaped sources cannot back a valid receipt.
+- Medium/high-risk required Evidence cannot rely solely on external-opt-in
+  receipts. Legacy v2 receipts remain valid. Source-path checks do **not**
+  attest shell expansions, subprocess descendants, interpreters or network
+  dependencies, and do not add a portable `--replay` guarantee.
+
 ### Prepared-task Evidence helpers
 
 - `pact task draft` creates non-overwriting, structurally incomplete completion
