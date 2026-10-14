@@ -26,9 +26,9 @@ CONFIDENCE_ORDER = {
 
 
 UNCONFIRMED_SECTION = re.compile(
-    r"^\\s{0,3}#{1,6}\\s+(?:\\d+[.、]\\s*)?"
+    r"^\s{0,3}#{1,6}\s+(?:\d+[.、]\s*)?"
     r"(?:待确认|未确认|尚未确认|待定|unconfirmed|pending confirmation|tbd)"
-    r"(?=$|[\\s:：\\-（(])",
+    r"(?=$|[\s:：\-（(])",
     flags=re.IGNORECASE,
 )
 
@@ -42,7 +42,7 @@ def explicit_unconfirmed_section(text: str) -> bool:
     fence: str | None = None
     for line in text.splitlines():
         stripped = line.lstrip()
-        if stripped.startswith(("\\x60\\x60\\x60", "~~~")):
+        if stripped.startswith(("```", "~~~")):
             marker = stripped[:3]
             if fence is None:
                 fence = marker
