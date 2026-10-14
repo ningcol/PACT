@@ -99,6 +99,13 @@ Prefer, in order:
 
 Discovery ranking affects convenience, not authority.
 
+For generic queries, decisions marked `archived` or `superseded` receive a
+soft relevance penalty. They remain searchable (including exact ID, title and
+alias lookup), and results retain their lifecycle status. A rejected alternative
+is not automatically historical: its rationale may still matter. This ranking
+preference **does not** turn the remaining search results into authoritative
+current truth; an Agent must reconcile status and project authority.
+
 ## 6. Owner query examples
 
 - "之前省份和批次联动是怎么做的？"
