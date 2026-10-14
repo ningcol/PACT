@@ -34,11 +34,23 @@ The adjacent **temporary GitHub Actions workflow** operates only within an ephem
 
 **Tooling and safety:** no ziliu \`npm ci\`, database migrations, remote publish call, third-party account, privileged token, browser session or production state. A lightweight source assertion is static, **not** a RED HTTP response reproduction, not a GREEN implementation, and not an E2E success claim.
 
-**CI results:** PENDING; only update this section from actual workflow execution evidence.
+**Observed CI results (run on pinned ziliu and PACT):**
+
+- [Isolated pilot run](https://github.com/ningcol/PACT/actions/runs/38509795059): **FAIL** at the intentional Context-target selection assertion. This is a meaningful negative test, **not** a green PACT task.
+- Deterministic PACT `check` PASS: 5 temporary knowledge artifacts were accepted. Medium-risk `task prepare` succeeded.
+- Context selected **6 knowledge artifacts** (5 candidate/proposed/current/known pilot items plus README) and **12 code artifacts**, but **did not select `src/app/api/publish/route.ts`** despite an explicit technical query.
+- `inspect` surfaced that same route as its **top code result**; an exact-path `discover` also returned it first. `Context.code_candidate_hints` included the route (second hint), but hints are **not materialized code artifacts**.
+- **19,384 / 40,000 estimated Context tokens** were used; **24 candidates were dropped for the 12-file count cap**, zero for token budget. This is a count/ranking interaction, not token exhaustion.
+- Convergence separately checked all **6/6 knowledge artifacts** and correctly returned `needs-owner` because the API's product policy is unsettled. That is not a completion success or proof of a real publication.
+- No ziliu application tests or HTTP runtime RED/GREEN tests ran. Human owner-value metrics remain `NOT_MEASURED`.
+
+**Reproducible source-level mechanism for follow-up review:** High-level `task prepare` prepends the natural-language task as the primary query (`scripts/pact/task.py`). The `context.py` code path `preserves_task_as_primary` / `compose_primary_preserving_pool` puts up to the full primary selection before fused supplemental candidates; `select_context_candidates` enforces the 12-file count cap. At this fixed task wording, generic API-path matches fill all code slots even though the supplemental technical query correctly finds the target. Preserving owner-language task intent is an existing deliberate design invariant, so simply disabling it is **not** an acceptable speculative fix.
+
+**Stage 2 decision:** This trial establishes a real, narrow **Context relevance miss** and a working owner-decision blocker. The Context-selection acceptance is **NOT SATISFIED**; the stage is `CHANGES REQUESTED` for retrieval, not PASS. A subsequent corrective stage should preserve task-primary context intent while ensuring strongly grounded supplemental code is not silently excluded under a saturated code cap; prove this against both this frozen case and historical no-regression cases. Do not weaken existing acceptance or inflate the token/code budgets merely to turn the check green.
 
 ## 4. Success criteria and stop rule
 
-- All frozen SHA checks and PACT automated checks pass.
+- Frozen SHA checks and PACT deterministic checks pass; the **separate** relevant-code selection gate currently fails and is retained as an explicit negative result.
 - Candidate/proposed facts remain non-authoritative and selected source evidence is correct.
 - Convergence surfaces owner authority as **needs-owner**, while machine coverage is complete.
 - Any CI shortcoming is recorded as fail/blocked, not restated as a passing PACT task.
