@@ -63,8 +63,17 @@ class VerificationInputOriginsTests(unittest.TestCase):
 
     def test_external_script_with_spaces_is_not_mistaken_for_shell_tokens(self) -> None:
         spaced = pathlib.Path(self.temp.name) / "external script.py"
-        spaced.write_text("print('unsafe')\\n", encoding="utf-8")
+        spaced.write_text("print('unsafe')\n", encoding="utf-8")
         result = self.run_pact([], [sys.executable, str(spaced)])
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertFalse(self.receipt.exists())
+
+    def test_external_dotenv_config_is_not_silent_input(self) -> None:
+        outside_config = pathlib.Path(self.temp.name) / ".env"
+        outside_config.write_text("SYNTHETIC=1\n", encoding="utf-8")
+        result = self.run_pact(
+            [], [sys.executable, "-c", "print('ok')", str(outside_config)]
+        )
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertFalse(self.receipt.exists())
 
