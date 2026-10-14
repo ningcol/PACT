@@ -6,6 +6,16 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Semantic Knowledge Gardening
+
+- Audit now surfaces explicitly superseded Decisions as
+  `decision_retention_candidates` for **review only**, alongside existing
+  active Change, known Drift, and mixed-Rule review targets.
+- A replaceable Knowledge Gardening skill guides scoped, evidence-led cleanup
+  without automatic Product Truth edits, archive-by-age, or a new CLI/gate.
+- Add regressions that ensure active/rejected/archived Decisions are not
+  silently reclassified or auto-archived.
+
 ### File-scoped Rule authority and mixed-confirmation warnings
 
 - Explicit pending/unconfirmed headings in a `confirmed` Product Rule are

@@ -45,6 +45,10 @@ Archiving is a reviewed semantic choice, not a heuristic based solely on age or
 lack of backlinks. Do not delete historical rationale or silently rewrite it to
 match current code.
 
+`pact audit --json` lists explicitly superseded decisions as
+`decision_retention_candidates` for review, not automatic archival. For the
+optional review procedure, see [Knowledge Gardening](../skills/knowledge-gardening.md).
+
 ## Lifecycle
 
 ```text

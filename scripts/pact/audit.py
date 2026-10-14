@@ -93,6 +93,25 @@ def evaluate(index: dict, *, deterministic_check: str) -> dict:
     ]
     semantic_review_targets.extend(mixed_rule_candidates)
 
+    # A superseded Decision remains useful history. Surface it for *semantic*
+    # retention review; age/absence of backlinks never deletes engineering
+    # rationale or changes its status automatically.
+    decision_retention_candidates = [
+        {
+            "id": d.get("id"),
+            "title": d.get("title"),
+            "path": d.get("path"),
+            "reason": (
+                "explicitly superseded decision: review whether any current "
+                "constraint still needs it; do not archive automatically"
+            ),
+        }
+        for d in docs
+        if d.get("artifact_type") == "decision"
+        and d.get("status") == "superseded"
+    ]
+    semantic_review_targets.extend(decision_retention_candidates)
+
     return {
         "deterministic_check": deterministic_check,
         "artifact_counts": dict(sorted(type_counts.items())),
@@ -100,6 +119,7 @@ def evaluate(index: dict, *, deterministic_check: str) -> dict:
         "active_changes": active_changes,
         "known_drift": known_drift,
         "mixed_rule_candidates": mixed_rule_candidates,
+        "decision_retention_candidates": decision_retention_candidates,
         "semantic_review_targets": semantic_review_targets,
     }
 
@@ -140,6 +160,7 @@ def main() -> int:
         print(f"Active changes: {len(result['active_changes'])}")
         print(f"Known drift: {len(result['known_drift'])}")
         print(f"Mixed-authority rule candidates: {len(result['mixed_rule_candidates'])}")
+        print(f"Decision retention review candidates: {len(result['decision_retention_candidates'])}")
         if result["semantic_review_targets"]:
             print("Semantic review targets:")
             for item in result["semantic_review_targets"]:

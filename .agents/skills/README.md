@@ -10,7 +10,7 @@ Examples:
 - frontend visual review;
 - architecture review;
 - convergence review;
-- documentation gardening;
+- [documentation gardening](knowledge-gardening.md);
 - worktree merge review.
 
 Skills may be simplified, replaced, or removed as agent/tool capabilities improve.
