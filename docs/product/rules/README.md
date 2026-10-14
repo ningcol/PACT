@@ -30,6 +30,16 @@ Where was this rule confirmed?
 What behavior/test can verify it?
 ```
 
+## Confirmed versus candidate sections
+
+A `status = "confirmed"` Rule Artifact is authoritative as **one whole file**.
+Do not combine a confirmed first half with headings such as `## 待确认` or
+`## Unconfirmed` in the same Rule. Split these into separate confirmed and
+candidate files and link both from a neutral domain/navigation page. A heading
+heuristic in `pact audit` warns about obvious mixed authority; it cannot
+establish that every unlabelled section is confirmed. Do not promote uncertain
+business meaning merely because an Agent can parse the Markdown.
+
 ## Do not create rules for
 
 - implementation preferences;
