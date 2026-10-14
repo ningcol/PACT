@@ -23,10 +23,19 @@ jobs:
     timeout-minutes: 20
     env:
       BASE_SHA: 7542c755ebb0987aeb1415dba2c9f7a71b173993
+      PACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       TASK_ID: PILOT-ZILIU-EVIDENCE-001
       TARGET: /tmp/pact-owner-ziliu-smoke
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.PACT_SOURCE_SHA }}
+
+      - name: Validate exact PACT source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PACT_SOURCE_SHA"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
