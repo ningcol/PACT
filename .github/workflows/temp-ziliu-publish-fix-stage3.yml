@@ -1,0 +1,321 @@
+name: Temporary Ziliu Publishing API Stage 3 PACT Completion
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  TARGET_DIR: /tmp/ziliu-publish-fix-stage3
+  BASE_REF: 61af579266848ee50d12a0b658d1e32a49dabfde
+  FIX_REF: 6463b2a315d3619f8427c8ff83c1fe57e0385322
+  TASK_ID: REAL-ZILIU-PUBLISH-FIX-001
+  NEXTAUTH_URL: http://127.0.0.1:3000
+  NEXTAUTH_SECRET: temporary-local-ci-secret-no-production-use
+  DATABASE_URL: file:./ziliu-publish-pilot.db
+
+jobs:
+  stage3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: '22'
+
+      - name: Clone frozen base and freeze exact ziliu patch
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/ningcol/ziliu.git "$TARGET_DIR"
+          git -C "$TARGET_DIR" fetch --quiet origin refs/heads/fix/publish-api-no-false-success
+          test "$(git -C "$TARGET_DIR" rev-parse FETCH_HEAD)" = "$FIX_REF"
+          git -C "$TARGET_DIR" checkout --quiet --detach "$BASE_REF"
+          test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = "$BASE_REF"
+          git -C "$TARGET_DIR" diff --binary "$BASE_REF" "$FIX_REF" -- > /tmp/ziliu-publish-fix.patch
+          python3 - <<'PY'
+          import os, subprocess
+          root = os.environ["TARGET_DIR"]
+          got=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["BASE_REF"],os.environ["FIX_REF"]],
+              cwd=root,text=True).splitlines())
+          wanted={
+              "src/app/api/publish/route.ts",
+              "scripts/tests/publish-api-contract.test.cjs",
+              ".github/workflows/publish-api-contract.yml",
+          }
+          assert got==wanted,(got,wanted)
+          print("Frozen ziliu product/test/CI patch:", sorted(got))
+          PY
+
+      - name: Install locked test dependencies without lifecycle scripts
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Adopt PACT and commit temporary non-authoritative knowledge
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/pact/pact.py" init --target "$TARGET_DIR" --apply
+          python3 pact.py doctor --strict
+          mkdir -p docs/product/domains docs/product/rules .agents/decisions/proposed docs/architecture docs/drift/known
+          cat > docs/product/domains/server-publishing.md <<'EOF'
+          +++
+          [pact]
+          type = "domain"
+          id = "DOMAIN-ZILIU-SERVER-PUBLISH"
+          status = "candidate"
+          owners = ["product"]
+          aliases = ["服务端发布", "publishToZsxq", "publish route"]
+          paths = ["src/app/api/publish/route.ts", "src/components/editor/platform-preview.tsx"]
+          +++
+
+          # Candidate domain: server publishing API
+          The server publishing route and editor/extension publisher are separate surfaces. This is candidate navigation data and does not authorize external publication.
+          EOF
+          cat > docs/product/rules/publish-truthful-result.md <<'EOF'
+          +++
+          [pact]
+          type = "rule"
+          id = "RULE-ZILIU-PUBLISH-TRUTHFUL-001"
+          status = "candidate"
+          owners = ["product"]
+          domains = ["DOMAIN-ZILIU-SERVER-PUBLISH"]
+          aliases = ["服务端接口", "假成功", "publishing success"]
+          verification = ["src/app/api/publish/route.ts"]
+          +++
+
+          # Candidate durable rule: do not fabricate publication
+          The owner authorized a bounded task-scoped correction: keep the protected API but report explicit non-success for unimplemented direct providers. No general Product Truth status or live provider acknowledgement is inferred.
+          EOF
+          cat > .agents/decisions/proposed/DEC-SERVER-PUBLISH-NON-SUCCESS.md <<'EOF'
+          +++
+          [pact]
+          type = "decision"
+          id = "DEC-SERVER-PUBLISH-NON-SUCCESS"
+          status = "proposed"
+          owners = ["engineering"]
+          domains = ["DOMAIN-ZILIU-SERVER-PUBLISH"]
+          related = ["RULE-ZILIU-PUBLISH-TRUTHFUL-001"]
+          +++
+
+          # Proposed implementation
+          Preserve NextAuth and Zod validation; return HTTP 501 with success:false and no fabricated provider receipt. This proposal documents the scoped fix, not permanent Product Truth.
+          EOF
+          cat > docs/architecture/server-publishing-source.md <<'EOF'
+          +++
+          [pact]
+          type = "architecture"
+          status = "current"
+          owners = ["engineering"]
+          domains = ["DOMAIN-ZILIU-SERVER-PUBLISH"]
+          +++
+
+          # Source-backed code architecture
+          The server route is src/app/api/publish/route.ts. The editor's separate src/components/editor/platform-preview.tsx path opens third-party platforms and coordinates with the browser extension. The patch does not change that editor/extension path.
+          EOF
+          cat > docs/drift/known/DRIFT-PUBLISH-EXTERNAL-UNVERIFIED.md <<'EOF'
+          +++
+          [pact]
+          type = "drift"
+          id = "DRIFT-ZILIU-PUBLISH-EXTERNAL-E2E"
+          status = "known"
+          owners = ["engineering"]
+          domains = ["DOMAIN-ZILIU-SERVER-PUBLISH"]
+          +++
+
+          # Known external verification gap
+          Real NextRequest/NextResponse in-process and isolated loopback HTTP tests do not establish a production NextAuth session, live third-party provider acceptance, or browser extension E2E.
+          EOF
+          python3 pact.py check
+          git config user.email "pact-pilot@example.invalid"
+          git config user.name "PACT Ephemeral Pilot"
+          git add -A
+          git commit --quiet -m "test: temporary PACT adoption and source knowledge"
+          test -z "$(git status --porcelain)"
+
+      - name: Prepare medium-risk task and deliberately check targeted Context
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          set -euo pipefail
+          python3 pact.py task prepare \
+            "修复服务端发布API占位逻辑导致的虚假成功，保留认证、输入校验及编辑器插件流程" \
+            --success "四个平台的服务端未实现发布请求返回明确非成功，不虚构平台发布" \
+            --accept "未认证401与无效请求400保持不变，隔离HTTP契约测试通过" \
+            --accept "仅修改发布路由、新增针对性测试和CI，编辑器插件代码不变" \
+            --constraint "不得使用真实账号或生产数据库，不得声称第三方已发文" \
+            --risk medium --code \
+            --query "publishToWechat publishToZsxq src/app/api/publish/route.ts" \
+            --query "服务端发布 真实结果 HTTP 501" \
+            --task-id "$TASK_ID" --json > /tmp/ziliu-publish-stage3-prepare.json
+          python3 pact.py inspect "src/app/api/publish/route.ts" \
+            --query "publishToWechat publishToZsxq" --json > /tmp/ziliu-publish-stage3-inspect.json
+          python3 - <<'PY'
+          import json,pathlib
+          prep=json.loads(pathlib.Path("/tmp/ziliu-publish-stage3-prepare.json").read_text())
+          ctx=json.loads(pathlib.Path(prep["context"]).read_text())
+          obj=json.loads(pathlib.Path("/tmp/ziliu-publish-stage3-inspect.json").read_text())
+          selected=[x["path"] for x in ctx.get("code_artifacts",[])]
+          hinted=[x["path"] for x in ctx.get("code_candidate_hints",[])]
+          inspected=[x.get("path") for x in obj.get("discovery",{}).get("code_results",[])]
+          target="src/app/api/publish/route.ts"
+          assert target in inspected and (target in selected or target in hinted),(selected,hinted,inspected)
+          assert ctx.get("artifacts"),"PACT knowledge not selected"
+          print(json.dumps({
+              "knowledge":len(ctx["artifacts"]),"code":len(selected),
+              "route_materialized":target in selected,
+              "route_hint_inspected":target in hinted and target in inspected,
+              "selected_estimated_tokens":ctx.get("context_budget",{}).get("selected_estimated_tokens"),
+              "known_unknowns":ctx.get("known_unknowns",[])
+          },ensure_ascii=False,indent=2))
+          PY
+
+      - name: Apply only exact approved ziliu patch after preparation
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          set -euo pipefail
+          git apply --check /tmp/ziliu-publish-fix.patch
+          git apply /tmp/ziliu-publish-fix.patch
+          git status --short
+
+      - name: Verify changed-file set and immutable source through PACT run
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          cat > /tmp/ziliu-publish-scope.py <<'PY'
+          import os,pathlib,subprocess
+          expected={
+              "src/app/api/publish/route.ts",
+              "scripts/tests/publish-api-contract.test.cjs",
+              ".github/workflows/publish-api-contract.yml",
+          }
+          lines=subprocess.check_output(["git","status","--porcelain=v1","--untracked-files=all"],text=True).splitlines()
+          observed={line[3:] for line in lines}
+          assert observed==expected,(observed,expected)
+          for name in sorted(expected):
+              exact=subprocess.check_output(["git","show",os.environ["FIX_REF"]+":"+name])
+              assert pathlib.Path(name).read_bytes()==exact,name
+          print("Exact approved route, test and CI bytes verified; editor/extension unchanged")
+          PY
+          python3 pact.py run --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/scope.json" --quiet -- \
+            python3 /tmp/ziliu-publish-scope.py
+
+      - name: PACT run verifies Next.js handler contract and loopback HTTP
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          python3 pact.py run --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/contract.json" --quiet -- \
+            node --test scripts/tests/publish-api-contract.test.cjs
+
+      - name: PACT run verifies TypeScript
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          python3 pact.py run --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/typescript.json" --quiet -- \
+            npx tsc --noEmit
+
+      - name: PACT run verifies isolated Next production build
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          python3 pact.py run --task-id "$TASK_ID" \
+            --output ".pact/runs/$TASK_ID/build.json" --quiet -- \
+            npm run build
+
+      - name: Build Evidence, Convergence, Owner Report only from PASS receipts
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          python3 - <<'PY'
+          import os,json,pathlib
+          tid=os.environ["TASK_ID"]
+          prep=json.loads(pathlib.Path("/tmp/ziliu-publish-stage3-prepare.json").read_text())
+          ctx=json.loads(pathlib.Path(prep["context"]).read_text())
+          contract=json.loads(pathlib.Path(prep["contract"]).read_text())
+          acceptance=contract["acceptance_criteria"]
+          assert {c["id"] for c in acceptance}=={"AC-1","AC-2","AC-3"}
+          for name in ("scope","contract","typescript","build"):
+              receipt=json.loads((pathlib.Path(".pact/runs")/tid/(name+".json")).read_text())
+              assert receipt["status"]=="pass" and receipt["exit_code"]==0,(name,receipt)
+          definitions=[
+              ("EV-ZILIU-HTTP","The 10 actual handler/loopback contract tests pass, including 401/400 and non-success for four platforms.",["AC-1","AC-2"],"contract"),
+              ("EV-ZILIU-SCOPE","The patch contains only the three frozen route/test/CI files; no editor/extension modifications.",["AC-3"],"scope"),
+              ("EV-ZILIU-TSC","The patched application passes the TypeScript compiler.",["AC-1"],"typescript"),
+              ("EV-ZILIU-BUILD","The patched application passes isolated Next.js production build.",["AC-1"],"build"),
+          ]
+          claims=[{
+              "id":id,"claim":claim,"required":True,"status":"pass","criteria":ids,
+              "evidence":[{"kind":"test","provenance":"pact-run","ref":".pact/runs/"+tid+"/"+name+".json"}],
+          } for id,claim,ids,name in definitions]
+          evidence={
+              "version":1,"task_id":tid,"task":"Correct unimplemented server publishing false-success",
+              "risk_level":"medium","task_contract_sha256":prep["contract_sha256"],
+              "claims":claims,
+              "limitations":["No real provider delivery or complete production NextAuth/browser flow tested."],
+          }
+          changed=[
+              ".github/workflows/publish-api-contract.yml",
+              "scripts/tests/publish-api-contract.test.cjs",
+              "src/app/api/publish/route.ts",
+          ]
+          conv={
+              "version":1,"task_id":tid,
+              "change":"Keep server route, reject placeholder publishing with non-success.",
+              "owner_summary":"Server contract correction is verified, with no claim of real external publication.",
+              "evidence":[c["id"] for c in claims],
+              "context_sha256":prep["context_sha256"],
+              "coverage":[{
+                  "path":a["path"],"disposition":"aligned",
+                  "rationale":"Reviewed source-backed candidate/proposed/current/known temporary artifact; no authority promotion."
+              } for a in ctx.get("artifacts",[])],
+              "change_coverage":[{
+                  "path":p,"rationale":"Approved exact route/test/CI patch validated against pinned Git source."
+              } for p in changed],
+              "findings":[],
+          }
+          owner={
+              "version":1,"task_id":tid,"status":"completed",
+              "summary":"No fabricated server-side publication success; no external publishing implemented.",
+              "before":"Unimplemented provider stubs returned affirmative publishing outcomes.",
+              "after":"Authenticated valid server calls now return HTTP 501 and success false.",
+              "verification":[{"claim":c["claim"],"evidence_ids":[c["id"]]} for c in claims],
+              "acceptance":[{
+                  "criterion_id":a["id"],"summary":a["text"],
+                  "evidence_ids":[c["id"] for c in claims if a["id"] in c["criteria"]]
+              } for a in acceptance],
+              "consistency":{"status":"aligned","summary":"Scoped API contract only; no real provider result asserted."},
+              "owner_decisions":[],
+          }
+          dst=pathlib.Path(".pact/completions")/tid
+          dst.mkdir(parents=True,exist_ok=True)
+          for name,data in (("evidence.json",evidence),("convergence.json",conv),("owner-report.json",owner)):
+              (dst/name).write_text(json.dumps(data,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print("Bundle derives all success claims from four real current-workspace run receipts.")
+          PY
+
+      - name: Complete and evaluate the task through PACT trust gate
+        working-directory: /tmp/ziliu-publish-fix-stage3
+        run: |
+          set -euo pipefail
+          python3 pact.py task finish "$TASK_ID" --json | tee /tmp/ziliu-publish-stage3-finish.json
+          python3 pact.py eval --task "$TASK_ID" --json > /tmp/ziliu-publish-stage3-eval.json
+          python3 - <<'PY'
+          import json,pathlib
+          result=json.loads(pathlib.Path("/tmp/ziliu-publish-stage3-finish.json").read_text())
+          assert result["complete"] is True,result
+          assert result["convergence"]=="aligned",result
+          assert result["change_coverage"]["required_changed_files"]==3,result
+          assert result["change_coverage"]["covered_changed_files"]==3,result
+          assert not result["convergence_coverage"]["missing_artifacts"],result
+          print("PACT_STAGE3_COMPLETED=True")
+          print("PACT_STAGE3_EVIDENCE="+json.dumps({
+              "workspace_bound_claims":result["workspace_bound_claims"],
+              "knowledge_artifacts_covered":result["convergence_coverage"]["covered_artifacts"],
+              "changed_files_covered":result["change_coverage"]["covered_changed_files"],
+              "convergence":result["convergence"],
+          },ensure_ascii=False))
+          PY
