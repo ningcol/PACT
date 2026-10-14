@@ -247,16 +247,18 @@ def verify(args) -> int:
                     counter += 1
                 claim_id = f"EV-VERIFY-{counter}"
 
+            run_args = [
+                "--task-id", args.task_id,
+                "--cwd", str(ROOT),
+                "--output", str(receipt_path),
+                "--quiet",
+            ]
+            for source in args.sources:
+                run_args.extend(["--source", source])
+            if args.allow_external_inputs:
+                run_args.append("--allow-external-inputs")
             proc = subprocess.run(
-                runtime_command(
-                    "run",
-                    "--task-id", args.task_id,
-                    "--cwd", str(ROOT),
-                    "--output", str(receipt_path),
-                    "--quiet",
-                    "--",
-                    *command,
-                ),
+                runtime_command("run", *run_args, "--", *command),
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
