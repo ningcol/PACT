@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 import re
 from datetime import datetime, timezone
 
@@ -180,48 +181,68 @@ def main() -> int:
     if not output.is_absolute():
         output = root / output
 
-    paths, enumeration_mode = source_paths(root)
-    source_fingerprint = fingerprint_files(root, paths)
+    # Source files are not covered by the atomic cache publication. Retry
+    # when the visible set or its content changes during scanning, and never
+    # publish a partial/mixed-generation index as a successful snapshot.
+    for attempt in range(3):
+        try:
+            paths, enumeration_mode = source_paths(root)
+            source_fingerprint = fingerprint_files(root, paths)
+            expected_paths = {rel(path, root) for path in paths}
+            fresh = args.ensure and cache_is_fresh(
+                output,
+                format_version=FORMAT_VERSION,
+                source_fingerprint=source_fingerprint,
+                validator=lambda data: valid_project_index(
+                    data, expected_paths=expected_paths
+                ),
+            )
+            if not fresh:
+                parse_cache_path = root / ".pact" / "cache" / "project-file-cache.json"
+                parsed, stats = parse_with_cache(
+                    root=root,
+                    paths=paths,
+                    cache_path=parse_cache_path,
+                    cache_version=PARSE_CACHE_VERSION,
+                    parser=lambda path: parse_document(path, root),
+                )
+                if set(parsed) != expected_paths:
+                    raise OSError("source set changed while parsing")
+            updated_paths, updated_mode = source_paths(root)
+            if (
+                [rel(path, root) for path in updated_paths]
+                != [rel(path, root) for path in paths]
+                or updated_mode != enumeration_mode
+                or fingerprint_files(root, updated_paths) != source_fingerprint
+            ):
+                raise OSError("source files changed during Project Map scan")
+            if fresh:
+                print(f"PACT map: fresh -> {output}")
+                return 0
 
-    expected_paths = {rel(path, root) for path in paths}
-    if args.ensure and cache_is_fresh(
-        output,
-        format_version=FORMAT_VERSION,
-        source_fingerprint=source_fingerprint,
-        validator=lambda data: valid_project_index(
-            data, expected_paths=expected_paths
-        ),
-    ):
-        print(f"PACT map: fresh -> {output}")
-        return 0
+            documents = [parsed[relative] for relative in sorted(parsed)]
+            index = build_index(
+                root,
+                documents,
+                source_fingerprint,
+                enumeration_mode=enumeration_mode,
+            )
+            atomic_write_json(output, index)
+            print(
+                f"PACT map: indexed {len(index['documents'])} document(s) "
+                f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
+                f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
+            )
+            return 0
+        except OSError as exc:
+            if attempt == 2:
+                print(
+                    f"PACT map: unstable source snapshot after 3 attempts: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
 
-    parse_cache_path = root / ".pact" / "cache" / "project-file-cache.json"
-    parsed, stats = parse_with_cache(
-        root=root,
-        paths=paths,
-        cache_path=parse_cache_path,
-        cache_version=PARSE_CACHE_VERSION,
-        parser=lambda path: parse_document(path, root),
-    )
-    documents = [
-        parsed[relative]
-        for relative in sorted(parsed)
-    ]
-
-    index = build_index(
-        root,
-        documents,
-        source_fingerprint,
-        enumeration_mode=enumeration_mode,
-    )
-    atomic_write_json(output, index)
-
-    print(
-        f"PACT map: indexed {len(index['documents'])} document(s) "
-        f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
-        f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
-    )
-    return 0
+    return 2
 
 
 if __name__ == "__main__":
