@@ -76,13 +76,29 @@ python3 pact.py task prepare "fix province switching" \
   --query "province switching displayed data" \
   --query "selectedProvince region context"
 
-# After the Agent has created Evidence + Convergence + Owner Report:
+# Create non-completing review drafts without overwriting existing work:
+python3 pact.py task draft <TASK-ID>
+
+# Run an explicit check and attach its receipt to chosen acceptance criterion:
+python3 pact.py task verify <TASK-ID> \\
+  --criterion AC-1 \\
+  --claim "The targeted test command passes" \\
+  -- python3 -m unittest tests.test_feature
+
+# After reviewing Evidence + Convergence + Owner Report semantically:
 python3 pact.py task finish <TASK-ID>
 ```
 
 `task prepare` also writes a machine-readable Task Contract. The required `--success` becomes the first acceptance criterion; use repeatable `--accept` for additional observable criteria and repeatable `--constraint` for conditions that must remain true. Evidence claims that prove acceptance list the relevant `AC-*` IDs. `task finish` rejects completion when any criterion lacks passing Evidence or when verified acceptance is omitted from the Owner Report.
 
 These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.
+
+`task draft` creates clearly incomplete Evidence, Convergence and Owner Report
+templates without overwriting user edits; `task verify` executes a real check
+through `pact run` and appends an Evidence claim only for the explicitly
+selected `AC-*` criteria. A passing command is **not** proof of business meaning
+or alignment. Agents must review claims, explain how checks establish observable
+acceptance, and finish Convergence/Owner Report before a task can complete.
 
 `task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent. In Git projects it also derives the files whose final content changed since preparation, writes a final Impact report, and requires Convergence `change_coverage` rationale for every task-changed path.
 
