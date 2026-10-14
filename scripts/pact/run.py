@@ -73,10 +73,14 @@ def external_source_count(
     cwd = cwd.resolve()
     found: set[str] = set()
     for arg in command:
-        try:
-            tokens = shlex.split(arg) if " " in arg else [arg]
-        except ValueError:
-            tokens = [arg]
+        # argv items are already individual tokens: preserve a pathname
+        # containing spaces, then additionally inspect simple shell fragments.
+        tokens = [arg]
+        if " " in arg:
+            try:
+                tokens.extend(shlex.split(arg))
+            except ValueError:
+                pass
         for token in tokens:
             candidate_text = token
             if token.startswith("--") and "=" in token:
