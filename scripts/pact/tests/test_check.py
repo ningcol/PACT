@@ -143,6 +143,18 @@ class PactCheckTests(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_gitignored_ephemeral_markdown_does_not_break_check(self) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        self.write(".gitignore", "docs/_probe*.md\ndocs/tmp*.md\n")
+        self.write(
+            "docs/_probe-racing.md",
+            "+++\n[pact]\ntype = broken TOML\n+++\n",
+        )
+        self.write("docs/tmp-generated.md", "[Broken](missing-target.md)\n")
+        self.write("README.md", "# Real project\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
