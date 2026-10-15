@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -237,6 +238,12 @@ class TaskWorkflowTests(unittest.TestCase):
         owner_path = self.bundle / "owner-report.json"
         marker = self.bundle / ".pact-assist-generated.json"
         self.assertTrue(marker.is_file())
+        tracked = json.loads(marker.read_text(encoding="utf-8"))
+        self.assertEqual(
+            tracked["owner_sha256"],
+            hashlib.sha256(owner_path.read_bytes()).hexdigest(),
+            "provenance marker must bind exact persisted bytes, including Windows CRLF",
+        )
         before = json.loads(owner_path.read_text(encoding="utf-8"))
         self.assertEqual(
             [item["criterion_id"] for item in before["acceptance"]], ["AC-1"]
