@@ -107,11 +107,12 @@ def score(metric: dict, oracle: list[str]) -> dict:
     }
 
 
-def evaluate_case(case: dict, expected: list[str], *, parent: pathlib.Path) -> dict:
+def evaluate_case(case: dict, *, parent: pathlib.Path) -> dict:
     target = parent / case["id"]
     _install(target, case)
-    # Do NOT copy the oracle into the fixture or pass it as a query.
-    assert not (target / ORACLE.name).exists()
+    # No oracle file or target diff is present in the running fixture.
+    if (target / ORACLE.name).exists():
+        raise RuntimeError("synthetic oracle leaked into fixture")
     default = _context(target, case, "default")
     work = _context(target, case, "work")
     return {
@@ -121,31 +122,43 @@ def evaluate_case(case: dict, expected: list[str], *, parent: pathlib.Path) -> d
         "code_limit": case["code_limit"],
         "token_budget": case["token_budget"],
         "source": "PACT-owned synthetic isolated installed runtime",
-        "default": score(default, expected),
-        "work": score(work, expected),
+        "default": default,
+        "work": work,
         "oracle_is_synthetic": True,
         "real_agent_executed": False,
         "owner_data_observed": False,
     }
 
 
-def evaluate(inputs: dict, oracle: dict) -> dict:
+def evaluate(inputs: dict, oracle_path: pathlib.Path) -> dict:
     cases = inputs["cases"]
-    expected_by_id = oracle["cases"]
     ids = [item["id"] for item in cases]
-    if (len(ids) != len(set(ids)) or not ids
-            or set(ids) != set(expected_by_id)):
-        raise ValueError("inputs and synthetic oracle do not match exactly")
+    if len(ids) != len(set(ids)) or not ids:
+        raise ValueError("synthetic input IDs must be unique and nonempty")
     results = []
     with tempfile.TemporaryDirectory(prefix="pact-eight-stage-synthetic-") as tmp:
         root = pathlib.Path(tmp)
         for case in cases:
-            # Oracle value is not consulted during context generation.
-            results.append(evaluate_case(case, expected_by_id[case["id"]], parent=root))
+            # The oracle is not read until all queries have completed.
+            results.append(evaluate_case(case, parent=root))
+    oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+    expected_by_id = oracle["cases"]
+    if set(ids) != set(expected_by_id):
+        raise ValueError("synthetic oracle does not match input IDs")
+    for result in results:
+        expected = expected_by_id[result["id"]]
+        if not expected:
+            raise ValueError("synthetic oracle cannot be empty")
+        result["default"] = score(result["default"], expected)
+        result["work"] = score(result["work"], expected)
+    git = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+        check=False,
+    )
     return {
         "version": 1,
         "evaluation_kind": "PACT-owned synthetic regression, not blind A/B",
-        "source_commit": "caller-recorded-current-P ACT-SHA",
+        "source_commit": git.stdout.strip() if git.returncode == 0 else None,
         "case_count": len(results),
         "case_results": results,
         "task_queries_curated_with_fixture_knowledge": True,
@@ -161,15 +174,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Local PACT-only synthetic Context evaluation")
     parser.add_argument("--inputs", default=str(CASES))
     parser.add_argument("--oracle", default=str(ORACLE))
-    parser.add_argument("--output", help="optional output path; default stdout")
     args = parser.parse_args()
     inputs = json.loads(pathlib.Path(args.inputs).read_text(encoding="utf-8"))
-    oracle = json.loads(pathlib.Path(args.oracle).read_text(encoding="utf-8"))
-    report = evaluate(inputs, oracle)
-    rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
-    if args.output:
-        pathlib.Path(args.output).write_text(rendered, encoding="utf-8")
-    print(rendered, end="")
+    report = evaluate(inputs, pathlib.Path(args.oracle))
+    print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
 
