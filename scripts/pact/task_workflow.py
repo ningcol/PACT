@@ -7,15 +7,22 @@ This module never synthesizes aligned Convergence or completed Owner Reports.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
 import uuid
 from contextlib import contextmanager
 from typing import Iterator
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 from evidence import validate as validate_evidence
 from protocol_ids import (
@@ -75,19 +82,63 @@ def _prepared(task_id: str) -> tuple[dict, dict, pathlib.Path]:
 
 @contextmanager
 def _exclusive_bundle(bundle: pathlib.Path) -> Iterator[None]:
+    """Use a stable OS lock so an abruptly terminated writer cannot strand a task.
+
+    Do not unlink the lock file: another process could already hold its open
+    inode, and replacing the pathname would admit two simultaneous writers.
+    Existing empty O_EXCL lock files from older PACT versions are reusable.
+    """
     bundle.mkdir(parents=True, exist_ok=True)
     lock_path = bundle / ".task-workflow.lock"
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
     try:
-        fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError as exc:
-        raise ValueError(
-            "another task Evidence writer holds the completion-bundle lock"
-        ) from exc
+        fd = os.open(lock_path, flags, 0o600)
+    except OSError as exc:
+        raise ValueError(f"cannot open completion-bundle lock safely: {exc}") from exc
+
+    locked = False
     try:
-        os.close(fd)
+        handle_stat = os.fstat(fd)
+        path_stat = lock_path.lstat()
+        if (
+            not stat.S_ISREG(handle_stat.st_mode)
+            or not stat.S_ISREG(path_stat.st_mode)
+            or (handle_stat.st_dev, handle_stat.st_ino)
+            != (path_stat.st_dev, path_stat.st_ino)
+            or handle_stat.st_nlink != 1
+        ):
+            raise ValueError("unsafe completion-bundle lock file")
+
+        try:
+            if os.name == "nt":
+                # Windows CRT byte-range locks need an existing byte to lock.
+                if handle_stat.st_size == 0:
+                    os.write(fd, b"\\0")
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+        except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                raise ValueError(
+                    "another task Evidence writer holds the completion-bundle lock"
+                ) from exc
+            raise
+
         yield
     finally:
-        lock_path.unlink(missing_ok=True)
+        try:
+            if locked:
+                if os.name == "nt":
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _initial_evidence(manifest: dict) -> dict:
