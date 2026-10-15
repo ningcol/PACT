@@ -28,6 +28,7 @@ def run_discovery(
     *,
     code: bool,
     code_limit: int,
+    intent: str | None = None,
 ) -> dict:
     command = runtime_command(
         "discover",
@@ -44,6 +45,8 @@ def run_discovery(
             "--code-limit",
             str(code_limit),
         ])
+    if intent:
+        command.extend(["--intent", intent])
 
     result = subprocess.run(
         command,
@@ -355,6 +358,7 @@ def main() -> int:
         help="disable code-aware context even if the risk profile normally enables it",
     )
     parser.set_defaults(code=None)
+    parser.add_argument("--intent", choices=["work", "decision", "history"], help="optional retrieval priority; default unchanged")
     parser.add_argument("--output")
     args = parser.parse_args()
 
@@ -392,12 +396,14 @@ def main() -> int:
             knowledge_limit,
             code=code_enabled,
             code_limit=code_limit,
+                intent=args.intent,
         )
         wider_discovery = run_discovery(
             queries,
             knowledge_pool_limit,
             code=code_enabled,
             code_limit=code_pool_limit,
+                intent=args.intent,
         )
 
         primary_selected_results = None
@@ -408,12 +414,14 @@ def main() -> int:
                 knowledge_limit,
                 code=code_enabled,
                 code_limit=code_limit,
+                intent=args.intent,
             )
             primary_wider_discovery = run_discovery(
                 [queries[0]],
                 knowledge_pool_limit,
                 code=code_enabled,
                 code_limit=code_pool_limit,
+                intent=args.intent,
             )
             primary_candidate_results = extend_candidate_pool(
                 primary_discovery.get("results", []),

@@ -384,11 +384,37 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     return selected[:final_limit]
 
 
+def exact_match_priority(reasons: list[str]) -> int:
+    """Preserve the source scorer's exactness through optional query fusion."""
+    def matches(label: str) -> bool:
+        return any(
+            reason == label or (
+                reason.endswith(": " + label)
+                and not reason.startswith("matched query: ")
+            )
+            for reason in reasons
+        )
+
+    if matches("exact stable id"):
+        return 3
+    if matches("exact title"):
+        return 2
+    if matches("exact alias"):
+        return 1
+    return 0
+
+
 def fuse_ranked_results(
     query_results: list[tuple[str, list[dict]]],
     limit: int,
+    *,
+    preserve_exact: bool = False,
 ) -> list[dict]:
-    """Fuse ranked lists with deterministic RRF plus bounded query diversity."""
+    """Fuse ranked lists with deterministic RRF plus bounded query diversity.
+
+    Only explicit optional intent retrieval reserves exact match candidates
+    before the RRF budget truncation. Legacy no-intent fusion is unchanged.
+    """
     final_limit = max(limit, 1)
     fused: dict[str, dict] = {}
 
@@ -406,6 +432,7 @@ def fuse_ranked_results(
                     "_max_score": int(item.get("score", 0)),
                     "_queries": [],
                     "_reasons": [],
+                    "_exact_priority": 0,
                 }
                 fused[path] = entry
 
@@ -413,6 +440,14 @@ def fuse_ranked_results(
             entry["_max_score"] = max(
                 entry["_max_score"],
                 int(item.get("score", 0)),
+            )
+            # Only the direct scorer's bare reasons confer exact status.
+            # User-controlled "matched query: ..." labels may otherwise
+            # masquerade as a scored exact hit when the query text itself
+            # happens to equal "exact stable id"/"exact title"/"exact alias".
+            entry["_exact_priority"] = max(
+                entry["_exact_priority"],
+                exact_match_priority(item.get("reasons", [])),
             )
             if query not in entry["_queries"]:
                 entry["_queries"].append(query)
@@ -445,6 +480,15 @@ def fuse_ranked_results(
         result["reasons"] = [
             f"matched query: {query}" for query in entry["_queries"]
         ] + entry["_reasons"]
+        if preserve_exact and entry["_exact_priority"]:
+            # Canonical scorer-derived signal survives query decoration
+            # without changing closed JSON field names or legacy no-intent
+            # ranking/reason output. This also handles query="matched query".
+            result["reasons"].append({
+                3: "exact stable id",
+                2: "exact title",
+                1: "exact alias",
+            }[entry["_exact_priority"]])
         rendered[path] = result
 
     global_ranked = sorted(
@@ -461,10 +505,31 @@ def fuse_ranked_results(
         reserve_per_query = max(1, final_limit // (2 * query_count))
 
     selected_paths: set[str] = set()
+    if preserve_exact:
+        exact_candidates = sorted(
+            (
+                item for item in rendered.values()
+                if exact_match_priority(item.get("reasons", [])) > 0
+            ),
+            key=lambda item: (
+                -exact_match_priority(item.get("reasons", [])),
+                -int(item.get("score", 0)),
+                item.get("path", ""),
+            ),
+        )
+        for item in exact_candidates:
+            if len(selected_paths) >= final_limit:
+                break
+            selected_paths.add(item["path"])
+
     if reserve_per_query:
         for _, results in query_results:
+            if preserve_exact and len(selected_paths) >= final_limit:
+                break
             taken = 0
             for item in results:
+                if preserve_exact and len(selected_paths) >= final_limit:
+                    break
                 path = item.get("path")
                 if not path or path in selected_paths:
                     continue
@@ -487,6 +552,52 @@ def fuse_ranked_results(
     return selected[:final_limit]
 
 
+def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
+    """Optional intent prior, never an authority upgrade or default behavior.
+
+    Re-rank an expanded lexical candidate pool for a particular information
+    need. Exact ID discovery still works, and rejected Decisions remain
+    historical *evidence*, not a confirmed Product Rule.
+    """
+    if intent is None:
+        return items
+
+    def preference(item: dict) -> int:
+        kind, status = item.get("artifact_type"), item.get("status")
+        if intent == "work":
+            if kind == "rule" and status == "confirmed" and not item.get("mixed_authority"):
+                return 3
+            if kind == "decision" and status == "implemented":
+                return 2
+            if kind == "decision" and status in {"archived", "superseded"}:
+                return -1
+            return 0
+        if intent == "decision":
+            if kind == "decision" and status in {"implemented", "rejected"}:
+                return 3
+            return 1 if kind == "decision" else 0
+        if intent == "history":
+            return 3 if kind == "decision" and status in {
+                "archived", "superseded", "rejected"
+            } else 0
+        return 0
+
+    # Preserve the lexical lookup hierarchy before any intent-dependent
+    # preference: exact ID > exact title > exact alias > generic candidates.
+    # Fused reasons carry a query prefix; the shared helper understands both.
+    # Historical/rejected lifecycle status cannot outweigh an exact lookup.
+
+    return sorted(
+        items,
+        key=lambda item: (
+            -exact_match_priority(item.get("reasons", [])),
+            -preference(item),
+            -int(item.get("score", 0)),
+            str(item.get("path", "")),
+        ),
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Discover PACT project knowledge")
     parser.add_argument("query", help="primary discovery query")
@@ -496,6 +607,11 @@ def main() -> int:
         action="append",
         default=[],
         help="additional discovery query; repeat for multi-query fusion",
+    )
+    parser.add_argument(
+        "--intent",
+        choices=["work", "decision", "history"],
+        help="optional explicit retrieval intent; absent means legacy ranking",
     )
     parser.add_argument("--index", default=str(DEFAULT_INDEX))
     parser.add_argument("--limit", type=int, default=8)
@@ -518,17 +634,25 @@ def main() -> int:
     ensure_index(index_path)
     index = json.loads(index_path.read_text(encoding="utf-8"))
 
+    candidate_limit = (
+        max(args.limit * 3, args.limit + 8)
+        if args.intent else args.limit
+    )
     knowledge_lists = [
         (
             query,
-            ranked_knowledge_results(index, query, args.limit),
+            ranked_knowledge_results(index, query, candidate_limit),
         )
         for query in queries
     ]
     if len(queries) == 1:
         ranked = knowledge_lists[0][1]
     else:
-        ranked = fuse_ranked_results(knowledge_lists, args.limit)
+        ranked = fuse_ranked_results(
+            knowledge_lists, candidate_limit,
+            preserve_exact=bool(args.intent),
+        )
+    ranked = rerank_for_intent(ranked, args.intent)[:args.limit]
 
     code_results = []
     if args.code:
@@ -576,6 +700,9 @@ def main() -> int:
         "code_result_count": len(code_results),
         "code_results": code_results,
     }
+
+    if args.intent:
+        result["intent"] = args.intent
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
