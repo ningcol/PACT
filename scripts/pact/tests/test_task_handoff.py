@@ -133,6 +133,27 @@ class TaskHandoffIntegrationTests(unittest.TestCase):
             self.root / ".pact" / "tasks" / self.task_id / "handoff.json"
         ).exists())
 
+    def test_handoff_rejects_in_repo_symlink_alias_before_hashing(self):
+        decisions = self.root / ".agents" / "decisions"
+        decisions.mkdir(parents=True, exist_ok=True)
+        actual = decisions / "genuine.md"
+        actual.write_text("Durable rationale\n", encoding="utf-8")
+        link = decisions / "alias.md"
+        try:
+            link.symlink_to(actual)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlink creation unsupported")
+        result = self.pact(
+            "task", "checkpoint", self.task_id,
+            "--decision", ".agents/decisions/alias.md",
+            "--todo", "Do not accept symlink alias",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("symlink", result.stderr.lower())
+        self.assertFalse((
+            self.root / ".pact" / "tasks" / self.task_id / "handoff.json"
+        ).exists())
+
     def test_checkpoint_bounds_and_idempotent_history_append(self):
         too_long = self.pact(
             "task", "checkpoint", self.task_id,
