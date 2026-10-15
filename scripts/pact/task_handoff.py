@@ -286,6 +286,11 @@ def resume(args) -> int:
                 except (OSError, ValueError, KeyError, json.JSONDecodeError):
                     pass
                 checked_refs.append({"path": ref["path"], "state": state})
+                if state != "same-file":
+                    warnings.append(
+                        f"handoff reference {ref['path']!r} is {state}; "
+                        "re-read Decision premises or rerun verification"
+                    )
         if evidence_errors:
             warnings.append("stale or invalid Evidence must be reverified")
         if not change.get("supported"):
