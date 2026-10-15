@@ -182,6 +182,21 @@ See `docs/evaluation/pilot-scorecard.md`.
 
 `init` is dry-run by default and never overwrites existing files. Fresh adoption installs only the compact executable/control-plane surface, while empty Product/Architecture/Decision/Change/Drift/Skill scaffold is left unmaterialized. An existing `AGENTS.md` is preserved; PACT creates merge guidance under `.pact/` instead.
 
+## Task Evidence writer locking
+
+`task draft` and `task verify` serialize writes to each completion bundle using
+a nonblocking operating-system file lock at `.task-workflow.lock` inside that
+bundle. **The lock pathname intentionally stays on disk** after a successful
+run; only the OS-held lock is released. An abrupt process exit also releases
+the OS-held lock, so an abandoned empty sentinel from earlier PACT versions
+does not require manual deletion. Do not remove the pathname while writers
+may be active: that can create independent lock inodes and defeat exclusivity.
+
+An older pre-fix PACT runtime used create-exclusive/delete semantics on the
+same filename; do not run the old and new runtime against one completion
+bundle concurrently. This coordinates cooperative PACT writers, not malicious
+filesystem mutation or unbounded external verification commands.
+
 ## Local task state
 
 `.pact/tasks/`, `.pact/runs/`, `.pact/completions/`, `.pact/cache/`, and `.pact/tmp/` are generated local control-plane state. Fresh init creates `.pact/.gitignore` so these paths do not pollute project Git status. They remain available locally for task status/evaluation/completion but are not durable project knowledge.
