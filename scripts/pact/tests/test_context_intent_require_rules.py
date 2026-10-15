@@ -165,6 +165,72 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                     "normal no-intent RRF behavior stays byte-for-byte ordered",
                 )
 
+    def test_multi_query_text_cannot_fake_an_exact_scorer_hit(self):
+        # "matched query: exact stable id" is QUERY METADATA, not the score
+        # reason "exact stable id". Treating suffixes as exact causes nine
+        # generic hits to evict a genuine exact hit from the last query.
+        broad = []
+        for n in range(9):
+            item = artifact(f"RULE-BROAD-{n}", score=2000 - n)
+            item["path"] = f"docs/product/rules/broad-{n}.md"
+            item["reasons"] = ["body contains query"]
+            broad.append(item)
+        real = artifact(
+            "DEC-TRUE-EXACT", kind="decision",
+            status="superseded", score=5,
+        )
+        real["path"] = ".agents/decisions/implemented/exact.md"
+        real["reasons"] = ["exact stable id"]
+        inputs = [
+            ("exact stable id", broad),
+            *[(f"other-query-{n}", broad) for n in range(8)],
+            ("DEC-TRUE-EXACT", [real]),
+        ]
+        unchanged = fuse_ranked_results(inputs, limit=9)
+        self.assertNotIn(
+            "DEC-TRUE-EXACT", [item["id"] for item in unchanged],
+            "unmodified RRF default must remain a meaningful negative fixture",
+        )
+        protected = fuse_ranked_results(
+            inputs, limit=9, preserve_exact=True,
+        )
+        self.assertIn(
+            "DEC-TRUE-EXACT", [item["id"] for item in protected],
+        )
+        self.assertEqual(
+            rerank_for_intent(protected, "work")[0]["id"], "DEC-TRUE-EXACT"
+        )
+        fake = next(item for item in protected if item["id"] == "RULE-BROAD-0")
+        self.assertIn("matched query: exact stable id", fake["reasons"])
+        self.assertEqual(
+            rerank_for_intent([fake, real], "work")[0]["id"],
+            real["id"],
+            "query metadata must not carry exact-ID authority",
+        )
+        self.assertEqual(rerank_for_intent(unchanged, None), unchanged)
+
+    def test_scored_exact_title_survives_query_named_matched_query(self):
+        broad = artifact("RULE-GENERIC", score=3000)
+        broad["path"] = "docs/product/rules/broad.md"
+        broad["reasons"] = ["body contains query"]
+        exact = artifact(
+            "DEC-TITLE-REAL", kind="decision", status="superseded", score=10
+        )
+        exact["path"] = ".agents/decisions/implemented/title.md"
+        exact["reasons"] = ["exact title"]
+        inputs = [
+            ("exact title", [broad]),
+            ("matched query", [broad, exact]),
+        ]
+        protected = fuse_ranked_results(
+            inputs, limit=2, preserve_exact=True,
+        )
+        scored = next(item for item in protected if item["id"] == "DEC-TITLE-REAL")
+        self.assertIn("exact title", scored["reasons"])
+        self.assertEqual(
+            rerank_for_intent(protected, "work")[0]["id"], "DEC-TITLE-REAL"
+        )
+
     def test_explicit_rule_must_be_selected_and_wholly_confirmed(self):
         rule = artifact("RULE-VALID")
         self.assertEqual(context.required_rule_gaps(
