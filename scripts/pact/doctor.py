@@ -129,7 +129,7 @@ HOST_GUIDES = (
 )
 HOST_READ_LIMIT = 128 * 1024
 HOST_WORKFLOW_LIMIT = 32
-MARKDOWN_INCLUDE = re.compile(r"\\]\\(([^)#]+)(?:#[^)]*)?\\)|^\\s*@([A-Za-z0-9_.\\/-]+\\.md)\\s*$", re.MULTILINE)
+MARKDOWN_INCLUDE = re.compile(r"\]\(([^)#]+)(?:#[^)]*)?\)|^\s*@([A-Za-z0-9_.\/-]+\.md)\s*$", re.MULTILINE)
 
 
 def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | None]:
@@ -221,7 +221,7 @@ def host_wiring_checks(root: pathlib.Path = ROOT) -> list[dict]:
                         checks.append(item("host-ci:" + relative, "needs-manual-review",
                                            problem))
                     elif data is not None and re.search(
-                        r"(?m)^\\s*(?:paths|paths-ignore)\\s*:", data
+                        r"(?m)^\s*(?:paths|paths-ignore)\s*:", data
                     ):
                         checks.append(item(
                             "host-ci:" + relative, "needs-manual-review",
