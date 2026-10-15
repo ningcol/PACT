@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -20,6 +21,7 @@ SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
+RULE_ID = re.compile(r"^RULE-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
 def run_discovery(
@@ -149,6 +151,41 @@ def build_code_candidate_hints(
             break
 
     return hints
+
+
+def required_rule_gaps(
+    rule_ids: list[str],
+    selected: list[dict],
+    candidates: list[dict],
+    exact: dict[str, dict | None],
+) -> list[str]:
+    """Explicit requirements fail closed; never infer mandatory IDs from prose."""
+    selected_rules = set(applicable_rule_ids(selected))
+    candidates_by_id = {
+        str(item.get("id")): item
+        for item in candidates
+        if item.get("id")
+    }
+    errors: list[str] = []
+    for rule_id in rule_ids:
+        if rule_id in selected_rules:
+            continue
+        doc = candidates_by_id.get(rule_id) or exact.get(rule_id)
+        if doc is None:
+            reason = "absent (no artifact with that stable ID)"
+        elif doc.get("artifact_type") != "rule":
+            reason = "identifier belongs to a non-Rule artifact"
+        elif doc.get("mixed_authority"):
+            reason = "mixed confirmed/pending sections; not normative"
+        elif doc.get("status") != "confirmed":
+            reason = f"status {doc.get('status')!r} is not confirmed"
+        else:
+            reason = "confirmed, but not selected under current count/token budget"
+        errors.append(
+            f"required Rule {rule_id}: {reason}; inspect the artifact, "
+            "increase --limit or supply a narrower --query, then retry"
+        )
+    return errors
 
 
 def repo_file(relative: str) -> pathlib.Path | None:
@@ -359,14 +396,18 @@ def main() -> int:
     )
     parser.set_defaults(code=None)
     parser.add_argument("--intent", choices=["work", "decision", "history"], help="optional retrieval priority; default unchanged")
+    parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
 
     if args.token_budget is not None and args.token_budget < 0:
         parser.error("--token-budget must be >= 0")
 
+    required_rules = list(dict.fromkeys(args.required_rules))
+    if len(required_rules) > 8 or any(not RULE_ID.fullmatch(x) for x in required_rules):
+        parser.error("--require-rule expects up to eight unique canonical RULE-* IDs")
     goal = args.goal or args.task
-    queries = args.queries or [args.task]
+    queries = list(dict.fromkeys([*(args.queries or [args.task]), *required_rules]))
     risk = profile(args.risk)
 
     knowledge_limit = max(args.limit or risk["knowledge_limit"], 1)
@@ -477,6 +518,34 @@ def main() -> int:
     })
 
     rules = applicable_rule_ids(results)
+    exact_required: dict[str, dict | None] = {}
+    for rule_id in required_rules:
+        if rule_id in rules or any(
+            item.get("id") == rule_id for item in candidate_results
+        ):
+            continue
+        try:
+            exact_discovery = run_discovery(
+                [rule_id], knowledge_pool_limit, code=False,
+                code_limit=code_limit,
+            )
+        except Exception as exc:
+            print(f"PACT context: cannot verify required Rule {rule_id}: {exc}",
+                  file=sys.stderr)
+            return 2
+        exact_required[rule_id] = next(
+            (item for item in exact_discovery.get("results", [])
+             if item.get("id") == rule_id),
+            None,
+        )
+    gaps = required_rule_gaps(
+        required_rules, results, candidate_results, exact_required
+    )
+    if gaps:
+        for gap in gaps:
+            print(f"PACT context: {gap}", file=sys.stderr)
+        return 2
+
     decisions = sorted({
         result["id"] or result["path"]
         for result in results
