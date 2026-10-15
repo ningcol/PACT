@@ -308,7 +308,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
                 self.winerror = code
 
         self.map_path.parent.mkdir(parents=True, exist_ok=True)
-        initial = '{"old":true}\\n'
+        initial = '{"old":true}\n'
         self.map_path.write_text(initial, encoding="utf-8")
         real_replace = cache_runtime.os.replace
         actual_classifier = cache_runtime._retryable_windows_cache_replace_error
