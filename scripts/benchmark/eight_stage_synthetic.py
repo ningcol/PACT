@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CASES = ROOT / "benchmarks" / "brownfield" / "eight-stage-synthetic-inputs.json"
 ORACLE = ROOT / "benchmarks" / "brownfield" / "eight-stage-synthetic-oracle.json"
+CASE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
 def run(command: list[str], *, cwd: pathlib.Path, timeout: int = 120) -> None:
@@ -108,7 +110,10 @@ def score(metric: dict, oracle: list[str]) -> dict:
 
 
 def evaluate_case(case: dict, *, parent: pathlib.Path) -> dict:
-    target = parent / case["id"]
+    name = case.get("id")
+    if not isinstance(name, str) or not CASE_ID.fullmatch(name):
+        raise ValueError("unsafe synthetic case id; must be a simple dashed basename")
+    target = parent / name
     _install(target, case)
     # No oracle file or target diff is present in the running fixture.
     if (target / ORACLE.name).exists():
@@ -132,9 +137,13 @@ def evaluate_case(case: dict, *, parent: pathlib.Path) -> dict:
 
 def evaluate(inputs: dict, oracle_path: pathlib.Path) -> dict:
     cases = inputs["cases"]
-    ids = [item["id"] for item in cases]
-    if len(ids) != len(set(ids)) or not ids:
-        raise ValueError("synthetic input IDs must be unique and nonempty")
+    ids = [item.get("id") for item in cases]
+    if (
+        not ids or not all(isinstance(name, str) and CASE_ID.fullmatch(name)
+                           for name in ids)
+        or len(ids) != len(set(ids))
+    ):
+        raise ValueError("synthetic input IDs must be unique, safe basenames")
     results = []
     with tempfile.TemporaryDirectory(prefix="pact-eight-stage-synthetic-") as tmp:
         root = pathlib.Path(tmp)
@@ -172,11 +181,9 @@ def evaluate(inputs: dict, oracle_path: pathlib.Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local PACT-only synthetic Context evaluation")
-    parser.add_argument("--inputs", default=str(CASES))
-    parser.add_argument("--oracle", default=str(ORACLE))
-    args = parser.parse_args()
-    inputs = json.loads(pathlib.Path(args.inputs).read_text(encoding="utf-8"))
-    report = evaluate(inputs, pathlib.Path(args.oracle))
+    parser.parse_args()  # frozen PACT-owned inputs; no arbitrary file paths
+    inputs = json.loads(CASES.read_text(encoding="utf-8"))
+    report = evaluate(inputs, ORACLE)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
