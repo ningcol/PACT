@@ -60,6 +60,92 @@ class TaskWorkflowTests(unittest.TestCase):
             sys.executable, "-c", f"raise SystemExit({exit_code})",
         )
 
+
+    def test_assist_is_read_only_and_never_reports_semantic_completion(self) -> None:
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        paths = [self.bundle / name for name in
+                 ("evidence.json", "convergence.json", "owner-report.json")]
+        before = [item.read_bytes() for item in paths]
+        result = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(set(report["unverified_criteria"]), {"AC-1", "AC-2"})
+        self.assertTrue(report["requires_semantic_review"])
+        self.assertFalse(report["owner_completed_automatically"])
+        self.assertEqual(before, [item.read_bytes() for item in paths])
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_assist_fills_only_existing_pass_and_keeps_owner_partial(self) -> None:
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        result = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertTrue(report["draft_written"])
+        self.assertEqual(report["unverified_criteria"], ["AC-2"])
+        owner_path = self.bundle / "owner-report.json"
+        owner = json.loads(owner_path.read_text())
+        self.assertEqual(owner["status"], "partial")
+        self.assertEqual(owner["verification"], [{
+            "claim": "The targeted verification command exits successfully",
+            "evidence_ids": ["EV-VERIFY-1"],
+        }])
+        self.assertEqual(
+            [item["criterion_id"] for item in owner.get("acceptance", [])],
+            ["AC-1"],
+        )
+        saved = owner_path.read_bytes()
+        again = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertFalse(json.loads(again.stdout)["draft_written"])
+        self.assertEqual(owner_path.read_bytes(), saved)
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_assist_cannot_launder_failing_claim_into_owner_draft(self) -> None:
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify(exit_code=3).returncode, 3)
+        result = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertFalse(report["draft_written"])
+        owner = json.loads((self.bundle / "owner-report.json").read_text())
+        self.assertEqual(owner["verification"], [])
+        self.assertEqual(owner["status"], "partial")
+
+    def test_export_only_verified_metadata_and_refuses_escape_or_overwrite(self) -> None:
+        self.assertEqual(self.verify().returncode, 0)
+        attempt = self.pact(
+            "task", "export", self.task_id,
+            "--filename", "bundle-evidence.json", "--json"
+        )
+        self.assertEqual(attempt.returncode, 0, attempt.stdout + attempt.stderr)
+        result = json.loads(attempt.stdout)
+        output = self.root / result["output"]
+        data = json.loads(output.read_text())
+        self.assertFalse(data["completion_attestation"])
+        self.assertEqual(data["task_id"], self.task_id)
+        self.assertEqual(len(data["passing_execution_claims"]), 1)
+        self.assertNotIn("argv", json.dumps(data))
+        self.assertNotIn("stdout", json.dumps(data))
+        duplicate = self.pact(
+            "task", "export", self.task_id,
+            "--filename", "bundle-evidence.json"
+        )
+        self.assertEqual(duplicate.returncode, 2)
+        self.assertEqual(json.loads(output.read_text()), data)
+        unsafe = self.pact(
+            "task", "export", self.task_id,
+            "--filename", "../outside.json"
+        )
+        self.assertEqual(unsafe.returncode, 2)
+        self.assertFalse((self.root / ".pact" / "runs" / "outside.json").exists())
+
     def test_draft_is_schema_shaped_but_not_complete(self) -> None:
         drafted = self.pact("task", "draft", self.task_id, "--json")
         self.assertEqual(drafted.returncode, 0, drafted.stderr)
