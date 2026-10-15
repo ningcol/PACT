@@ -107,6 +107,20 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
             self.assertNotIn("Local explanation", hints[0])
             self.assertIn("metadata only", hints[0])
 
+    def test_readme_probe_is_bounded_even_with_huge_code_limit(self):
+        with tempfile.TemporaryDirectory(prefix="pact-s3-many-modules-") as td:
+            root = pathlib.Path(td)
+            late = root / "src" / "mod40"
+            late.mkdir(parents=True, exist_ok=True)
+            (late / "README.md").write_text("late", encoding="utf-8")
+            candidates = [
+                {"path": f"src/mod{i}/entry.py"} for i in range(80)
+            ]
+            with mock.patch.object(context, "ROOT", root):
+                hints = context.nearby_readme_hints(candidates, limit=1)
+            self.assertEqual(hints, [])
+            self.assertEqual(context.MODULE_README_CODE_CANDIDATES, 24)
+
     def test_symlink_and_oversized_readme_are_not_promoted(self):
         with tempfile.TemporaryDirectory(prefix="pact-s3-unsafe-") as d:
             root = pathlib.Path(d)
