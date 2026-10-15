@@ -80,22 +80,22 @@ def _diagnose(
         if claim.get("required") and claim.get("status") == "pass"
     ]
     eligible = not provenance_errors and not policy_gaps
-    required_fails_by_criterion = {
+    required_nonpass_by_criterion = {
         item["id"]: [
             claim["id"] for claim in evidence["claims"]
             if claim.get("required")
-            and claim.get("status") == "fail"
+            and claim.get("status") != "pass"
             and item["id"] in claim.get("criteria", [])
         ]
         for item in criteria
     }
-    # Do not backfill Owner acceptance when another required check for that
-    # same criterion is already known to have failed. A later passing check
-    # cannot silently hide an unresolved failing required assertion.
+    # Any unresolved *required* Claim blocks mechanical Owner acceptance for
+    # its AC, whether it failed or was never verified. Other independently
+    # verified criteria may still be drafted as partial, not completed, work.
     by_criterion = {
         item["id"]: [claim for claim in passing_claims
                      if item["id"] in claim.get("criteria", [])]
-        if eligible and not required_fails_by_criterion[item["id"]] else []
+        if eligible and not required_nonpass_by_criterion[item["id"]] else []
         for item in criteria
     }
     uncovered_ac = [
@@ -109,7 +109,13 @@ def _diagnose(
             claim for claim in evidence["claims"]
             if item["id"] in claim.get("criteria", [])
         ]
-        verified_ids = [claim["id"] for claim in by_criterion[item["id"]]]
+        # Informational passing IDs do not depend on acceptance eligibility:
+        # a failed/pending sibling must block Owner acceptance while the
+        # genuinely executed successful check remains visible to reviewers.
+        verified_ids = [
+            claim["id"] for claim in attached
+            if claim.get("required") and claim["status"] == "pass"
+        ]
         failed_ids = [
             claim["id"] for claim in attached if claim["status"] == "fail"
         ]
@@ -117,15 +123,25 @@ def _diagnose(
             claim["id"] for claim in attached
             if claim["status"] == "unverified"
         ]
+        blocking_fails = [
+            claim["id"] for claim in attached
+            if claim.get("required") and claim["status"] == "fail"
+        ]
+        blocking_unknown = [
+            claim["id"] for claim in attached
+            if claim.get("required") and claim["status"] == "unverified"
+        ]
         criterion_diagnostics.append({
             "criterion_id": item["id"],
             "claim_ids": [claim["id"] for claim in attached],
             "execution_pass_claim_ids": verified_ids,
             "failed_claim_ids": failed_ids,
-            "blocking_required_failed_claim_ids": required_fails_by_criterion[item["id"]],
+            "blocking_required_failed_claim_ids": blocking_fails,
+            "blocking_required_unverified_claim_ids": blocking_unknown,
             "unverified_claim_ids": unknown_ids,
             "status": (
-                "failed" if required_fails_by_criterion[item["id"]]
+                "failed" if blocking_fails
+                else "unverified" if blocking_unknown or not eligible
                 else "evidence-pass-awaits-semantic-review" if verified_ids
                 else "failed" if failed_ids
                 else "unverified"
