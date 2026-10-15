@@ -11,6 +11,8 @@ import re
 import subprocess
 import sys
 
+from repository_files import DEFAULT_PRUNE_DIRS
+
 from risk import profile
 from schema_validate import load_schema, validate_instance
 from runtime_exec import runtime_command
@@ -21,6 +23,14 @@ SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
+MODULE_README_HINT_LIMIT = 3
+MODULE_README_CODE_CANDIDATES = 24
+MODULE_README_SIZE_LIMIT = 128 * 1024
+GOVERNANCE_PATHS = (
+    "docs/governance/truth-ownership.md",
+    "docs/governance/decision-authority.md",
+    "docs/governance/completion-contract.md",
+)
 RULE_ID = re.compile(r"^RULE-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
@@ -151,6 +161,86 @@ def build_code_candidate_hints(
             break
 
     return hints
+
+
+def nearby_readme_hints(
+    selected_code: list[dict],
+    *,
+    limit: int = MODULE_README_HINT_LIMIT,
+    ancestor_limit: int = 4,
+) -> list[str]:
+    """Bounded metadata-only lookup adjacent to already selected code paths.
+
+    No directory walk, content read or global README ranking. Git-ignored and
+    symbolic paths cannot become trusted hints, even if search hits them.
+    """
+    if limit <= 0 or ancestor_limit <= 0:
+        return []
+    root = ROOT.resolve()
+    found: set[str] = set()
+    hints: list[str] = []
+    # This stays bounded even if --code-limit is set extremely high.
+    for code in selected_code[:MODULE_README_CODE_CANDIDATES]:
+        raw = str(code.get("path") or "")
+        pure = pathlib.PurePosixPath(raw)
+        if not raw or pure.is_absolute() or ".." in pure.parts:
+            continue
+        parent = pure.parent
+        for _ in range(ancestor_limit):
+            if str(parent) in {".", ""}:
+                break
+            if any(part in DEFAULT_PRUNE_DIRS for part in parent.parts):
+                break
+            relative = (parent / "README.md").as_posix()
+            if relative in found:
+                parent = parent.parent
+                continue
+            candidate = ROOT / relative
+            try:
+                candidate.resolve().relative_to(root)
+                if candidate.is_symlink() or not candidate.is_file():
+                    parent = parent.parent
+                    continue
+                # Do not follow symlinked parent directories either.
+                ancestor = candidate.parent
+                if any(
+                    component.is_symlink()
+                    for component in (ancestor, *ancestor.parents)
+                    if component != root and root in component.parents
+                ):
+                    parent = parent.parent
+                    continue
+                if candidate.stat().st_size > MODULE_README_SIZE_LIMIT:
+                    parent = parent.parent
+                    continue
+                check = subprocess.run(
+                    ["git", "check-ignore", "-q", "--", relative],
+                    cwd=ROOT, capture_output=True, timeout=5, check=False,
+                )
+                if check.returncode == 0:
+                    parent = parent.parent
+                    continue
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+                parent = parent.parent
+                continue
+            found.add(relative)
+            hints.append(
+                f"Module README hint (metadata only): {relative}; "
+                f"near selected code {raw}; not normative Product Truth"
+            )
+            if len(hints) >= limit:
+                return hints
+            parent = parent.parent
+    return hints
+
+
+def governance_path_hints() -> list[str]:
+    """Compatibility-safe navigation text in the existing advisory field."""
+    return [
+        f"Governance navigation path (metadata only, not a business Rule): {path}"
+        for path in GOVERNANCE_PATHS
+        if repo_file(path) is not None
+    ]
 
 
 def required_rule_gaps(
@@ -578,7 +668,8 @@ def main() -> int:
         and result.get("status") == "implemented"
     ]
 
-    unknowns: list[str] = []
+    unknowns: list[str] = governance_path_hints()
+    unknowns.extend(nearby_readme_hints(code_results))
     mixed_candidates = sorted({
         str(result.get("path"))
         for result in candidate_results
