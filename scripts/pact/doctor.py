@@ -123,6 +123,15 @@ def install_provenance_check(strict: bool) -> dict:
         )
 
 
+HOST_GUIDES = (
+    "AGENTS.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md",
+    "opencode.json", ".opencode/opencode.json",
+)
+HOST_READ_LIMIT = 128 * 1024
+HOST_WORKFLOW_LIMIT = 32
+MARKDOWN_INCLUDE = re.compile(r"\]\(([^)#]+)(?:#[^)]*)?\)|^\s*@([A-Za-z0-9_.\/-]+\.md)\s*$", re.MULTILINE)
+
+
 def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | None]:
     """Only read small regular, in-root files; never chase symlinked hosts."""
     path = root / relative
