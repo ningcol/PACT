@@ -6,6 +6,45 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Eight-stage PACT engineering closeout (pre-release; not real Agent/Owner acceptance)
+
+- Preserve convergence `removed` vs `updated` semantics and reject required
+  medium/high passing Evidence backed only by verification that changed the
+  managed workspace. The snapshot is **before/after only**, not continuous
+  write detection or signed attestation.
+- Provide focused, nonredundant Decision admission questions, rejected
+  alternative premises, and full/partial supersession/backlink guidance with
+  regression fixtures. No automatic archive or permanent Note creation.
+- Add opt-in `discover/context/task prepare --intent work|decision|history`
+  and fail-closed caller-specified `--require-rule RULE-ID`. Keep no-intent
+  default ranking unchanged, preserve exact ID/title/alias lookups, and place
+  bounded README/governance navigation metadata in existing closed Context
+  v1 fields rather than changing its JSON contract.
+- Add `task assist` for per-AC diagnostic evidence, optional mechanical
+  Owner draft fill, and safe retraction of **unchanged PACT-generated** stale
+  acceptance using a task-local content-digest marker. Manually edited Owner
+  drafts fail closed for semantic review. Add confined, atomic, non-overwriting
+  `task export` of metadata/receipt checksums without raw command output.
+- Add optional `task checkpoint` and read-only `task resume --json` for
+  partial progress across independent processes. Stored Agent notes are
+  untrusted; referenced Decision changes and stale run Evidence require
+  explicit review, never automatic completion or cross-device sync.
+- Add `doctor --host-wiring-only`, a bounded static host instruction/config
+  and workflow filter preflight, preserving existing AGENTS.md, CLAUDE.md and
+  OpenCode configs. It does not execute host CI or certify real Agent behavior.
+- Add PACT-owned fictional Domain/Rule/README/handoff and Context retrieval
+  cases, plus three-mode fixed-budget installed retrieval tests. These and the
+  existing historical Brownfield replay are **engineering regressions, not
+  independently blind A/B or real Owner/Agent pilot outcomes**. Nine real
+  Codex/Claude Code/OpenCode × layer cells remain unverified.
+- Fix cross-platform CI's false-green multi-command portability steps with
+  explicit Bash fail-fast mode; verify LICENSE upgrade SHA256 on exact source
+  bytes including CRLF; test that Owner draft provenance hashes actual
+  Windows/macOS/Linux persisted bytes. No release tag or VERSION bump.
+- Original 48-stage-AC reconciliation and remaining blockers are recorded in
+  `docs/evaluation/eight-stage-code-review-ledger-2026-10-15.md`; issuing a
+  formal Release remains separately gated by actual validation and approval.
+
 ### Semantic Knowledge Gardening
 
 - Audit now surfaces explicitly superseded Decisions as
