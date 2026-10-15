@@ -56,6 +56,7 @@ def verify_item(
         "ci_metadata": False,
         "workspace_bound": False,
         "external_input": False,
+        "workspace_changed": False,
     }
 
     if provenance == "manual":
@@ -111,6 +112,11 @@ def verify_item(
         metrics["external_input"] = (
             run_receipt.get("verification_input_scope") == "external-opt-in"
         )
+        # A receipt may match the current workspace even though the run
+        # changed managed files on its way there. Do not use it to establish
+        # a medium/high-risk required pass; the command must be rerun after
+        # the managed worktree has settled.
+        metrics["workspace_changed"] = bool(run_receipt["workspace_changed"])
         exit_code = run_receipt.get("exit_code")
         status = run_receipt.get("status")
         if (exit_code == 0) != (status == "pass"):
@@ -201,6 +207,7 @@ def provenance_review(
         workspace_bound_count = 0
         external_count = 0
         bounded_without_external = 0
+        unstable_run_count = 0
 
         for index, item in enumerate(refs):
             item_errors, metrics = verify_item(
@@ -214,12 +221,25 @@ def provenance_review(
                 f"{claim_id}.evidence[{index}]: {error}"
                 for error in item_errors
             )
-            machine_count += int(metrics["execution_backed"])
-            ci_count += int(metrics["ci_metadata"])
-            workspace_bound_count += int(metrics["workspace_bound"])
-            external_count += int(metrics["external_input"])
+            # Passing commands that mutate managed files are real executions
+            # but not completion-grade proof for a required medium/high risk AC.
+            # A separate clean rerun can still prove the same claim.
+            unstable = bool(metrics["workspace_changed"])
+            needs_stability = (
+                claim.get("required")
+                and status == "pass"
+                and risk in {"medium", "high"}
+            )
+            completion_grade = not (needs_stability and unstable)
+            unstable_run_count += int(needs_stability and unstable)
+            machine_count += int(metrics["execution_backed"] and completion_grade)
+            ci_count += int(metrics["ci_metadata"] and completion_grade)
+            workspace_bound_count += int(metrics["workspace_bound"] and completion_grade)
+            external_count += int(metrics["external_input"] and completion_grade)
             bounded_without_external += int(
-                metrics["workspace_bound"] and not metrics["external_input"]
+                metrics["workspace_bound"]
+                and not metrics["external_input"]
+                and completion_grade
             )
 
         if machine_count:
@@ -228,6 +248,13 @@ def provenance_review(
             ci_metadata_claims += 1
         if workspace_bound_count:
             workspace_bound_claims += 1
+
+        if unstable_run_count and workspace_bound_count == 0:
+            policy_gaps.append(
+                f"{claim_id}: verification changed the managed workspace "
+                "during the run (workspace_changed); persist the change, "
+                "wait for a stable workspace, and rerun verification"
+            )
 
         if (
             claim.get("required")
