@@ -1,0 +1,102 @@
+# PACT original S0–S7 — Code Review and 48-AC evidence ledger
+
+> Created 2026-10-15 for **PACT only**, after PR #193 revisions.
+> **Do not mistake this ledger for a completed stage, approved merge or product release.** Only actual verified evidence and original AC semantics may change status.
+> Plan: [PR #185](https://github.com/ningcol/PACT/pull/185), document revision `e8c7e138793e40060d43d3d47e1efdad2e156938`.
+> Frozen engineering base: `b67d7a725774d8404ad253b43cfca3dd35874fdf`; pre-ledger implementation branch HEAD: `d2d9dfb8b2f50ce47de0142d85df6693b4837b07`; the final head can be newer after committing this ledger.
+
+## Three distinct code review passes — this assistant, not three independent reviewers
+
+### Pass 1 — Scope, authority and protocol
+
+Inspected the changes across stacked PACT-only PRs #186–#193 and mapped them to eight original stage goals. Confirmed no other repository was edited. Context Envelope v1 remains closed; authority comes from explicit confirmed Rules/Task Contracts rather than inferred hints. Rule-ID requirements fail before publication, and combined Evidence/Owner Report/Convergence remain necessary for completion. All OS×Python selected test results are **different from** Agent×CLI/instruction/E2E real-runner tests. No release tag or VERSION bump was made. R1 details recorded in the PR #193 conversation.
+
+### Pass 2 — Invocation chain, adversarial paths and concurrency
+
+Examined `CLI → Map/Discover/Context → Task Contract → Run/Evidence → Convergence/Owner → task finish`, plus export, checkpoint/resume, static doctor and synthetic evaluation. Actual corrections:
+
+- Case-ID traversal was rejected and synthetic harness frozen to PACT-owned files (`a6d77c0`, `d7079af`).
+- Checkpoint path refs are checked for symlinks **before** normalization (`d25518a`), with a regression (`df0e809`).
+- Evidence export now uses bundle lock and atomic/no-overwrite publication (`fd6ef58`) plus failure injection (`b4c100c`).
+- README probes are capped independently of unbounded `--code-limit` (`6ba1141`, `41bf1e2`).
+- Installed `context` and `task prepare` were tested to fail closed for explicit missing mandatory Rule (`13e4545`).
+- Windows test portability: existing host guide link preserved using pre-init target, broken symlink detected *before* canonicalization, raw stdout hash expectation respects `os.linesep`; new repeated-init test call signature fixed. These changes are regressions/portability fixes only and need a **new final-head** 9-job CI run.
+
+Known limitation: before/after SHA cannot detect write-then-restore changes during a run; no OS-level continuous monitoring or cryptographic attestations are implied.
+
+### Pass 3 — Acceptance, regression, rollback (sign-off pending final-head CI)
+
+**Review work performed:** checked staged CI and exact failure logs, corrected test assertion and Windows-symlink/CRLF-specific assumptions, and verified original 48-AC coverage below. Do not mark R3 `passed` until the final commit's PACT Check, nine OS×Python jobs, relevant historical benchmark and release-asset smoke all complete. The final signed-off run IDs, SHA and any further findings belong in a PR #193 review comment; no prior green run may substitute. Independent AI review remains **blocked** due unavailable actual reviewer feedback, and must not be fabricated.
+
+**Rollback:** stacked implementation base is `b67d7a7...` (plan PR #185 remains separate); merge in dependency order only after actual gates are satisfied. A single-parent/squash commit can be reverted with `git revert <SHA>`; real two-parent merge requires the correct mainline `git revert -m 1 <MERGE SHA>` after checking parent order. Retest schemas, installed runtime and trust receipts after revert. Reverting by forcibly rewriting `main` is prohibited.
+
+## Individual mandatory ACs — source-derived and non-inferred
+
+All 48 IDs and E/V designations are reproduced from PR #185. The rows explicitly separate code-created evidence from actual acceptance; `in-progress` never means `passed`. For completed execution, update with specific RED/GREEN fixture, run ID, build/commit SHA and semantic reviewer.
+
+| AC | Type | Current state | PACT-only evidence pointer | Missing acceptance / qualification |
+| --- | --- | --- | --- | --- |
+| AC-S0-01 | E | `in-progress` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S0-02 | E | `in-progress` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S0-03 | E | `in-progress` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S0-04 | E | `unverified` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | Independent unseen holdout/oracle is not yet sealed; existing curated history and synthetic fixtures are NOT blinded. |
+| AC-S0-05 | E | `unverified` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | Quantitative thresholds, representative sample size and repeated randomized real-run protocol lack independent observed calibration. |
+| AC-S0-06 | E | `in-progress` | [#186](https://github.com/ningcol/PACT/pull/186) / [S0 baseline](eight-stage-baseline-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-01 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-02 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-03 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-04 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-05 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S1-06 | E | `in-progress` | [#187](https://github.com/ningcol/PACT/pull/187) / `test_run_input_origins.py`, `test_convergence_deletion_semantics.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S2-01 | E | `in-progress` | [#188](https://github.com/ningcol/PACT/pull/188) / Decision README, retention tests | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S2-02 | E | `in-progress` | [#188](https://github.com/ningcol/PACT/pull/188) / Decision README, retention tests | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S2-03 | E | `in-progress` | [#188](https://github.com/ningcol/PACT/pull/188) / Decision README, retention tests | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S2-04 | E | `in-progress` | [#188](https://github.com/ningcol/PACT/pull/188) / Decision README, retention tests | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S2-05 | E | `in-progress` | [#188](https://github.com/ningcol/PACT/pull/188) / Decision README, retention tests | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S3-01 | E | `unverified` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | Optional three-intent functionality has focused regressions, but no independent same-budget recall/latency benefit study against a sealed holdout. |
+| AC-S3-02 | E | `in-progress` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S3-03 | E | `in-progress` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S3-04 | E | `in-progress` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S3-05 | E | `in-progress` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S3-06 | E | `unverified` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | S3 historical benchmark runs and unit tests succeeded on earlier PR head; final holdout non-regression has not been demonstrated. |
+| AC-S3-07 | E | `unverified` | [#189](https://github.com/ningcol/PACT/pull/189) / `test_context_intent_require_rules.py` | Structured-ranking adopt/reject experiment has no separately controlled holdout gain; default remains unchanged. |
+| AC-S4-01 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S4-02 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S4-03 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S4-04 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S4-05 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S4-06 | E | `in-progress` | [#190](https://github.com/ningcol/PACT/pull/190) / `test_task_workflow.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S5-01 | E | `in-progress` | [#191](https://github.com/ningcol/PACT/pull/191) / `test_task_handoff.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S5-02 | E | `in-progress` | [#191](https://github.com/ningcol/PACT/pull/191) / `test_task_handoff.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S5-03 | E | `in-progress` | [#191](https://github.com/ningcol/PACT/pull/191) / `test_task_handoff.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S5-04 | E | `in-progress` | [#191](https://github.com/ningcol/PACT/pull/191) / `test_task_handoff.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S5-05 | E | `in-progress` | [#191](https://github.com/ningcol/PACT/pull/191) / `test_task_handoff.py` | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S6-01 | E | `in-progress` | [#192](https://github.com/ningcol/PACT/pull/192) / [real Agent matrix](agent-host-compatibility-matrix-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S6-02 | E | `in-progress` | [#192](https://github.com/ningcol/PACT/pull/192) / [real Agent matrix](agent-host-compatibility-matrix-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S6-03 | E | `in-progress` | [#192](https://github.com/ningcol/PACT/pull/192) / [real Agent matrix](agent-host-compatibility-matrix-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S6-04 | E | `in-progress` | [#192](https://github.com/ningcol/PACT/pull/192) / [real Agent matrix](agent-host-compatibility-matrix-2026-10-15.md) | PACT-only implementation and prior stage CI exist; final-head integrated checks, per-AC RED/GREEN evidence and reviewer sign-off are not yet sufficient to mark this criterion passed. |
+| AC-S6-05 | V | `blocked` | [#192](https://github.com/ningcol/PACT/pull/192) / [real Agent matrix](agent-host-compatibility-matrix-2026-10-15.md) | All nine Codex/Claude Code/OpenCode real-runner cells are blocked: no authorized runner/session/log evidence. |
+| AC-S7-01 | E | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | Missing genuinely blind pre-registered holdout and real-agent repeated trials. |
+| AC-S7-02 | E | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | PACT synthetic and existing historical examples are available; actual ziliu business change and true Agent A→B external observation not performed. |
+| AC-S7-03 | E | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | Partial machine logs exist, not complete per-case real-Agent/Owner tokens, time and operation overhead. |
+| AC-S7-04 | E | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | No unbiased holdout measurements for release non-regression decision; zero-tolerance negative tests and synthetic cases are not substitutes. |
+| AC-S7-05 | E | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | PACT release asset smoke is part of Check; final integrated head/9-grid plus independent reviews and Issue #63 YAML disposition remain open. |
+| AC-S7-06 | V | `blocked` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | Real authorized Brownfield Agent pilot not executed; PACT-only synthetic fixture cannot satisfy it. |
+| AC-S7-07 | V | `unverified` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | Owner technical escalations, clarification rounds, understanding and time observations are unavailable (NULL, never zero). |
+| AC-S7-08 | V | `blocked` | [#193](https://github.com/ningcol/PACT/pull/193) / [S7 readiness](eight-stage-release-readiness-2026-10-15.md) | No independent real pilot A/B evidence; benefit and external validity remain unverified. |
+
+## Release and pilot boundaries
+
+- All three categories are separate: **Engineering Complete**, **Pilot Validated**, **Release Approved**. The fourth aggregate **Eight-stage Accepted** requires both engineering and real-pilot ACs.
+- S6 real interactive Codex/Claude Code/OpenCode runner evidence remains **9/9 blocked**, not 9/9 passed; an OS×Python 9/9 result is not a substitute.
+- Owner questions, product escalations, clarification rounds, additional minutes and understanding observations are **NULL/unverified**. No inference of reduced cognitive load is allowed.
+- Historical replay (including PR #184 smoke) is not an independently blinded A/B. New PACT synthetic cases are *author-constructed regression fixtures*, not real Agent or human validation.
+- [Issue #63](https://github.com/ningcol/PACT/issues/63) Legacy YAML migration/deprecation must be explicitly dispositioned against unreleased YAML removal in CHANGELOG before closing; Issues #28/#32 require real pilot evidence.
+- A `v*` tag may invoke GitHub Release automatically; no user authorization for a version/tag/release has been provided, and none may be created.
+- External production or other repositories were not written; no user secrets or private data were used for fixtures.
+- A request to an unavailable Copilot/Codex reviewer is not an actual independent code review.
+- **Release decision**: `NO-GO: missing real-Agent/Owner evidence + no release authorization` even if all machine CI jobs become green.
+
+## Final gate still required
+
+Capture exact **final-head** `PACT Check` run (includes complete unittest + release smoke), all nine `PACT Core Matrix` job IDs/results, historical Benchmark run and independent review state; if any new regression fails, reproduce/fix/re-run on the resulting commit. Until then no overall “all stages done” claim is valid.
