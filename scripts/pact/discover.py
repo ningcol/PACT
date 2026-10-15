@@ -517,13 +517,23 @@ def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
             } else 0
         return 0
 
-    # Keep exact ID/title lookup ahead of generic intent sorting.
+    # Preserve the lexical lookup hierarchy before any intent-dependent
+    # preference: exact ID > exact title > exact alias > generic candidates.
+    # Historical/rejected lifecycle status cannot outweigh an exact lookup.
+    def exact_priority(item: dict) -> int:
+        reasons = item.get("reasons", [])
+        if "exact stable id" in reasons:
+            return 3
+        if "exact title" in reasons:
+            return 2
+        if "exact alias" in reasons:
+            return 1
+        return 0
+
     return sorted(
         items,
         key=lambda item: (
-            -int(bool({
-                "exact stable id", "exact title", "exact alias",
-            }.intersection(item.get("reasons", [])))),
+            -exact_priority(item),
             -preference(item),
             -int(item.get("score", 0)),
             str(item.get("path", "")),
