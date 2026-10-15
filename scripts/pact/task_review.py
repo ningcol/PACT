@@ -89,6 +89,34 @@ def _diagnose(
     uncovered_ac = [
         item["id"] for item in criteria if not by_criterion[item["id"]]
     ]
+    # Distinguish a known failing explicit Claim from a criterion that was
+    # never checked. Neither condition should be described as business PASS.
+    criterion_diagnostics = []
+    for item in criteria:
+        attached = [
+            claim for claim in evidence["claims"]
+            if item["id"] in claim.get("criteria", [])
+        ]
+        verified_ids = [claim["id"] for claim in by_criterion[item["id"]]]
+        failed_ids = [
+            claim["id"] for claim in attached if claim["status"] == "fail"
+        ]
+        unknown_ids = [
+            claim["id"] for claim in attached
+            if claim["status"] == "unverified"
+        ]
+        criterion_diagnostics.append({
+            "criterion_id": item["id"],
+            "claim_ids": [claim["id"] for claim in attached],
+            "execution_pass_claim_ids": verified_ids,
+            "failed_claim_ids": failed_ids,
+            "unverified_claim_ids": unknown_ids,
+            "status": (
+                "execution-pass-awaits-semantic-review" if verified_ids
+                else "failed" if failed_ids
+                else "unverified"
+            ),
+        })
     covered_context = {
         item.get("path") for item in (convergence or {}).get("coverage", [])
         if isinstance(item, dict)
@@ -133,6 +161,11 @@ def _diagnose(
         "contract_sha256": manifest["contract_sha256"],
         "context_sha256": manifest["context_sha256"],
         "unverified_criteria": uncovered_ac,
+        "criterion_diagnostics": criterion_diagnostics,
+        "failed_claim_ids": sorted({
+            claim["id"] for claim in evidence["claims"]
+            if claim["status"] == "fail"
+        }),
         "missing_context_coverage": missed_knowledge,
         "missing_change_coverage": missed_changes,
         "change_attribution_supported": bool(task_change.get("supported")),
