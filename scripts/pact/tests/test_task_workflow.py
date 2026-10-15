@@ -147,6 +147,7 @@ class TaskWorkflowTests(unittest.TestCase):
             if row["criterion_id"] == "AC-1"
         )
         self.assertEqual(ac1["status"], "failed")
+        self.assertEqual(ac1["execution_pass_claim_ids"], ["EV-VERIFY-2"])
         self.assertEqual(
             ac1["blocking_required_failed_claim_ids"], ["EV-VERIFY-1"]
         )
@@ -165,6 +166,68 @@ class TaskWorkflowTests(unittest.TestCase):
             [row["criterion_id"] for row in owner.get("acceptance", [])],
         )
         self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_pass_cannot_hide_unverified_required_claim_for_same_ac(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        evidence_path = self.bundle / "evidence.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        evidence["claims"].append({
+            "id": "EV-PENDING",
+            "claim": "Independent required behavior remains unverified",
+            "required": True,
+            "status": "unverified",
+            "criteria": ["AC-1"],
+            "evidence": [],
+        })
+        evidence_path.write_text(json.dumps(evidence) + "\n", encoding="utf-8")
+        diagnosed = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(diagnosed.returncode, 0, diagnosed.stdout + diagnosed.stderr)
+        result = json.loads(diagnosed.stdout)
+        ac = next(item for item in result["criterion_diagnostics"]
+                  if item["criterion_id"] == "AC-1")
+        self.assertEqual(ac["execution_pass_claim_ids"], ["EV-VERIFY-1"])
+        self.assertEqual(ac["blocking_required_unverified_claim_ids"], ["EV-PENDING"])
+        self.assertEqual(ac["status"], "unverified")
+        self.assertIn("AC-1", result["unverified_criteria"])
+        self.assertNotIn("AC-1", [
+            item["criterion_id"] for item in result["safe_mechanical_acceptance"]
+        ])
+        drafted = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(drafted.returncode, 0, drafted.stdout + drafted.stderr)
+        owner = json.loads((self.bundle / "owner-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(owner["status"], "partial")
+        self.assertFalse(owner.get("acceptance"))
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_optional_unverified_claim_does_not_block_an_independent_required_pass(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        evidence_path = self.bundle / "evidence.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        evidence["claims"].append({
+            "id": "EV-OPTIONAL",
+            "claim": "Optional exploratory check remains unverified",
+            "required": False,
+            "status": "unverified",
+            "criteria": ["AC-1"],
+            "evidence": [],
+        })
+        evidence_path.write_text(json.dumps(evidence) + "\n", encoding="utf-8")
+        result = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
+        ac = next(item for item in doc["criterion_diagnostics"]
+                  if item["criterion_id"] == "AC-1")
+        self.assertEqual(ac["blocking_required_unverified_claim_ids"], [])
+        self.assertEqual(ac["status"], "evidence-pass-awaits-semantic-review")
+        self.assertEqual(
+            [item["criterion_id"] for item in doc["safe_mechanical_acceptance"]],
+            ["AC-1"],
+        )
+        self.assertFalse(doc["owner_completed_automatically"])
 
     def test_assist_cannot_launder_failing_claim_into_owner_draft(self) -> None:
         self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
