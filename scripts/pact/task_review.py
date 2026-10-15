@@ -35,6 +35,68 @@ from workspace import task_changed_files
 
 EXPORT_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.json$")
 
+OWNER_AUTOGEN_MARKER = ".pact-assist-generated.json"
+OWNER_AUTOGEN_MAX_BYTES = 128 * 1024
+
+
+def owner_payload_sha256(owner: dict) -> str:
+    """Match task.write_json's exact on-disk byte serialization."""
+    payload = json.dumps(owner, ensure_ascii=False, indent=2) + "\n"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def generated_owner_marker(bundle: pathlib.Path, task_id: str) -> dict | None:
+    path = bundle / OWNER_AUTOGEN_MARKER
+    if path.exists() and path.stat().st_size > OWNER_AUTOGEN_MAX_BYTES:
+        raise ValueError("generated Owner marker exceeds size bound")
+    data = checked_json(path, "generated Owner acceptance provenance")
+    if data is None:
+        return None
+    if (
+        data.get("version") != 1
+        or data.get("task_id") != task_id
+        or not isinstance(data.get("owner_sha256"), str)
+        or not re.fullmatch(r"[a-f0-9]{64}", data["owner_sha256"])
+        or not isinstance(data.get("generated_acceptance"), list)
+    ):
+        raise ValueError("generated Owner acceptance provenance is invalid")
+    return data
+
+
+def owner_marker_matches(
+    marker: dict | None,
+    owner: dict,
+    *,
+    sha256: str,
+) -> bool:
+    return bool(
+        marker
+        and marker["owner_sha256"] == sha256
+        and marker["generated_acceptance"] == owner.get("acceptance", [])
+    )
+
+
+def publish_generated_owner(
+    bundle: pathlib.Path,
+    owner: dict,
+    *,
+    task_id: str,
+    generated_acceptance: bool,
+) -> None:
+    """Record tool ownership first, then publish Owner. Fail closed on partial writes."""
+    if generated_acceptance:
+        write_json(
+            bundle / OWNER_AUTOGEN_MARKER,
+            {
+                "version": 1,
+                "task_id": task_id,
+                "owner_sha256": owner_payload_sha256(owner),
+                "generated_acceptance": owner.get("acceptance", []),
+            },
+        )
+    write_json(bundle / "owner-report.json", owner)
+
+
 
 def checked_json(path: pathlib.Path, label: str) -> dict | None:
     """Read an existing JSON object but never follow a leaf symlink."""
@@ -173,6 +235,23 @@ def _diagnose(
         item["id"] for item in criteria
         if item["id"] not in owner_criteria
     ]
+    # Any previously drafted acceptance that has lost its trusted required
+    # Evidence is explicitly stale. Do not use it as a completion suggestion.
+    allowed = {
+        item["id"]: {claim["id"] for claim in by_criterion[item["id"]]}
+        for item in criteria
+    }
+    stale_owner_acceptance = sorted({
+        item["criterion_id"]
+        for item in (owner or {}).get("acceptance", [])
+        if (
+            item["criterion_id"] not in allowed
+            or not allowed[item["criterion_id"]]
+            or not set(item.get("evidence_ids", [])).issubset(
+                allowed[item["criterion_id"]]
+            )
+        )
+    })
     verification_draft = [
         {"claim": claim["claim"], "evidence_ids": [claim["id"]]}
         for claim in passing_claims
@@ -220,6 +299,7 @@ def _diagnose(
         "change_attribution_unknown": task_change.get("reason")
             if not task_change.get("supported") else None,
         "owner_acceptance_unreported": unreported,
+        "stale_owner_acceptance_criteria": stale_owner_acceptance,
         "missing_completion_files": [
             name for name, obj in (
                 ("convergence.json", convergence), ("owner-report.json", owner)
@@ -257,26 +337,69 @@ def assist(args) -> int:
             with _exclusive_bundle(bundle):
                 result, _, owner = _snapshot(args.task_id)
                 result["draft_written"] = False
+                result["retracted_generated_acceptance"] = []
                 if owner is None:
                     raise ValueError("run 'task draft' before --write-draft")
                 if owner.get("status") != "partial":
                     raise ValueError("automatic fields require a partial Owner draft")
-                if result["provenance_errors"] or result["policy_gaps"]:
-                    raise ValueError("cannot fill Owner from invalid/stale Evidence")
                 owner_path = bundle / "owner-report.json"
-                # Do not overwrite human/Agent-authored content in either array.
+                marker = generated_owner_marker(bundle, args.task_id)
+                old_owner_hash = hashlib.sha256(owner_path.read_bytes()).hexdigest()
+                marker_matches = owner_marker_matches(
+                    marker, owner, sha256=old_owner_hash
+                )
+                stale = result["stale_owner_acceptance_criteria"]
+                if stale and not marker_matches:
+                    raise ValueError(
+                        "Owner acceptance is stale for " + ", ".join(stale)
+                        + "; cannot overwrite manually edited or unmarked "
+                        "Owner entries; reconcile them by semantic review"
+                    )
+
                 changed = False
-                if not owner.get("verification") and result["safe_mechanical_verification"]:
-                    owner["verification"] = result["safe_mechanical_verification"]
+                generated_acceptance = marker_matches
+                if stale:
+                    stale_ids = set(stale)
+                    owner["acceptance"] = [
+                        item for item in owner.get("acceptance", [])
+                        if item["criterion_id"] not in stale_ids
+                    ]
+                    # Retraction of proven generated text is safe even when
+                    # current provenance itself is stale. Do not add new
+                    # passing claims under that condition.
+                    result["retracted_generated_acceptance"] = stale
                     changed = True
-                if not owner.get("acceptance") and result["safe_mechanical_acceptance"]:
-                    owner["acceptance"] = result["safe_mechanical_acceptance"]
-                    changed = True
+
+                admissible = not (
+                    result["provenance_errors"] or result["policy_gaps"]
+                )
+                if not admissible and not stale:
+                    raise ValueError("cannot fill Owner from invalid/stale Evidence")
+                if admissible:
+                    if (
+                        not owner.get("verification")
+                        and result["safe_mechanical_verification"]
+                    ):
+                        owner["verification"] = result["safe_mechanical_verification"]
+                        changed = True
+                    if (
+                        not owner.get("acceptance")
+                        and result["safe_mechanical_acceptance"]
+                    ):
+                        owner["acceptance"] = result["safe_mechanical_acceptance"]
+                        generated_acceptance = True
+                        changed = True
                 if changed:
                     validation = validate_owner(owner, OWNER_SCHEMA, "owner")
                     if validation:
-                        raise ValueError("generated invalid Owner draft: " + "; ".join(validation))
-                    write_json(owner_path, owner)
+                        raise ValueError(
+                            "generated invalid Owner draft: " + "; ".join(validation)
+                        )
+                    publish_generated_owner(
+                        bundle, owner,
+                        task_id=args.task_id,
+                        generated_acceptance=generated_acceptance,
+                    )
                 result["draft_written"] = changed
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
