@@ -135,6 +135,37 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertFalse(report["owner_completed_automatically"])
         self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
 
+    def test_pass_does_not_hide_another_required_fail_for_same_acceptance(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify(exit_code=7).returncode, 7)
+        self.assertEqual(self.verify().returncode, 0)
+        diagnostic = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(diagnostic.returncode, 0, diagnostic.stdout + diagnostic.stderr)
+        result = json.loads(diagnostic.stdout)
+        ac1 = next(
+            row for row in result["criterion_diagnostics"]
+            if row["criterion_id"] == "AC-1"
+        )
+        self.assertEqual(ac1["status"], "failed")
+        self.assertEqual(
+            ac1["blocking_required_failed_claim_ids"], ["EV-VERIFY-1"]
+        )
+        self.assertNotIn(
+            "AC-1",
+            [row["criterion_id"] for row in result["safe_mechanical_acceptance"]],
+        )
+        drafted = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(drafted.returncode, 0, drafted.stdout + drafted.stderr)
+        owner = json.loads((self.bundle / "owner-report.json").read_text())
+        self.assertEqual(owner["status"], "partial")
+        self.assertNotIn(
+            "AC-1",
+            [row["criterion_id"] for row in owner.get("acceptance", [])],
+        )
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
     def test_assist_cannot_launder_failing_claim_into_owner_draft(self) -> None:
         self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
         self.assertEqual(self.verify(exit_code=3).returncode, 3)
