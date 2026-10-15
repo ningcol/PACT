@@ -112,6 +112,37 @@ class TaskHandoffIntegrationTests(unittest.TestCase):
         self.assertEqual(report["prepared_status"], "prepared")
         self.assertFalse(report["owner_completed_automatically"])
 
+    def test_changed_decision_premise_requires_re_review_on_resume(self):
+        decisions = self.root / ".agents" / "decisions"
+        decisions.mkdir(parents=True, exist_ok=True)
+        file = decisions / "cache-choice.md"
+        file.write_text(
+            "# Rejected alternative\nOriginal premise: no durable storage.\n",
+            encoding="utf-8",
+        )
+        checkpoint = self.pact(
+            "task", "checkpoint", self.task_id,
+            "--decision", ".agents/decisions/cache-choice.md",
+            "--todo", "Reconsider rejected cache alternative",
+        )
+        self.assertEqual(checkpoint.returncode, 0, checkpoint.stderr)
+        healthy = self.pact("task", "resume", self.task_id, "--json")
+        self.assertEqual(healthy.returncode, 0, healthy.stdout + healthy.stderr)
+        first = json.loads(healthy.stdout)
+        self.assertEqual(first["handoff_references"][0]["state"], "same-file")
+        self.assertTrue(first["reexamine_decision_premises"])
+        file.write_text(
+            "# Rejected alternative\nNew premise: durable storage exists.\n",
+            encoding="utf-8",
+        )
+        changed = self.pact("task", "resume", self.task_id, "--json")
+        self.assertEqual(changed.returncode, 1, changed.stdout + changed.stderr)
+        report = json.loads(changed.stdout)
+        self.assertEqual(report["handoff_references"][0]["state"], "changed")
+        self.assertTrue(any("premises" in x for x in report["warnings"]))
+        self.assertEqual(report["prepared_status"], "prepared")
+        self.assertFalse(report["owner_completed_automatically"])
+
     def test_invalid_handoff_is_controlled_error_and_task_state_unchanged(self):
         handoff = self.root / ".pact" / "tasks" / self.task_id / "handoff.json"
         handoff.write_text(json.dumps({
