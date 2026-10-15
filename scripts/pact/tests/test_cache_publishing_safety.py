@@ -265,6 +265,42 @@ class CachePublishingSafetyTests(unittest.TestCase):
             [],
         )
 
+    def test_real_windows_sharing_conflict_classifier_is_narrow(self):
+        class SimulatedWindowsPermission(PermissionError):
+            def __init__(self, code):
+                super().__init__(f"WinError {code} injected")
+                self.winerror = code
+
+        # Patch OS name only around the pure classifier, not around a
+        # pathlib/tempfile operation (which would be nonportable on Linux).
+        with mock.patch.object(cache_runtime.os, "name", "nt"):
+            for code in (5, 32):
+                with self.subTest(code=code):
+                    self.assertTrue(
+                        cache_runtime._retryable_windows_cache_replace_error(
+                            SimulatedWindowsPermission(code)
+                        )
+                    )
+            for code in (2, 13, 87):
+                with self.subTest(nonretryable=code):
+                    self.assertFalse(
+                        cache_runtime._retryable_windows_cache_replace_error(
+                            SimulatedWindowsPermission(code)
+                        )
+                    )
+            self.assertFalse(
+                cache_runtime._retryable_windows_cache_replace_error(
+                    OSError("unclassified error")
+                )
+            )
+        with mock.patch.object(cache_runtime.os, "name", "posix"):
+            for code in (5, 32):
+                self.assertFalse(
+                    cache_runtime._retryable_windows_cache_replace_error(
+                        SimulatedWindowsPermission(code)
+                    )
+                )
+
     def test_transient_windows_replace_conflict_retries_without_partial_json(self):
         self.map_path.parent.mkdir(parents=True, exist_ok=True)
         self.map_path.write_text('{"old":true}\n', encoding="utf-8")
