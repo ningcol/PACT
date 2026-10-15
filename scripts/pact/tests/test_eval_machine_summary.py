@@ -189,5 +189,29 @@ class EvalMachineSummaryTests(unittest.TestCase):
         self.assertIn("do not collapse", summary["interpretation_note"])
 
 
+    def test_run_metrics_refuse_external_evidence_receipts(self) -> None:
+        task_id = "TASK-EXTERNAL-RECEIPT"
+        with tempfile.TemporaryDirectory(prefix="pact-outside-run-") as tmp:
+            outside = pathlib.Path(tmp) / "faked.json"
+            outside.write_text(
+                json.dumps({"task_id": task_id, "status": "pass"}),
+                encoding="utf-8",
+            )
+            evidence = {"claims": [{"evidence": [
+                {"provenance": "pact-run", "ref": str(outside)},
+            ]}]}
+            with self.assertRaisesRegex(ValueError, "escapes repository root"):
+                pact_eval.run_receipts(task_id, evidence)
+
+    def test_run_metrics_reject_schema_invalid_in_repo_receipts(self) -> None:
+        task_id = "TASK-INVALID-RECEIPT"
+        self.write_json(
+            f".pact/runs/{task_id}/forged.json",
+            {"task_id": task_id, "status": "pass"},
+        )
+        with self.assertRaisesRegex(ValueError, "invalid PACT run receipt"):
+            pact_eval.run_receipts(task_id, None)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -180,5 +180,78 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), '{"corrupt": true}')
 
 
+    @staticmethod
+    def lock_command(mode: str, bundle: pathlib.Path) -> list[str]:
+        """Exercise the real bundle lock in a separate process."""
+        script = (
+            "import os, pathlib, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from task_workflow import _exclusive_bundle\n"
+            "try:\n"
+            "    with _exclusive_bundle(pathlib.Path(sys.argv[2])):\n"
+            "        if sys.argv[3] == 'crash': os._exit(19)\n"
+            "        if sys.argv[3] == 'hold':\n"
+            "            print('acquired', flush=True)\n"
+            "            sys.stdin.readline()\n"
+            "except ValueError as error:\n"
+            "    print(error, file=sys.stderr)\n"
+            "    sys.exit(7)\n"
+        )
+        return [
+            sys.executable, "-c", script,
+            str(ROOT / "scripts" / "pact"), str(bundle), mode,
+        ]
+
+    def test_writer_crash_does_not_strand_bundle(self) -> None:
+        crash = subprocess.run(
+            self.lock_command("crash", self.bundle),
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(crash.returncode, 19, crash.stderr)
+        lock = self.bundle / ".task-workflow.lock"
+        self.assertTrue(lock.is_file())
+        drafted = self.pact("task", "draft", self.task_id)
+        self.assertEqual(drafted.returncode, 0, drafted.stdout + drafted.stderr)
+        # Keep one stable lock pathname to prevent split-inode concurrency.
+        self.assertTrue(lock.is_file())
+
+    def test_concurrent_bundle_writers_remain_exclusive(self) -> None:
+        command = self.lock_command("hold", self.bundle)
+        with subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        ) as writer:
+            try:
+                self.assertEqual(writer.stdout.readline().strip(), "acquired")
+                blocked = self.pact("task", "draft", self.task_id)
+                self.assertEqual(blocked.returncode, 2, blocked.stderr)
+                self.assertIn("another task Evidence writer", blocked.stderr)
+                self.assertFalse((self.bundle / "evidence.json").exists())
+            finally:
+                writer.communicate(input="\n", timeout=30)
+            self.assertEqual(writer.returncode, 0)
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+
+    def test_legacy_empty_lock_file_is_reusable(self) -> None:
+        self.bundle.mkdir(parents=True, exist_ok=True)
+        lock = self.bundle / ".task-workflow.lock"
+        lock.write_bytes(b"")
+        drafted = self.pact("task", "draft", self.task_id)
+        self.assertEqual(drafted.returncode, 0, drafted.stderr)
+        self.assertTrue(lock.is_file())
+
+    def test_symlinked_bundle_lock_fails_closed(self) -> None:
+        self.bundle.mkdir(parents=True, exist_ok=True)
+        outside = pathlib.Path(self.temp.name) / "outside.lock"
+        outside.write_text("do not change", encoding="utf-8")
+        try:
+            (self.bundle / ".task-workflow.lock").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("file symlinks unavailable")
+        drafted = self.pact("task", "draft", self.task_id)
+        self.assertEqual(drafted.returncode, 2, drafted.stdout + drafted.stderr)
+        self.assertEqual(outside.read_text(encoding="utf-8"), "do not change")
+
+
 if __name__ == "__main__":
     unittest.main()
