@@ -131,9 +131,21 @@ class InstalledIntentComparisonTests(unittest.TestCase):
         # Freeze the historical no-intent lexical order. Here the three
         # equally scored matching titles are resolved by repository path,
         # not by the new optional work/decision/history intent.
+        # A real project README has no stable PACT ID. It still scores
+        # lexically and sorts ahead of the rule on this exact fixture.
+        # Pin both identity *and path* to protect default ordering without
+        # assuming every result is a structured Rule or Decision artifact.
         self.assertEqual(
-            [item["id"] for item in found["default"]["results"][:3]],
-            ["DEC-CACHE-CURRENT", "DEC-CACHE-REJECTED", "RULE-CACHE-001"],
+            [(item["id"], item["path"])
+             for item in found["default"]["results"][:4]],
+            [
+                ("DEC-CACHE-CURRENT",
+                 ".agents/decisions/implemented/current.md"),
+                ("DEC-CACHE-REJECTED",
+                 ".agents/decisions/rejected/unsafe.md"),
+                (None, "README.md"),
+                ("RULE-CACHE-001", "docs/product/rules/cache.md"),
+            ],
         )
         self.assertEqual(found["work"]["results"][0]["id"], "RULE-CACHE-001")
         self.assertIn(
