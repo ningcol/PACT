@@ -41,14 +41,15 @@ When the task was prepared through `pact task prepare`, the Convergence Report m
 For each entry in `context.artifacts`, emit one `coverage` item:
 
 - `aligned` — reviewed and still correct;
-- `updated` — changed during this task so current project knowledge matches the implementation;
+- `updated` — existing artifact changed in content since the prepared Context; the path must still exist;
+- `removed` — artifact referenced by the prepared Context was actually deleted; this is a filesystem disposition only, not proof that removing normative truth was authorized;
 - `stale` — known current-state drift remains and must be visible;
 - `owner-decision` — the artifact cannot converge without a genuine product/risk decision;
 - `not-applicable` — the artifact was retrieved but is not affected by this change.
 
 Every item requires a concrete rationale. Do not omit an artifact merely because no finding was discovered.
 
-`updated` is mechanically checked when the prepared Context captured an artifact SHA: the current artifact must actually differ (or have been removed). This does not prove semantic correctness, but prevents a no-op file from being reported as updated.
+`updated` is mechanically checked against the prepared artifact SHA: the file must still exist with changed content. A missing artifact is **never** `updated`; use `removed` only for an actually absent prepared file, or a blocking `owner-decision` when removal authority is unresolved. Neither mechanical disposition proves semantic authorization.
 
 An `owner-decision` coverage item must be accompanied by an `owner-decision` finding containing the owner-facing question.
 
