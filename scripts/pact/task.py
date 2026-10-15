@@ -562,9 +562,6 @@ def _finish_locked(args) -> int:
         print(f"PACT task finish: {exc}", file=sys.stderr)
         return 2
 
-    if manifest.get("status") == "completed":
-        print("PACT task finish: task is already completed", file=sys.stderr)
-        return 2
     if manifest.get("task_id") != args.task_id:
         print(
             "PACT task finish: task manifest task_id does not match requested task "
