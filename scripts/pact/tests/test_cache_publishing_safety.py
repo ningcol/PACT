@@ -265,6 +265,90 @@ class CachePublishingSafetyTests(unittest.TestCase):
             [],
         )
 
+    def test_transient_windows_replace_conflict_retries_without_partial_json(self):
+        self.map_path.parent.mkdir(parents=True, exist_ok=True)
+        self.map_path.write_text('{"old":true}\n', encoding="utf-8")
+        original_replace = cache_runtime.os.replace
+        calls = []
+
+        def transient(source, target):
+            calls.append((source, target))
+            if len(calls) <= 2:
+                raise PermissionError("simulated transient Windows sharing lock")
+            return original_replace(source, target)
+
+        with (
+            mock.patch.object(
+                cache_runtime,
+                "_retryable_windows_cache_replace_error",
+                return_value=True,
+            ),
+            mock.patch.object(cache_runtime.os, "replace", side_effect=transient),
+            mock.patch.object(cache_runtime.time, "sleep"),
+        ):
+            cache_runtime.atomic_write_json(self.map_path, {"new": True})
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(
+            json.loads(self.map_path.read_text(encoding="utf-8")), {"new": True}
+        )
+        self.assertEqual(
+            list(self.map_path.parent.glob(".project-map.json.pact-cache-*.tmp")),
+            [],
+        )
+
+    def test_permanent_windows_sharing_denial_stays_bounded_and_fail_closed(self):
+        self.map_path.parent.mkdir(parents=True, exist_ok=True)
+        prior = '{"old":true}\n'
+        self.map_path.write_text(prior, encoding="utf-8")
+        with (
+            mock.patch.object(
+                cache_runtime,
+                "_retryable_windows_cache_replace_error",
+                return_value=True,
+            ),
+            mock.patch.object(
+                cache_runtime.os, "replace",
+                side_effect=PermissionError("persistent Windows sharing lock"),
+            ) as replaced,
+            mock.patch.object(cache_runtime.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(PermissionError):
+                cache_runtime.atomic_write_json(self.map_path, {"new": True})
+
+        self.assertEqual(
+            replaced.call_count, cache_runtime.WINDOWS_CACHE_REPLACE_MAX_ATTEMPTS
+        )
+        self.assertEqual(sleep.call_count, replaced.call_count - 1)
+        self.assertEqual(self.map_path.read_text(encoding="utf-8"), prior)
+        self.assertEqual(
+            list(self.map_path.parent.glob(".project-map.json.pact-cache-*.tmp")),
+            [],
+        )
+
+    def test_non_retryable_permission_error_fails_without_retry(self):
+        self.map_path.parent.mkdir(parents=True, exist_ok=True)
+        self.map_path.write_text('{"old":true}\n', encoding="utf-8")
+        with (
+            mock.patch.object(
+                cache_runtime,
+                "_retryable_windows_cache_replace_error",
+                return_value=False,
+            ),
+            mock.patch.object(
+                cache_runtime.os, "replace",
+                side_effect=PermissionError("actual permission denial"),
+            ) as replaced,
+            mock.patch.object(cache_runtime.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(PermissionError):
+                cache_runtime.atomic_write_json(self.map_path, {"new": True})
+        replaced.assert_called_once()
+        sleep.assert_not_called()
+        self.assertEqual(
+            json.loads(self.map_path.read_text(encoding="utf-8")), {"old": True}
+        )
+
     def test_two_writers_one_reader_never_observe_partial_json(self) -> None:
         self.map_path.parent.mkdir(parents=True, exist_ok=True)
         target = self.map_path.parent / "concurrent-cache.json"
