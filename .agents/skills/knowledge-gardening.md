@@ -32,6 +32,20 @@ near deleted code. A missing file reference is a review clue, not permission
 to rewrite design history. Preserve decisions with long-term maintenance value
 not reliably recoverable from code, tests, current architecture or ordinary docs.
 
+## Full vs partial supersession
+
+For a fully replaced Decision, confirm the replacement retains any continuing
+risk/invariant, then update current inbound pointers without erasing historical
+reasoning. For a partially replaced Decision, keep a direct path to still-active
+constraints. Validate front-matter IDs, linked Decision paths and Markdown
+backlinks with `pact check`; unresolved links and missing authority are review
+blockers. A rejected alternative must be checked against its original premises
+before being treated as binding today.
+
+For completed Changes and resolved Drift, propose cleanup **only after**
+checking related links, evidence retention and Product Truth ownership; Audit
+is a candidate list, not a deletion queue.
+
 ## Workflow
 
 1. Identify the relevant source, scope and owner of truth (Product Rule,
