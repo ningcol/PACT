@@ -157,6 +157,32 @@ class InitReadinessTests(unittest.TestCase):
         text = baseline.read_text(encoding="utf-8")
         self.assertIn('agent_bootstrap = "pending"', text)
 
+    def test_existing_claude_and_opencode_host_configs_survive_repeated_init(self) -> None:
+        self.target.mkdir(parents=True, exist_ok=True)
+        host_files = {
+            "AGENTS.md": "EXISTING AGENT AUTHORITY\n",
+            "CLAUDE.md": "EXISTING CLAUDE DIRECTIVES\n",
+            "opencode.json": '{"mcp": {"protected": true}}\n',
+            ".opencode/opencode.json": '{"agents": {"custom": true}}\n',
+        }
+        for relative, text in host_files.items():
+            path = self.target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        for attempt in range(2):
+            installed = self.run_init("--apply")
+            self.assertEqual(
+                installed.returncode, 0,
+                installed.stdout + installed.stderr,
+                f"init attempt {attempt + 1}",
+            )
+            for relative, text in host_files.items():
+                self.assertEqual(
+                    (self.target / relative).read_text(encoding="utf-8"),
+                    text,
+                    f"init attempt {attempt + 1} overwrote {relative}",
+                )
+
     def test_github_actions_is_opt_in(self) -> None:
         result = self.run_init("--apply", "--github-actions")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
