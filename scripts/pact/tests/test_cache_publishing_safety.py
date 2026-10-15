@@ -301,6 +301,80 @@ class CachePublishingSafetyTests(unittest.TestCase):
                     )
                 )
 
+    def test_atomic_writer_uses_real_classifier_for_winerror_5_32_and_denial(self):
+        class SimulatedWindowsPermission(PermissionError):
+            def __init__(self, code):
+                super().__init__(f"synthetic WinError {code}")
+                self.winerror = code
+
+        self.map_path.parent.mkdir(parents=True, exist_ok=True)
+        initial = '{"old":true}\\n'
+        self.map_path.write_text(initial, encoding="utf-8")
+        real_replace = cache_runtime.os.replace
+        actual_classifier = cache_runtime._retryable_windows_cache_replace_error
+
+        def call_actual_classifier(error):
+            # This short scoped patch affects only the platform predicate.
+            # Never alter os.name while pathlib/tempfile construct paths.
+            with mock.patch.object(cache_runtime.os, "name", "nt"):
+                return actual_classifier(error)
+
+        attempts = []
+
+        def transient_replace(source, destination):
+            attempts.append(len(attempts))
+            if len(attempts) in (1, 2):
+                raise SimulatedWindowsPermission(5 if len(attempts) == 1 else 32)
+            return real_replace(source, destination)
+
+        with (
+            mock.patch.object(
+                cache_runtime,
+                "_retryable_windows_cache_replace_error",
+                side_effect=call_actual_classifier,
+            ) as classifier,
+            mock.patch.object(
+                cache_runtime.os, "replace", side_effect=transient_replace,
+            ),
+            mock.patch.object(cache_runtime.time, "sleep"),
+        ):
+            cache_runtime.atomic_write_json(self.map_path, {"new": True})
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(classifier.call_count, 2)
+        self.assertEqual(
+            json.loads(self.map_path.read_text(encoding="utf-8")),
+            {"new": True},
+        )
+
+        # Non-sharing WinError 87 must reach the caller on the FIRST
+        # failure, keeping the previous valid complete JSON intact.
+        attempts.clear()
+        with (
+            mock.patch.object(
+                cache_runtime,
+                "_retryable_windows_cache_replace_error",
+                side_effect=call_actual_classifier,
+            ) as classifier,
+            mock.patch.object(
+                cache_runtime.os, "replace",
+                side_effect=SimulatedWindowsPermission(87),
+            ) as replaced,
+            mock.patch.object(cache_runtime.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(SimulatedWindowsPermission):
+                cache_runtime.atomic_write_json(self.map_path, {"bad": True})
+        classifier.assert_called_once()
+        replaced.assert_called_once()
+        sleep.assert_not_called()
+        self.assertEqual(
+            json.loads(self.map_path.read_text(encoding="utf-8")),
+            {"new": True},
+        )
+        self.assertEqual(
+            list(self.map_path.parent.glob(".project-map.json.pact-cache-*.tmp")),
+            [],
+        )
+
     def test_transient_windows_replace_conflict_retries_without_partial_json(self):
         self.map_path.parent.mkdir(parents=True, exist_ok=True)
         self.map_path.write_text('{"old":true}\n', encoding="utf-8")
