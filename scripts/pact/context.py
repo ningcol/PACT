@@ -396,14 +396,14 @@ def main() -> int:
             knowledge_limit,
             code=code_enabled,
             code_limit=code_limit,
-            intent=args.intent,
+                intent=args.intent,
         )
         wider_discovery = run_discovery(
             queries,
             knowledge_pool_limit,
             code=code_enabled,
             code_limit=code_pool_limit,
-            intent=args.intent,
+                intent=args.intent,
         )
 
         primary_selected_results = None
@@ -414,14 +414,14 @@ def main() -> int:
                 knowledge_limit,
                 code=code_enabled,
                 code_limit=code_limit,
-            intent=args.intent,
+                intent=args.intent,
             )
             primary_wider_discovery = run_discovery(
                 [queries[0]],
                 knowledge_pool_limit,
                 code=code_enabled,
                 code_limit=code_pool_limit,
-            intent=args.intent,
+                intent=args.intent,
             )
             primary_candidate_results = extend_candidate_pool(
                 primary_discovery.get("results", []),
@@ -441,7 +441,6 @@ def main() -> int:
                 token_budget=token_budget,
                 knowledge_limit=knowledge_limit,
                 code_limit=code_limit,
-            intent=args.intent,
             )
     except Exception as exc:
         print(f"PACT context: discovery failed: {exc}", file=sys.stderr)
