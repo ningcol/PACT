@@ -388,7 +388,10 @@ def exact_match_priority(reasons: list[str]) -> int:
     """Preserve the source scorer's exactness through optional query fusion."""
     def matches(label: str) -> bool:
         return any(
-            reason == label or reason.endswith(": " + label)
+            reason == label or (
+                reason.endswith(": " + label)
+                and not reason.startswith("matched query: ")
+            )
             for reason in reasons
         )
 
@@ -429,6 +432,7 @@ def fuse_ranked_results(
                     "_max_score": int(item.get("score", 0)),
                     "_queries": [],
                     "_reasons": [],
+                    "_exact_priority": 0,
                 }
                 fused[path] = entry
 
@@ -436,6 +440,14 @@ def fuse_ranked_results(
             entry["_max_score"] = max(
                 entry["_max_score"],
                 int(item.get("score", 0)),
+            )
+            # Only the direct scorer's bare reasons confer exact status.
+            # User-controlled "matched query: ..." labels may otherwise
+            # masquerade as a scored exact hit when the query text itself
+            # happens to equal "exact stable id"/"exact title"/"exact alias".
+            entry["_exact_priority"] = max(
+                entry["_exact_priority"],
+                exact_match_priority(item.get("reasons", [])),
             )
             if query not in entry["_queries"]:
                 entry["_queries"].append(query)
@@ -468,6 +480,15 @@ def fuse_ranked_results(
         result["reasons"] = [
             f"matched query: {query}" for query in entry["_queries"]
         ] + entry["_reasons"]
+        if preserve_exact and entry["_exact_priority"]:
+            # Canonical scorer-derived signal survives query decoration
+            # without changing closed JSON field names or legacy no-intent
+            # ranking/reason output. This also handles query="matched query".
+            result["reasons"].append({
+                3: "exact stable id",
+                2: "exact title",
+                1: "exact alias",
+            }[entry["_exact_priority"]])
         rendered[path] = result
 
     global_ranked = sorted(
