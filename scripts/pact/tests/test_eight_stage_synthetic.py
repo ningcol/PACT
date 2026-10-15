@@ -44,12 +44,15 @@ class SyntheticEightStageTests(unittest.TestCase):
 
     def test_case_id_cannot_escape_disposable_parent(self):
         inputs = json.loads(harness.CASES.read_text(encoding="utf-8"))
-        bad = dict(inputs["cases"][0], id="../outside")
         with tempfile.TemporaryDirectory(prefix="pact-s7-id-") as td:
             root = pathlib.Path(td)
+            escape_name = root.name + "-outside"
+            bad = dict(inputs["cases"][0], id="../" + escape_name)
+            escaped_path = root.parent / escape_name
+            self.assertFalse(escaped_path.exists())
             with self.assertRaisesRegex(ValueError, "unsafe synthetic case id"):
                 harness.evaluate_case(bad, parent=root)
-            self.assertFalse((root.parent / "outside").exists())
+            self.assertFalse(escaped_path.exists())
 
     def test_frozen_command_line_has_no_external_input_or_output(self):
         source = MODULE.read_text(encoding="utf-8")
