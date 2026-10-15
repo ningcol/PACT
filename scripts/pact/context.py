@@ -7,8 +7,11 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
+
+from repository_files import DEFAULT_PRUNE_DIRS
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
@@ -20,6 +23,15 @@ SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
+MODULE_README_HINT_LIMIT = 3
+MODULE_README_CODE_CANDIDATES = 24
+MODULE_README_SIZE_LIMIT = 128 * 1024
+GOVERNANCE_PATHS = (
+    "docs/governance/truth-ownership.md",
+    "docs/governance/decision-authority.md",
+    "docs/governance/completion-contract.md",
+)
+RULE_ID = re.compile(r"^RULE-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
 def run_discovery(
@@ -149,6 +161,121 @@ def build_code_candidate_hints(
             break
 
     return hints
+
+
+def nearby_readme_hints(
+    selected_code: list[dict],
+    *,
+    limit: int = MODULE_README_HINT_LIMIT,
+    ancestor_limit: int = 4,
+) -> list[str]:
+    """Bounded metadata-only lookup adjacent to already selected code paths.
+
+    No directory walk, content read or global README ranking. Git-ignored and
+    symbolic paths cannot become trusted hints, even if search hits them.
+    """
+    if limit <= 0 or ancestor_limit <= 0:
+        return []
+    root = ROOT.resolve()
+    found: set[str] = set()
+    hints: list[str] = []
+    # This stays bounded even if --code-limit is set extremely high.
+    for code in selected_code[:MODULE_README_CODE_CANDIDATES]:
+        raw = str(code.get("path") or "")
+        pure = pathlib.PurePosixPath(raw)
+        if not raw or pure.is_absolute() or ".." in pure.parts:
+            continue
+        parent = pure.parent
+        for _ in range(ancestor_limit):
+            if str(parent) in {".", ""}:
+                break
+            if any(part in DEFAULT_PRUNE_DIRS for part in parent.parts):
+                break
+            relative = (parent / "README.md").as_posix()
+            if relative in found:
+                parent = parent.parent
+                continue
+            candidate = ROOT / relative
+            try:
+                candidate.resolve().relative_to(root)
+                if candidate.is_symlink() or not candidate.is_file():
+                    parent = parent.parent
+                    continue
+                # Do not follow symlinked parent directories either.
+                ancestor = candidate.parent
+                if any(
+                    component.is_symlink()
+                    for component in (ancestor, *ancestor.parents)
+                    if component != root and root in component.parents
+                ):
+                    parent = parent.parent
+                    continue
+                if candidate.stat().st_size > MODULE_README_SIZE_LIMIT:
+                    parent = parent.parent
+                    continue
+                check = subprocess.run(
+                    ["git", "check-ignore", "-q", "--", relative],
+                    cwd=ROOT, capture_output=True, timeout=5, check=False,
+                )
+                if check.returncode == 0:
+                    parent = parent.parent
+                    continue
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+                parent = parent.parent
+                continue
+            found.add(relative)
+            hints.append(
+                f"Module README hint (metadata only): {relative}; "
+                f"near selected code {raw}; not normative Product Truth"
+            )
+            if len(hints) >= limit:
+                return hints
+            parent = parent.parent
+    return hints
+
+
+def governance_path_hints() -> list[str]:
+    """Compatibility-safe navigation text in the existing advisory field."""
+    return [
+        f"Governance navigation path (metadata only, not a business Rule): {path}"
+        for path in GOVERNANCE_PATHS
+        if repo_file(path) is not None
+    ]
+
+
+def required_rule_gaps(
+    rule_ids: list[str],
+    selected: list[dict],
+    candidates: list[dict],
+    exact: dict[str, dict | None],
+) -> list[str]:
+    """Explicit requirements fail closed; never infer mandatory IDs from prose."""
+    selected_rules = set(applicable_rule_ids(selected))
+    candidates_by_id = {
+        str(item.get("id")): item
+        for item in candidates
+        if item.get("id")
+    }
+    errors: list[str] = []
+    for rule_id in rule_ids:
+        if rule_id in selected_rules:
+            continue
+        doc = candidates_by_id.get(rule_id) or exact.get(rule_id)
+        if doc is None:
+            reason = "absent (no artifact with that stable ID)"
+        elif doc.get("artifact_type") != "rule":
+            reason = "identifier belongs to a non-Rule artifact"
+        elif doc.get("mixed_authority"):
+            reason = "mixed confirmed/pending sections; not normative"
+        elif doc.get("status") != "confirmed":
+            reason = f"status {doc.get('status')!r} is not confirmed"
+        else:
+            reason = "confirmed, but not selected under current count/token budget"
+        errors.append(
+            f"required Rule {rule_id}: {reason}; inspect the artifact, "
+            "increase --limit or supply a narrower --query, then retry"
+        )
+    return errors
 
 
 def repo_file(relative: str) -> pathlib.Path | None:
@@ -359,14 +486,18 @@ def main() -> int:
     )
     parser.set_defaults(code=None)
     parser.add_argument("--intent", choices=["work", "decision", "history"], help="optional retrieval priority; default unchanged")
+    parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
 
     if args.token_budget is not None and args.token_budget < 0:
         parser.error("--token-budget must be >= 0")
 
+    required_rules = list(dict.fromkeys(args.required_rules))
+    if len(required_rules) > 8 or any(not RULE_ID.fullmatch(x) for x in required_rules):
+        parser.error("--require-rule expects up to eight unique canonical RULE-* IDs")
     goal = args.goal or args.task
-    queries = args.queries or [args.task]
+    queries = list(dict.fromkeys([*(args.queries or [args.task]), *required_rules]))
     risk = profile(args.risk)
 
     knowledge_limit = max(args.limit or risk["knowledge_limit"], 1)
@@ -477,6 +608,34 @@ def main() -> int:
     })
 
     rules = applicable_rule_ids(results)
+    exact_required: dict[str, dict | None] = {}
+    for rule_id in required_rules:
+        if rule_id in rules or any(
+            item.get("id") == rule_id for item in candidate_results
+        ):
+            continue
+        try:
+            exact_discovery = run_discovery(
+                [rule_id], knowledge_pool_limit, code=False,
+                code_limit=code_limit,
+            )
+        except Exception as exc:
+            print(f"PACT context: cannot verify required Rule {rule_id}: {exc}",
+                  file=sys.stderr)
+            return 2
+        exact_required[rule_id] = next(
+            (item for item in exact_discovery.get("results", [])
+             if item.get("id") == rule_id),
+            None,
+        )
+    gaps = required_rule_gaps(
+        required_rules, results, candidate_results, exact_required
+    )
+    if gaps:
+        for gap in gaps:
+            print(f"PACT context: {gap}", file=sys.stderr)
+        return 2
+
     decisions = sorted({
         result["id"] or result["path"]
         for result in results
@@ -509,7 +668,8 @@ def main() -> int:
         and result.get("status") == "implemented"
     ]
 
-    unknowns: list[str] = []
+    unknowns: list[str] = governance_path_hints()
+    unknowns.extend(nearby_readme_hints(code_results))
     mixed_candidates = sorted({
         str(result.get("path"))
         for result in candidate_results
