@@ -105,6 +105,24 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertEqual(owner_path.read_bytes(), saved)
         self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
 
+    def test_assist_reports_failed_and_missing_criteria_separately(self) -> None:
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify(exit_code=7).returncode, 7)
+        result = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        statuses = {
+            item["criterion_id"]: item
+            for item in report["criterion_diagnostics"]
+        }
+        self.assertEqual(statuses["AC-1"]["status"], "failed")
+        self.assertEqual(statuses["AC-1"]["failed_claim_ids"], ["EV-VERIFY-1"])
+        self.assertEqual(statuses["AC-2"]["status"], "unverified")
+        self.assertEqual(statuses["AC-2"]["claim_ids"], [])
+        self.assertEqual(report["failed_claim_ids"], ["EV-VERIFY-1"])
+        self.assertFalse(report["owner_completed_automatically"])
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
     def test_assist_cannot_launder_failing_claim_into_owner_draft(self) -> None:
         self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
         self.assertEqual(self.verify(exit_code=3).returncode, 3)
