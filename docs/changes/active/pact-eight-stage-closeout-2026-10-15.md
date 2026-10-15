@@ -22,7 +22,7 @@ domains = []
 3. **事实与结论分层**：单元/CI、已安装 `pact.pyz`、历史 replay、真实 Agent 工作流、Owner 观察是不同级别的证据。历史 Smoke 不能被描述为“真实生产闭环”；未采集的人工耗时/问询/Token 不得填 0 或估算为改善。
 4. **最小控制面**：优先复用 `task prepare/status/draft/verify/finish`、`discover/context/impact`、`audit`、`run/evidence/complete/eval`；不创建第二套 Product Truth、Decision 库、Beads/向量库或无必要的强制工作流。**原始必须具备的能力不能未经 Owner 同意降级为可选**；实现手段（新增子命令还是扩展旧命令）可以由实测成本决定。
 5. **信任边界只加强，不稀释**：保留 Task Contract / Task Context SHA、受管理工作区指纹、Evidence Claim↔AC↔Owner Report 的精确绑定、Convergence/changed-file coverage、风险门禁及路径边界。发现假 pass、安全边界绕过或破坏安装/回退时，阻断下一阶段。
-6. **阶段单独签收**：S0→S7 顺序验收，每阶段 1～3 个小 PR；每阶段完成三轮**不同角度的**审查，保留具体证据。三次同一助手检查不等于三名独立 reviewer；独立 Agent 审查需要真实输出和 SHA 绑定，未执行就标阻断。
+6. **阶段单独签收**：S0→S7 的**工程 E 实施**按顺序，每阶段 1～3 个小 PR；通过本阶段 E 类门禁及三轮不同角度的审查后才能开始下一阶段 E 工作。S6/S7 外部 V 因无授权而 blocked 时，可继续不依赖它的后续 **PACT-only 工程 E**，但对应阶段整体不能 passed、八阶段不能完成。三次同一助手检查不等于三名独立 reviewer；独立 Agent 审查需要真实输出和 SHA 绑定，未执行就标阻断。
 
 ### 0.2 四类验收项与唯一的状态规则
 
@@ -35,7 +35,7 @@ domains = []
 
 - 每个 E/V AC 必须有唯一 ID、固定输入/预期、至少一个 RED 反例、复跑命令或人工观察协议、实际证据 URI、base/head SHA、责任主体及状态。
 - **AC 状态仅允许** `not-started / in-progress / passed / failed / blocked / unverified`。无证据是 `unverified`；已知依赖（账号、样本、权限、Runner）不可用是 `blocked`，并写明解除条件；实测未达标准为 `failed`，不能改写成“允许警告”。X 方案用 `adopt/reject/defer` 单独登记，不伪装为 E/V 通过状态。
-- **阶段状态聚合**：有任一强制 E/V `failed` → `failed`；否则有 `blocked` → `blocked`；否则有 `unverified` 或 `not-started` → `unverified/not-started`（保持实际状态）；全部强制 E/V `passed` 且三轮审查有证据 → `passed`。某个工程子目标可以先达到，但**不能把阶段整体标 passed**。
+- **阶段状态聚合（确定性顺序）**：任一强制 E/V `failed` → `failed`；否则任一 `blocked` → `blocked`；否则任一 `in-progress` → `in-progress`；否则任一 `unverified` → `unverified`；否则任一 `not-started` → `not-started`；全部 E/V `passed` 且三轮审查可追溯 → `passed`；否则因缺三轮审查证据 → `unverified`。一个工程子目标已通过，不代表阶段整体 passed。
 - **Engineering Complete**：S0～S7 所有 E 类 AC `passed`，工程三轮审查与兼容性证据齐全，已知安全 P0/P1 均关闭。它不代表 V 类已验证。
 - **Pilot Validated**：所有 V 类 AC `passed`，并明确观察样本和外推边界；历史重放及模拟 Owner 不能顶替。
 - **Eight-stage Accepted**：Engineering Complete + Pilot Validated，且全部阶段强制 AC 与审查通过。缺任何 V 项均不得宣布“八阶段全部完成”。
@@ -193,7 +193,7 @@ domains = []
 
 ## 3. 依赖、PR 包与停机条件
 
-**严格阶段签收顺序**：S0 → S1 → S2 → S3 → S4 → S5 → S6 → S7。可以在 S0 **提前核实**外部 Runner/Owner 数据能否取得；不能提前把 S7 的真实结果写成“已通过”。只允许在 S0/S1 进行构建夹具、测量等基础工作，不跨阶段混入未经批准的功能。
+**工程实施顺序**：S0 → S1 → S2 → S3 → S4 → S5 → S6(E) → S7(E)；每阶段 E 与三轮阶段审查通过才能进行下一阶段 E。S6 的真实 Runner 九格（V）或 S7 的人类实测（V）因外部条件 blocked 时，可以继续**与缺失 V 无信任依赖**的后续工程评估，但不得把整体阶段或 Eight-stage Accepted 判为 passed。S0 可以提前核实外部 Runner/Owner 可用性；不能提前把 S7 的真实结果写成“已通过”。
 
 | PR 包（建议编号，非已存在 PR） | 对应 AC | 工作边界 | 出口 |
 | --- | --- | --- | --- |
@@ -261,10 +261,10 @@ Decision: stage status; Engineering Complete? Pilot Validated? Release Approved?
 ## 6. 计划本身的修订记录和未关闭关口
 
 - **2026-10-15 原计划**：PR #185 交付计划草稿，三轮同一助手按不同维度复核；这是自审，不是独立 Agent 审查。
-- **2026-10-15 本次修订 Review 1（范围/可验收性，同一助手）**：拆分 E/V/X/R，定义 `Engineering Complete / Pilot Validated / Eight-stage Accepted / Release Approved`；修正 S6 未验证却可能算成功、S7 `NO-GO` 与 `passed` 混淆；增原子 AC 与责任证据槽。
+- **2026-10-15 本次修订 Review 1（范围/可验收性，同一助手）**：拆分 E/V/X/R，定义 `Engineering Complete / Pilot Validated / Eight-stage Accepted / Release Approved`；修正 S6 未验证却可能算成功、S7 `NO-GO` 与 `passed` 混淆；增原子 AC、确定性状态聚合与责任证据槽。
 - **2026-10-15 本次修订 Review 2（源码/敌对路径，同一助手）**：确认 `workspace_changed` 仅前后指纹、Context v1 封闭 Schema、矩阵全量覆盖表述、证据导出工作区边界、Git Merge 回退差异；分别加反例或明确上限，未声称瞬态写可侦测。
-- **2026-10-15 本次修订 Review 3（实验/发布，同一助手）**：先冻结 holdout 和阈值、历史 Smoke 与真实试点分开、Runner/Owner 资源前置核实、Legacy YAML Issue #63 显式处理、tag 自动 Release 风险与 Owner 独立授权。
-- **独立 AI 复审：blocked**。Copilot 与 Codex 在 PR #185 的既有请求因额度限制没有有效独立审查结论；本修订不声称它们已通过。需在**修订后 PR head**获取真正审查，再修复意见。若其他 Reviewer 也不可用，如实报告阻断。
+- **2026-10-15 本次修订 Review 3（实验/发布，同一助手）**：先冻结 holdout 和阈值、历史 Smoke 与真实试点分开、Runner/Owner 资源前置核实；修复“S6 外部 V blocked 阻断 S7 工程 E”的死锁；Legacy YAML Issue #63 显式处理、tag 自动 Release 风险与 Owner 独立授权。
+- **独立 AI 计划复审：blocked（计划签收门禁未通过）**。Copilot 与 Codex 在 PR #185 的既有请求因额度限制没有有效独立审查结论；本修订不声称它们已通过。需在**修订后 PR head**获取真正审查，再修复意见；在此之前计划不能声称获得独立复审通过，也不会据此启动实施或发布。
 - **实施/发布均未授权**：提交本文只修改计划文件；S0～S7 的代码、CI、其他项目、版本、tag、Release 均未随本修订实施。
 
 ### 执行后最小最终报告（不得再写成“全部完成”而缺数据）
