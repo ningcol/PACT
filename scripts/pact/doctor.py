@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -122,6 +123,114 @@ def install_provenance_check(strict: bool) -> dict:
         )
 
 
+HOST_GUIDES = (
+    "AGENTS.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md",
+    "opencode.json", ".opencode/opencode.json",
+)
+HOST_READ_LIMIT = 128 * 1024
+HOST_WORKFLOW_LIMIT = 32
+MARKDOWN_INCLUDE = re.compile(r"\\]\\(([^)#]+)(?:#[^)]*)?\\)|(?m)^\\s*@([A-Za-z0-9_.\\/-]+\\.md)\\s*$")
+
+
+def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | None]:
+    """Only read small regular, in-root files; never chase symlinked hosts."""
+    path = root / relative
+    try:
+        if path.is_symlink():
+            return None, "symbolic host guide requires manual inspection"
+        if not path.exists():
+            return None, None
+        if not path.is_file():
+            return None, "host config is not a regular file"
+        path.resolve().relative_to(root.resolve())
+        if path.stat().st_size > HOST_READ_LIMIT:
+            return None, "host config exceeds bounded static read size"
+        return path.read_text(encoding="utf-8"), None
+    except (OSError, UnicodeError, RuntimeError, ValueError):
+        return None, "host config cannot be safely read"
+
+
+def _direct_includes(contents: str) -> set[str]:
+    found = set()
+    for match in MARKDOWN_INCLUDE.finditer(contents):
+        value = (match.group(1) or match.group(2) or "").strip()
+        if value in {"AGENTS.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md"}:
+            found.add(value)
+    return found
+
+
+def host_wiring_checks(root: pathlib.Path = ROOT) -> list[dict]:
+    """Advisory, static and non-destructive host preflight.
+
+    No host test/CI/build is executed, no deps installed and no configuration
+    is rewritten. Unknown policy syntax is NEVER labeled a validated pass.
+    """
+    checks: list[dict] = []
+    visible: dict[str, str] = {}
+    for relative in HOST_GUIDES:
+        data, problem = _host_text(root, relative)
+        if problem:
+            checks.append(item("host:" + relative, "needs-manual-review", problem))
+        elif data is not None:
+            visible[relative] = data
+            if relative in {"AGENTS.md", "CLAUDE.md"}:
+                if "PACT" in data.upper() or "pact.py" in data:
+                    checks.append(item("host:" + relative, "pass",
+                                       "PACT entry mentioned; actual Agent loading still unverified"))
+                else:
+                    checks.append(item("host:" + relative, "needs-manual-review",
+                                       "existing host instructions do not explicitly route to PACT"))
+            else:
+                checks.append(item("host:" + relative, "needs-manual-review",
+                                   "host-specific config present; verify actual loading manually"))
+    if "AGENTS.md" not in visible:
+        checks.append(item("host:AGENTS.md", "needs-manual-review",
+                           "no readable main Agent guide to verify routing"))
+
+    # Only direct, syntactically recognized Markdown includes can form a
+    # machine-detectable cycle; prose references are not treated as edges.
+    graph = {name: _direct_includes(contents) for name, contents in visible.items()
+             if name.endswith(".md")}
+    for first in sorted(graph):
+        for second in sorted(graph[first]):
+            if second == first or first in graph.get(second, set()):
+                checks.append(item("host-include-cycle", "fail",
+                                   f"direct cyclic instruction include: {first} <-> {second}"))
+
+    workflows = root / ".github" / "workflows"
+    if workflows.exists() and not workflows.is_symlink() and workflows.is_dir():
+        try:
+            files = sorted(
+                path for path in workflows.iterdir()
+                if path.suffix.lower() in {".yml", ".yaml"}
+            )
+            if len(files) > HOST_WORKFLOW_LIMIT:
+                checks.append(item("host-ci-whitelist", "needs-manual-review",
+                                   "too many workflows to inspect safely"))
+            else:
+                for path in files:
+                    relative = path.relative_to(root).as_posix()
+                    data, problem = _host_text(root, relative)
+                    if problem:
+                        checks.append(item("host-ci:" + relative, "needs-manual-review",
+                                           problem))
+                    elif data is not None and re.search(
+                        r"(?m)^\\s*(?:paths|paths-ignore)\\s*:", data
+                    ):
+                        checks.append(item(
+                            "host-ci:" + relative, "needs-manual-review",
+                            "workflow path filters may exclude new PACT files; "
+                            "manual path matching required (no host CI executed)",
+                        ))
+        except OSError:
+            checks.append(item("host-ci-whitelist", "needs-manual-review",
+                               "workflows directory cannot be statically inspected"))
+    if not checks:
+        checks.append(item("host-wiring", "needs-manual-review",
+                           "no recognized host policy files to establish integration"))
+    return checks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check PACT foundation health")
     parser.add_argument(
@@ -130,7 +239,30 @@ def main() -> int:
         help="require project config and tracked install provenance",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--host-wiring", action="store_true",
+        help="include bounded static host wiring advisory checks",
+    )
+    parser.add_argument(
+        "--host-wiring-only", action="store_true",
+        help="only inspect host guide/CI metadata; no PACT map/check/CI execution",
+    )
     args = parser.parse_args()
+
+    if args.host_wiring_only:
+        checks = host_wiring_checks(ROOT)
+        overall = ("fail" if any(x["state"] == "fail" for x in checks)
+                   else "needs-manual-review" if any(
+                       x["state"] == "needs-manual-review" for x in checks
+                   ) else "pass")
+        result = {"overall": overall, "checks": checks, "host_ci_executed": False}
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"PACT doctor host wiring: {overall}")
+            for check in checks:
+                print(f"- [{check['state'].upper()}] {check['check']}: {check['detail']}")
+        return 1 if overall == "fail" else 0
 
     checks: list[dict] = []
 
@@ -174,6 +306,8 @@ def main() -> int:
             checks.append(item("owner-profile", "fail", "owner profile output was not valid JSON"))
 
     checks.append(install_provenance_check(args.strict))
+    if args.host_wiring:
+        checks.extend(host_wiring_checks(ROOT))
 
     fitness_cmd = runtime_command("fitness", "--json", "--validate-only")
     if args.strict:
@@ -242,7 +376,8 @@ def main() -> int:
         checks.append(item("project-map", "fail", str(exc)))
 
     overall = "fail" if any(c["state"] == "fail" for c in checks) else (
-        "warn" if any(c["state"] == "warn" for c in checks) else "pass"
+        "warn" if any(c["state"] in {"warn", "needs-manual-review"}
+                      for c in checks) else "pass"
     )
 
     result = {
