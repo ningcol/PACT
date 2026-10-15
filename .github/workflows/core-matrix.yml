@@ -53,6 +53,7 @@ jobs:
           python -m unittest discover -s scripts/pact/tests -p "test_cache_publishing_safety.py"
           python -m unittest discover -s scripts/pact/tests -p "test_multi_query_retrieval.py"
           python -m unittest discover -s scripts/pact/tests -p "test_context_intent_require_rules.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_installed_intent_comparison.py"
           python -m unittest discover -s scripts/pact/tests -p "test_mixed_authority.py"
           python -m unittest discover -s scripts/pact/tests -p "test_audit_retention.py"
           python -m unittest discover -s scripts/pact/tests -p "test_decision_supersession_links.py"
