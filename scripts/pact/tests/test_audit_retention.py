@@ -10,6 +10,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import audit
+from discover import score_document
 
 
 def decision(status: str, name: str) -> dict:
@@ -24,6 +25,49 @@ def decision(status: str, name: str) -> dict:
 
 
 class AuditRetentionTests(unittest.TestCase):
+
+    def test_rejected_rationale_retrievable_without_permanent_prohibition(self) -> None:
+        wrong = decision("rejected", "unsafe-cache")
+        wrong["text"] = (
+            "Rejected unbounded cache because prior storage was ephemeral. "
+            "Revisit if durable storage and eviction are proven."
+        )
+        score, why = score_document(wrong, "unbounded cache")
+        self.assertGreater(score, 0)
+        self.assertNotIn("historical decision (not current guidance)", why)
+        self.assertIn("Revisit if durable storage", wrong["text"])
+
+        old = dict(wrong, status="superseded")
+        old_score, old_why = score_document(old, "unbounded cache")
+        self.assertLess(old_score, score)
+        self.assertIn("historical decision (not current guidance)", old_why)
+
+        exact_score, exact_why = score_document(old, old["id"])
+        self.assertGreater(exact_score, old_score)
+        self.assertNotIn("historical decision (not current guidance)", exact_why)
+
+    def test_partial_and_full_supersession_are_review_only(self) -> None:
+        old = decision("superseded", "partial-old")
+        old["related"] = ["DEC-PARTIALNEW-001"]
+        full = decision("superseded", "full-old")
+        full["related"] = ["DEC-FULLNEW-001"]
+        current = decision("implemented", "partial-new")
+        rejected = decision("rejected", "old-idea")
+        result = audit.evaluate(
+            {"documents": [old, full, current, rejected]},
+            deterministic_check="pass",
+        )
+        self.assertEqual(
+            {item["id"] for item in result["decision_retention_candidates"]},
+            {old["id"], full["id"]},
+        )
+        self.assertFalse("auto_delete" in result)
+        self.assertFalse("auto_archive" in result)
+        self.assertNotIn(
+            current["id"],
+            {item["id"] for item in result["decision_retention_candidates"]},
+        )
+
     def test_only_explicitly_superseded_decisions_become_retention_candidates(self) -> None:
         implemented = decision("implemented", "current")
         superseded = decision("superseded", "old-boundary")
