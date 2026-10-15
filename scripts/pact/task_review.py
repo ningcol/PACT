@@ -42,7 +42,10 @@ OWNER_AUTOGEN_MAX_BYTES = 128 * 1024
 def owner_payload_sha256(owner: dict) -> str:
     """Match task.write_json's exact on-disk byte serialization."""
     payload = json.dumps(owner, ensure_ascii=False, indent=2) + "\n"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    # task.write_json opens a UTF-8 *text* stream with newline=None: Windows
+    # translates the formatting LF bytes to CRLF on disk. Bind the marker to
+    # those actual persisted bytes, not to an LF-only in-memory serialization.
+    return hashlib.sha256(payload.replace("\n", os.linesep).encode("utf-8")).hexdigest()
 
 
 def generated_owner_marker(bundle: pathlib.Path, task_id: str) -> dict | None:
