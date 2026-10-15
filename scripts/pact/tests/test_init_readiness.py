@@ -231,11 +231,15 @@ class InitReadinessTests(unittest.TestCase):
 
         self.assertTrue(agents.is_symlink())
         self.assertFalse(agents.exists())
+        # Windows os.readlink() can expose an extended-length path spelling
+        # even when the original target string did not. Compare the literal
+        # link target against its pre-init value, not a path's display form.
+        original_link_target = os.readlink(agents)
 
         result = self.run_init("--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(agents.is_symlink())
-        self.assertEqual(os.readlink(agents), str(broken_target))
+        self.assertEqual(os.readlink(agents), original_link_target)
         self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
 
 
