@@ -38,7 +38,13 @@ def confined_regular_file(root: pathlib.Path, candidate: pathlib.Path) -> bool:
 
 
 def git_visible_files(root: pathlib.Path) -> list[pathlib.Path] | None:
-    """Return tracked + visible untracked files, or None when Git is unavailable."""
+    """Return Git-visible files, or None only for a genuinely non-Git directory.
+
+    Once Git identifies a worktree, enumeration failure is an error: falling
+    back to os.walk would silently include normally ignored files.
+    """
+    git_marker = root / ".git"
+    has_git_marker = git_marker.exists() or git_marker.is_symlink()
     try:
         inside = subprocess.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
@@ -47,20 +53,28 @@ def git_visible_files(root: pathlib.Path) -> list[pathlib.Path] | None:
             text=True,
             timeout=10,
         )
-        if inside.returncode != 0 or inside.stdout.strip() != "true":
-            return None
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if has_git_marker:
+            raise OSError("cannot inspect Git worktree for file discovery") from exc
+        return None
 
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        if has_git_marker:
+            raise OSError("Git worktree marker exists but Git cannot inspect it")
+        return None
+
+    try:
         result = subprocess.run(
             ["git", "ls-files", "-co", "--exclude-standard", "-z"],
             cwd=root,
             capture_output=True,
             timeout=30,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise OSError("Git visible-file enumeration failed") from exc
 
     if result.returncode != 0:
-        return None
+        raise OSError(f"Git visible-file enumeration failed (exit {result.returncode})")
 
     paths: set[pathlib.Path] = set()
     for raw in result.stdout.split(b"\0"):
