@@ -253,5 +253,50 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertEqual(outside.read_text(encoding="utf-8"), "do not change")
 
 
+    def test_finish_refuses_concurrent_same_task_state_writer(self) -> None:
+        task_dir = self.root / ".pact" / "tasks" / self.task_id
+        command = self.lock_command("hold", task_dir)
+        with subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        ) as holder:
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "acquired")
+                blocked = self.pact("task", "finish", self.task_id)
+                self.assertEqual(blocked.returncode, 2, blocked.stderr)
+                self.assertIn("another task Evidence writer", blocked.stderr)
+                self.assertFalse(
+                    (task_dir / "completion-attempts.jsonl").exists()
+                )
+            finally:
+                holder.communicate(input="\n", timeout=30)
+            self.assertEqual(holder.returncode, 0)
+        resumed = self.pact("task", "finish", self.task_id)
+        self.assertNotIn("another task Evidence writer", resumed.stderr)
+
+    def test_verify_timeout_releases_lock_without_passing_evidence(self) -> None:
+        result = self.pact(
+            "task", "verify", self.task_id,
+            "--criterion", "AC-1", "--claim", "Long running check",
+            "--timeout-seconds", "1", "--",
+            sys.executable, "-c", "import time; time.sleep(20)",
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("verification exceeded 1s", result.stderr)
+        self.assertFalse((self.bundle / "evidence.json").exists())
+        followup = self.verify()
+        self.assertEqual(followup.returncode, 0, followup.stderr)
+
+    def test_verify_rejects_nonpositive_timeout(self) -> None:
+        result = self.pact(
+            "task", "verify", self.task_id,
+            "--criterion", "AC-1", "--claim", "Invalid timeout",
+            "--timeout-seconds", "0", "--",
+            sys.executable, "-c", "print('should not run')",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--timeout-seconds must be positive", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
