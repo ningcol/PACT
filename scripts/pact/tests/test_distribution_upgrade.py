@@ -856,10 +856,8 @@ class DistributionUpgradeTests(unittest.TestCase):
     def test_upgrade_license_preserves_explicit_crlf_source_bytes(self) -> None:
         self.scaffold()
         self.change_runtime_source()
-        crlf_bytes = (
-            b"PACT test-only license fixture\\r\\n"
-            b"Second line\\r\\n"
-        ).replace(b"\\\\r\\\\n", b"\\r\\n")
+        crlf_bytes = b"PACT test-only license fixture\r\nSecond line\r\n"
+
         (self.new_source / "LICENSE").write_bytes(crlf_bytes)
 
         result = self.run_upgrade("--apply", "--json")
