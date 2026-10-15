@@ -146,6 +146,27 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertEqual(unsafe.returncode, 2)
         self.assertFalse((self.root / ".pact" / "runs" / "outside.json").exists())
 
+    def test_export_publication_failure_leaves_no_partial_final_file(self) -> None:
+        self.assertEqual(self.verify().returncode, 0)
+        runtime = self.root / ".pact" / "pact.pyz"
+        script = (
+            "import sys; from types import SimpleNamespace; "
+            f"sys.path.insert(0, {str(runtime)!r}); "
+            "import task_review; "
+            "task_review.os.link = lambda *args, **kwargs: "
+            "(_ for _ in ()).throw(OSError('injected link failure')); "
+            f"raise SystemExit(task_review.export(SimpleNamespace(task_id={self.task_id!r}, "
+            "filename='failed-export.json', json=True)))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.root,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        output_dir = self.root / ".pact" / "runs" / self.task_id
+        self.assertFalse((output_dir / "failed-export.json").exists())
+        self.assertFalse(list(output_dir.glob(".failed-export.json.pact-export-*.tmp")))
+
     def test_draft_is_schema_shaped_but_not_complete(self) -> None:
         drafted = self.pact("task", "draft", self.task_id, "--json")
         self.assertEqual(drafted.returncode, 0, drafted.stderr)
