@@ -51,6 +51,26 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
             {"DEC-PAST", "DEC-NO"},
         )
 
+    def test_explicit_title_and_alias_retrieval_outweigh_optional_intent_bias(self):
+        confirmed = artifact("RULE-GENERIC", score=20)
+        old = artifact("DEC-EXACT-TITLE", kind="decision",
+                       status="superseded", score=300)
+        old["reasons"] = ["exact title"]
+        alias = artifact("DEC-EXACT-ALIAS", kind="decision",
+                         status="rejected", score=250)
+        alias["reasons"] = ["exact alias"]
+        strong = artifact("RULE-CURRENT", score=400)
+        all_results = [confirmed, strong, old, alias]
+        for intent in ("work", "decision", "history"):
+            with self.subTest(intent=intent):
+                ranked = rerank_for_intent(all_results, intent)
+                self.assertEqual(
+                    [doc["id"] for doc in ranked[:2]],
+                    ["DEC-EXACT-TITLE", "DEC-EXACT-ALIAS"],
+                    "exact metadata lookup must not disappear behind priors",
+                )
+        self.assertEqual(rerank_for_intent(all_results, None), all_results)
+
     def test_explicit_rule_must_be_selected_and_wholly_confirmed(self):
         rule = artifact("RULE-VALID")
         self.assertEqual(context.required_rule_gaps(
