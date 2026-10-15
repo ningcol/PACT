@@ -75,6 +75,16 @@ def _reference(relative: str, prefix: tuple[str, ...], suffix: str) -> dict:
         raise ValueError(f"unsafe handoff reference {relative!r}")
     if tuple(raw.parts[:len(prefix)]) != prefix or not raw.name.endswith(suffix):
         raise ValueError(f"handoff reference outside expected kind: {relative!r}")
+    # confined_repository_path resolves aliases; inspect the unreduced path
+    # *first* so a symlink to another in-root file does not become trusted
+    # merely because its resolved digest matches.
+    root = ROOT.resolve()
+    candidate = root / raw.as_posix()
+    current = candidate
+    while current != root:
+        if current.is_symlink():
+            raise ValueError(f"handoff reference must not traverse a symlink: {relative!r}")
+        current = current.parent
     path = confined_repository_path(ROOT, relative, field="handoff reference")
     return {"path": raw.as_posix(), "sha256": _file_sha(path)}
 
