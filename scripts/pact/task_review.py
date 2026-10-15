@@ -154,6 +154,24 @@ def _diagnose(
         }
         for item in criteria if by_criterion[item["id"]]
     ]
+    # The Owner Report v1 schema cannot acquire arbitrary extra fields.
+    # Provide exact receipt and SHA traceability separately as read-only
+    # diagnostic metadata; it must never be copied into Owner Report arrays
+    # or described as a semantic product assertion.
+    provenance_for_review = [
+        {
+            "claim_id": claim["id"],
+            "task_id": manifest["task_id"],
+            "criterion_ids": list(claim.get("criteria", [])),
+            "run_receipt_refs": [
+                ref["ref"] for ref in claim.get("evidence", [])
+                if ref.get("provenance") == "pact-run"
+            ],
+            "task_contract_sha256": manifest["contract_sha256"],
+            "task_context_sha256": manifest["context_sha256"],
+        }
+        for claim in passing_claims
+    ] if eligible else []
     return {
         "task_id": manifest["task_id"],
         "status": manifest["status"],
@@ -181,6 +199,7 @@ def _diagnose(
         "policy_gaps": policy_gaps,
         "safe_mechanical_verification": verification_draft,
         "safe_mechanical_acceptance": acceptance_draft,
+        "claim_provenance_for_review": provenance_for_review,
         "requires_semantic_review": True,
         "owner_completed_automatically": False,
     }
