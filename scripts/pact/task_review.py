@@ -112,7 +112,7 @@ def _diagnose(
             "failed_claim_ids": failed_ids,
             "unverified_claim_ids": unknown_ids,
             "status": (
-                "execution-pass-awaits-semantic-review" if verified_ids
+                "evidence-pass-awaits-semantic-review" if verified_ids
                 else "failed" if failed_ids
                 else "unverified"
             ),
