@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -67,6 +68,45 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                 )
                 self.assertEqual(len(gaps), 1)
                 self.assertIn(reason, gaps[0])
+
+    def test_context_and_task_prepare_fail_closed_on_explicit_missing_rule(self):
+        with tempfile.TemporaryDirectory(prefix="pact-s3-rule-cli-") as td:
+            target = pathlib.Path(td) / "adopted"
+            initialized = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "pact" / "init.py"),
+                 "--target", str(target), "--apply"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(
+                initialized.returncode, 0,
+                initialized.stdout + initialized.stderr,
+            )
+            output = target / ".pact" / "tmp" / "missing-rule-context.json"
+            ctx = subprocess.run(
+                [sys.executable, str(target / "pact.py"), "context",
+                 "Fix an unrelated task", "--success", "Observable behavior",
+                 "--risk", "medium", "--no-code",
+                 "--require-rule", "RULE-ABSENT",
+                 "--output", str(output)],
+                cwd=target, capture_output=True, text=True,
+            )
+            self.assertEqual(ctx.returncode, 2, ctx.stdout + ctx.stderr)
+            self.assertIn("required Rule RULE-ABSENT", ctx.stderr)
+            self.assertFalse(output.exists())
+            prep = subprocess.run(
+                [sys.executable, str(target / "pact.py"),
+                 "task", "prepare", "Fix an unrelated task",
+                 "--task-id", "TASK-MISSING-RULE",
+                 "--success", "Observable behavior",
+                 "--risk", "medium", "--no-code",
+                 "--require-rule", "RULE-ABSENT", "--json"],
+                cwd=target, capture_output=True, text=True,
+            )
+            self.assertEqual(prep.returncode, 2, prep.stdout + prep.stderr)
+            self.assertIn("required Rule RULE-ABSENT", prep.stderr)
+            self.assertFalse((
+                target / ".pact" / "tasks" / "TASK-MISSING-RULE" / "task.json"
+            ).exists())
 
     def test_missing_explicit_rule_remains_error(self):
         gaps = context.required_rule_gaps(
