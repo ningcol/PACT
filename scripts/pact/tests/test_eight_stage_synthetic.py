@@ -42,6 +42,22 @@ class SyntheticEightStageTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         harness._safe_file(root, relative)
 
+    def test_case_id_cannot_escape_disposable_parent(self):
+        inputs = json.loads(harness.CASES.read_text(encoding="utf-8"))
+        bad = dict(inputs["cases"][0], id="../outside")
+        with tempfile.TemporaryDirectory(prefix="pact-s7-id-") as td:
+            root = pathlib.Path(td)
+            with self.assertRaisesRegex(ValueError, "unsafe synthetic case id"):
+                harness.evaluate_case(bad, parent=root)
+            self.assertFalse((root.parent / "outside").exists())
+
+    def test_frozen_command_line_has_no_external_input_or_output(self):
+        source = MODULE.read_text(encoding="utf-8")
+        self.assertIn("frozen PACT-owned inputs", source)
+        self.assertNotIn('parser.add_argument("--inputs"', source)
+        self.assertNotIn('parser.add_argument("--oracle"', source)
+        self.assertNotIn('parser.add_argument("--output"', source)
+
     def test_oracle_is_not_materialized_in_disposable_runtime(self):
         inputs = json.loads(harness.CASES.read_text(encoding="utf-8"))
         self.assertEqual(inputs["version"], 1)
