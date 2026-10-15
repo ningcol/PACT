@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "kind": "synthetic-file-recall-oracle",
+  "notes": "Not given to installed PACT fixture or passed to retrieval; constructed by same implementer, so not a real blind holdout",
+  "cases": {
+    "editor-retain-state": [
+      "src/editor/state_store.py",
+      "src/editor/restore_tabs.py"
+    ],
+    "formatter-preserve-style": [
+      "src/publishing/inline_styles.py",
+      "src/publishing/content_pipeline.py"
+    ],
+    "decision-reject-history": [
+      "src/cache/cache_storage.py"
+    ]
+  }
+}
