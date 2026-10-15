@@ -123,6 +123,48 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                     "default multi-query fusion must be unchanged",
                 )
 
+    def test_tenth_query_exact_match_survives_opt_in_fusion_pool_limit(self):
+        # Ten independent lexical queries with a nine-slot candidate pool:
+        # repeated generic results can otherwise evict an exact match that
+        # occurs only on the tenth query before intent ranking sees it.
+        generic = []
+        for i in range(9):
+            doc = artifact(f"RULE-GENERIC-{i}", score=1000 - i)
+            doc["path"] = f"docs/product/rules/generic-{i}.md"
+            doc["reasons"] = ["body contains query"]
+            generic.append(doc)
+        for reason in ("exact stable id", "exact title", "exact alias"):
+            with self.subTest(reason=reason):
+                exact = artifact(
+                    "DEC-TENTH-EXACT", kind="decision",
+                    status="superseded", score=5,
+                )
+                exact["path"] = ".agents/decisions/implemented/tenth.md"
+                exact["reasons"] = [reason]
+                inputs = [
+                    (f"generic-query-{i}", generic) for i in range(9)
+                ] + [("specific-tenth-query", [exact])]
+                original = fuse_ranked_results(inputs, limit=9)
+                self.assertEqual(len(original), 9)
+                self.assertNotIn(
+                    exact["id"], [item["id"] for item in original],
+                    "this case must expose the pre-intent truncation defect",
+                )
+                protected = fuse_ranked_results(
+                    inputs, limit=9, preserve_exact=True,
+                )
+                self.assertEqual(len(protected), 9)
+                self.assertIn(
+                    exact["id"], [item["id"] for item in protected]
+                )
+                self.assertEqual(
+                    rerank_for_intent(protected, "work")[0]["id"], exact["id"]
+                )
+                self.assertEqual(
+                    rerank_for_intent(original, None), original,
+                    "normal no-intent RRF behavior stays byte-for-byte ordered",
+                )
+
     def test_explicit_rule_must_be_selected_and_wholly_confirmed(self):
         rule = artifact("RULE-VALID")
         self.assertEqual(context.required_rule_gaps(
