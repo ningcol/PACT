@@ -1,5 +1,32 @@
 # PACT Runtime
 
+## Scoped Context intent and explicit Rule requirements (S3)
+
+The original `pact discover QUERY` and `pact context TASK --success ...`
+ranking stays unchanged without extra flags. To investigate a specific need,
+use `--intent work|decision|history` (available on `discover`,
+`context`, and high-level `task prepare`).
+
+- `work` gives current confirmed Rules and implemented decisions retrieval
+  priority; `decision` includes rejected rationales as evidence (not normative
+  Rules); `history` helps locate superseded, archived and rejected reasons.
+- `context --require-rule RULE-ID` (or `task prepare --require-rule RULE-ID`)
+  is **caller-supplied only**. An absent, pending, mixed-authority or
+  budget-excluded Rule ID is a hard error before Context is published; no
+  mandatory Rule is invented from free text.
+- Context v1 remains a closed Schema. Navigation-only governance paths and
+  nearby module README locations are placed in existing advisory
+  `known_unknowns` strings, **not** in `artifacts` or `applicable_rules`.
+  The hints do not materialize README contents, increase normal ranked
+  Context candidates or imply governance documents are Product Rules.
+- README discovery examines bounded ancestors of code paths already selected,
+  never the whole repository; Git-ignored, escaped, symlinked and oversized
+  paths are skipped. Use these strings as human navigation metadata only.
+- If migrating to a future structured Context field, first validate old/new
+  producers and readers for source/installed `pact.pyz`; optional new JSON
+  properties alone do not preserve compatibility with old v1
+  `additionalProperties: false` consumers.
+
 PACT core requires Python 3.11+ and uses only the standard library. No runtime pip dependencies are required.
 
 The stable v1 entry point is:
