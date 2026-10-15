@@ -15,7 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 
 import context
-from discover import rerank_for_intent
+from discover import fuse_ranked_results, rerank_for_intent
 
 
 def artifact(identifier, kind="rule", status="confirmed", *, mixed=False, score=10):
@@ -88,6 +88,40 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                     ["DEC-ID", "DEC-TITLE", "DEC-ALIAS"],
                 )
         self.assertEqual(rerank_for_intent(cases, None), cases)
+
+    def test_multi_query_fusion_retains_exact_id_title_and_alias_priority(self):
+        generic = artifact("RULE-GENERIC", status="confirmed", score=2000)
+        generic["path"] = "docs/product/rules/generic.md"
+        generic["reasons"] = ["title contains query"]
+        # Two-query RRF gives this generic Rule the highest lexical score.
+        # The exact Decision is seen only on the second query. Optional work
+        # intent must still prefer an explicit lookup over generic relevance.
+        for reason in ("exact stable id", "exact title", "exact alias"):
+            with self.subTest(reason=reason):
+                exact = artifact("DEC-EXACT", kind="decision",
+                                 status="superseded", score=5)
+                exact["path"] = ".agents/decisions/implemented/exact.md"
+                exact["reasons"] = [reason]
+                fused = fuse_ranked_results(
+                    [
+                        ("generic cache", [generic]),
+                        ("specific cache", [generic, exact]),
+                    ],
+                    limit=2,
+                )
+                self.assertEqual(fused[0]["id"], "RULE-GENERIC")
+                matched = next(x for x in fused if x["id"] == "DEC-EXACT")
+                self.assertTrue(
+                    any(x.endswith(": " + reason) for x in matched["reasons"]),
+                    matched["reasons"],
+                )
+                self.assertEqual(
+                    rerank_for_intent(fused, "work")[0]["id"], "DEC-EXACT"
+                )
+                self.assertEqual(
+                    rerank_for_intent(fused, None), fused,
+                    "default multi-query fusion must be unchanged",
+                )
 
     def test_explicit_rule_must_be_selected_and_wholly_confirmed(self):
         rule = artifact("RULE-VALID")
