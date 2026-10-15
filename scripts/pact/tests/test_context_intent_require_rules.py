@@ -71,6 +71,24 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                 )
         self.assertEqual(rerank_for_intent(all_results, None), all_results)
 
+    def test_exact_id_outweighs_exact_title_alias_and_intent(self):
+        exact_id = artifact("DEC-ID", kind="decision", status="archived", score=5)
+        exact_id["reasons"] = ["exact stable id"]
+        exact_title = artifact("DEC-TITLE", kind="decision", status="superseded", score=500)
+        exact_title["reasons"] = ["exact title"]
+        exact_alias = artifact("DEC-ALIAS", kind="decision", status="implemented", score=999)
+        exact_alias["reasons"] = ["exact alias"]
+        non_exact = artifact("RULE-GENERIC", score=5000)
+        cases = [non_exact, exact_alias, exact_title, exact_id]
+        for intent in ("work", "decision", "history"):
+            with self.subTest(intent=intent):
+                ordered = rerank_for_intent(cases, intent)
+                self.assertEqual(
+                    [x["id"] for x in ordered[:3]],
+                    ["DEC-ID", "DEC-TITLE", "DEC-ALIAS"],
+                )
+        self.assertEqual(rerank_for_intent(cases, None), cases)
+
     def test_explicit_rule_must_be_selected_and_wholly_confirmed(self):
         rule = artifact("RULE-VALID")
         self.assertEqual(context.required_rule_gaps(
