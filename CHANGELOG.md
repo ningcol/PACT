@@ -40,7 +40,14 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - Fix cross-platform CI's false-green multi-command portability steps with
   explicit Bash fail-fast mode; verify LICENSE upgrade SHA256 on exact source
   bytes including CRLF; test that Owner draft provenance hashes actual
-  Windows/macOS/Linux persisted bytes. No release tag or VERSION bump.
+  Windows/macOS/Linux persisted bytes.
+- Address a real concurrent disposable JSON-cache publication failure on
+  Windows (WinError 5 when a reader briefly holds the existing target):
+  bounded retries only for Windows sharing/access conflicts, keeping unique
+  flushed/fsynced temporary files and atomic replace semantics. Persistent
+  errors still fail closed, the old JSON remains intact and temporary files
+  are removed. The regression injects transient and persistent replace faults.
+  No release tag or VERSION bump.
 - Original 48-stage-AC reconciliation and remaining blockers are recorded in
   `docs/evaluation/eight-stage-code-review-ledger-2026-10-15.md`; issuing a
   formal Release remains separately gated by actual validation and approval.
