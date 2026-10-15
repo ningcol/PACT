@@ -135,9 +135,10 @@ class InstalledIntentComparisonTests(unittest.TestCase):
         # lexically and sorts ahead of the rule on this exact fixture.
         # Pin both identity *and path* to protect default ordering without
         # assuming every result is a structured Rule or Decision artifact.
+        self.assertEqual(found["default"]["result_count"], KNOWLEDGE_LIMIT)
         self.assertEqual(
             [(item["id"], item["path"])
-             for item in found["default"]["results"][:4]],
+             for item in found["default"]["results"]],
             [
                 ("DEC-CACHE-CURRENT",
                  ".agents/decisions/implemented/current.md"),
@@ -145,6 +146,8 @@ class InstalledIntentComparisonTests(unittest.TestCase):
                  ".agents/decisions/rejected/unsafe.md"),
                 (None, "README.md"),
                 ("RULE-CACHE-001", "docs/product/rules/cache.md"),
+                ("DEC-CACHE-OLD",
+                 ".agents/decisions/implemented/old.md"),
             ],
         )
         self.assertEqual(found["work"]["results"][0]["id"], "RULE-CACHE-001")
