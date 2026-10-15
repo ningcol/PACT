@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
+import tempfile
 import re
 import sys
 
@@ -229,61 +231,96 @@ def _export_prepared_or_completed(task_id: str):
 
 
 def export(args) -> int:
+    """Export auditable, currently valid metadata without elevating its trust."""
     try:
         if not EXPORT_FILENAME.fullmatch(args.filename):
             raise ValueError("--filename must be a single safe .json basename")
-        manifest, evidence, bundle = _export_prepared_or_completed(args.task_id)
-        errors, gaps, stats = provenance_review(evidence, ROOT)
-        if errors or gaps:
-            raise ValueError("invalid/stale Evidence cannot be exported: "
-                             + "; ".join([*errors, *gaps]))
-        claims = []
-        for claim in evidence["claims"]:
-            if claim.get("status") != "pass":
-                continue
-            receipts = []
-            for item in claim.get("evidence", []):
-                if item.get("provenance") != "pact-run":
-                    continue
-                receipt_path = resolve_evidence_ref(ROOT, item["ref"])
-                if receipt_path.is_symlink() or not receipt_path.is_file():
-                    raise ValueError("export run receipt missing or symbolic")
-                receipts.append({
-                    "kind": item["kind"],
-                    "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
-                })
-            if receipts:
-                claims.append({
-                    "claim_id": claim["id"],
-                    "required": bool(claim.get("required")),
-                    "receipts": receipts,
-                    "criteria": list(claim.get("criteria", [])),
-                })
-        if not claims:
-            raise ValueError("no valid passing pact-run receipts to export")
+        # State paths must belong to this PACT project; no arbitrary output path.
+        manifest, _, bundle = _export_prepared_or_completed(args.task_id)
         run_root = RUN_ROOT
         confined_state_root(ROOT, run_root, field="run evidence")
         output_dir = confined_child(run_root, args.task_id, repository_root=ROOT)
         confined_state_root(ROOT, output_dir, field="task run evidence")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        destination = output_dir / args.filename
-        if destination.is_symlink() or destination.exists():
-            raise ValueError("export destination already exists; choose a new basename")
-        exported = {
-            "version": 1,
-            "task_id": args.task_id,
-            "risk_level": manifest["risk_level"],
-            "task_contract_sha256": manifest["contract_sha256"],
-            "task_context_sha256": manifest["context_sha256"],
-            "current_workspace_sha256": stats["current_workspace"]["sha256"],
-            "passing_execution_claims": claims,
-            "completion_attestation": False,
-            "note": "Audit-only metadata; does not confer semantic completion or portable replay",
-        }
+
+        # Hold the same bundle lock as task verify/checkpoint while re-reading
+        # Evidence and the workspace. Do not publish a pre-lock stale snapshot.
         with _exclusive_bundle(bundle):
+            manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
+            if checked_bundle != bundle:
+                raise ValueError("completion bundle changed during evidence export")
+            errors, gaps, stats = provenance_review(evidence, ROOT)
+            if errors or gaps:
+                raise ValueError("invalid/stale Evidence cannot be exported: "
+                                 + "; ".join([*errors, *gaps]))
+
+            claims = []
+            for claim in evidence["claims"]:
+                if claim.get("status") != "pass":
+                    continue
+                receipts = []
+                for item in claim.get("evidence", []):
+                    if item.get("provenance") != "pact-run":
+                        continue
+                    relative = pathlib.PurePosixPath(item["ref"])
+                    if relative.is_absolute() or ".." in relative.parts:
+                        raise ValueError("export receipt reference is unsafe")
+                    unresolved = ROOT / relative.as_posix()
+                    if unresolved.is_symlink():
+                        raise ValueError("export run receipt must not be a symlink")
+                    receipt_path = resolve_evidence_ref(ROOT, item["ref"])
+                    if not receipt_path.is_file():
+                        raise ValueError("export run receipt is missing")
+                    receipts.append({
+                        "kind": item["kind"],
+                        "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+                    })
+                if receipts:
+                    claims.append({
+                        "claim_id": claim["id"],
+                        "required": bool(claim.get("required")),
+                        "receipts": receipts,
+                        "criteria": list(claim.get("criteria", [])),
+                    })
+            if not claims:
+                raise ValueError("no valid passing pact-run receipts to export")
+
+            exported = {
+                "version": 1,
+                "task_id": args.task_id,
+                "risk_level": manifest["risk_level"],
+                "task_contract_sha256": manifest["contract_sha256"],
+                "task_context_sha256": manifest["context_sha256"],
+                "current_workspace_sha256": stats["current_workspace"]["sha256"],
+                "passing_execution_claims": claims,
+                "completion_attestation": False,
+                "note": "Audit-only metadata; does not confer semantic completion or portable replay",
+            }
+            output_dir.mkdir(parents=True, exist_ok=True)
+            destination = output_dir / args.filename
             if destination.exists() or destination.is_symlink():
-                raise ValueError("export destination already exists")
-            write_json(destination, exported)
+                raise ValueError("export destination already exists; choose a new basename")
+
+            # Durable temp + atomic hard-link publication gives no-overwrite
+            # semantics even if another writer creates this basename after
+            # checking. A half-written file never appears under the final name.
+            payload = json.dumps(exported, ensure_ascii=False, indent=2) + "\n"
+            fd, staged = tempfile.mkstemp(
+                prefix=f".{args.filename}.pact-export-",
+                suffix=".tmp", dir=output_dir,
+            )
+            temporary = pathlib.Path(staged)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                try:
+                    os.link(temporary, destination)
+                except FileExistsError as exc:
+                    raise ValueError("export destination was created concurrently") from exc
+            finally:
+                temporary.unlink(missing_ok=True)
+
         result = {
             "task_id": args.task_id,
             "output": destination.relative_to(ROOT).as_posix(),
