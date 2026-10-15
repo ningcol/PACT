@@ -487,6 +487,48 @@ def fuse_ranked_results(
     return selected[:final_limit]
 
 
+def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
+    """Optional intent prior, never an authority upgrade or default behavior.
+
+    Re-rank an expanded lexical candidate pool for a particular information
+    need. Exact ID discovery still works, and rejected Decisions remain
+    historical *evidence*, not a confirmed Product Rule.
+    """
+    if intent is None:
+        return items
+
+    def preference(item: dict) -> int:
+        kind, status = item.get("artifact_type"), item.get("status")
+        if intent == "work":
+            if kind == "rule" and status == "confirmed" and not item.get("mixed_authority"):
+                return 3
+            if kind == "decision" and status == "implemented":
+                return 2
+            if kind == "decision" and status in {"archived", "superseded"}:
+                return -1
+            return 0
+        if intent == "decision":
+            if kind == "decision" and status in {"implemented", "rejected"}:
+                return 3
+            return 1 if kind == "decision" else 0
+        if intent == "history":
+            return 3 if kind == "decision" and status in {
+                "archived", "superseded", "rejected"
+            } else 0
+        return 0
+
+    # Keep exact ID/title lookup ahead of generic intent sorting.
+    return sorted(
+        items,
+        key=lambda item: (
+            -int("exact stable id" in item.get("reasons", [])),
+            -preference(item),
+            -int(item.get("score", 0)),
+            str(item.get("path", "")),
+        ),
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Discover PACT project knowledge")
     parser.add_argument("query", help="primary discovery query")
@@ -496,6 +538,11 @@ def main() -> int:
         action="append",
         default=[],
         help="additional discovery query; repeat for multi-query fusion",
+    )
+    parser.add_argument(
+        "--intent",
+        choices=["work", "decision", "history"],
+        help="optional explicit retrieval intent; absent means legacy ranking",
     )
     parser.add_argument("--index", default=str(DEFAULT_INDEX))
     parser.add_argument("--limit", type=int, default=8)
@@ -518,17 +565,22 @@ def main() -> int:
     ensure_index(index_path)
     index = json.loads(index_path.read_text(encoding="utf-8"))
 
+    candidate_limit = (
+        max(args.limit * 3, args.limit + 8)
+        if args.intent else args.limit
+    )
     knowledge_lists = [
         (
             query,
-            ranked_knowledge_results(index, query, args.limit),
+            ranked_knowledge_results(index, query, candidate_limit),
         )
         for query in queries
     ]
     if len(queries) == 1:
         ranked = knowledge_lists[0][1]
     else:
-        ranked = fuse_ranked_results(knowledge_lists, args.limit)
+        ranked = fuse_ranked_results(knowledge_lists, candidate_limit)
+    ranked = rerank_for_intent(ranked, args.intent)[:args.limit]
 
     code_results = []
     if args.code:
@@ -576,6 +628,9 @@ def main() -> int:
         "code_result_count": len(code_results),
         "code_results": code_results,
     }
+
+    if args.intent:
+        result["intent"] = args.intent
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
