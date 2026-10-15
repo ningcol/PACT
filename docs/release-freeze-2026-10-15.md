@@ -53,4 +53,4 @@ Record **run URLs, exact SHA, executed commands, results and date**. Historical 
 
 **Release HOLD.** Source packaging and licensing infrastructure are present, and no P0/P1 blocker was established in the preceding narrow remote-source rechecks. Nevertheless, a frozen RC/release commit, exact-SHA fresh verification, and explicit release approval are not yet evidenced here. This document is a checklist, not a completed test receipt or an authorization to tag.
 
-References: [#63](https://github.com/ningcol/PACT/issues/63), [#28](https://github.com/ningcol/PACT/issues/28), [#32](https://github.com/ningcol/PACT/issues/32), [release documentation](../releasing.md).
+References: [#63](https://github.com/ningcol/PACT/issues/63), [#28](https://github.com/ningcol/PACT/issues/28), [#32](https://github.com/ningcol/PACT/issues/32), [release documentation](releasing.md).
