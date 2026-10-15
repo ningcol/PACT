@@ -29,6 +29,8 @@ domains = []
 - **阶段验收完成**：本文件对应的全部强制 AC 满足，且具备可打开的证据链接和三轮 Review 记录；未覆盖的项不能凭「类似能力已有」核销。
 - **整轮完成**：阶段 0～6 的硬门槛完成，阶段 7 的真实对照证据足以作出明确 go/no-go 判断；若真实 Owner/Agent 实测缺少数据，阶段 7 必须保持 `blocked/unverified`，不得宣布八阶段完成。发布需另外核准版本/Release 范围。
 
+**单项 AC 状态只允许 `not-started / in-progress / passed / failed / blocked / unverified`**。每个阶段的状态是 AC 的聚合：只有强制 AC 全部 `passed` 才能标 `passed`；机器测试不能代填人类观察。适用时将外部运行条件缺失列为 `blocked` 并写出可解除条件，不得为了完成阶段降级为「警告已接受」。阶段出口必须在 PACT 内提交一份 `docs/evaluation/` 或 PR Review Ledger，记录 AC-ID、base/head SHA、回归/验证命令、CI run、观测结果、未知项、回退 commit、审查意见和下一阶段依赖。
+
 ## 1. 现状与剩余差额：只把已经验证的记为已完成
 
 已合并的相关工作：
@@ -69,6 +71,7 @@ domains = []
 3. 在 PACT 内建立可重放的 **最小** 测试清单：旧/新架构同时出现；仅 Domain 无 confirmed Rule；rejected 决策复用；执行后改工作区导致旧 Evidence 失效；删除误标 `updated`；Schema/Skill 取值矛盾；准备中断后仍不能标 completed；临时文件并发扫描；配置/脚本来源异常。已有覆盖要引用具体测试，不复制测试。
 4. 对 `zx-zsb` 的接线事故仅使用用户已提供的事实、已有 PACT 资料和脱敏合成目录夹具；缺少实际样本就登记 `unverified` 和取得样本条件，不读取/修改另一个项目来「补成功」。
 5. 为后续 A/B 写冻结的任务输入、相同风险/预算/查询提示、评估脚本和字段；人工 Owner 次数/耗时等保持 `null/unverified`，并明确谁在什么真实任务中可以提供数据。
+6. 建立 `docs/evaluation/eight-stage-baseline-2026-10-15.md` 作为**不可回写历史结果**的基线清单；测试需要实际源文件/命令时引用 `scripts/pact/tests/`、`benchmarks/brownfield/cases.json` 或 PACT 内最小 fixture。所有后续指标用新日期与 SHA 另增结果行，不原位覆盖旧 RED。
 
 **AC-S0**：一份基线证据索引含固定 commit/命令/run/指标及未知项；所有原始反向案例要么能重放，要么有明确、可验证的未达条件；新代码之前的 RED 不能被隐藏。**不得要求旧基线本身绿色**。
 
