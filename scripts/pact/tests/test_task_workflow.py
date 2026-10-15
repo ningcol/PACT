@@ -85,6 +85,18 @@ class TaskWorkflowTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["draft_written"])
         self.assertEqual(report["unverified_criteria"], ["AC-2"])
+        provenance = report["claim_provenance_for_review"]
+        self.assertEqual(len(provenance), 1)
+        self.assertEqual(provenance[0]["claim_id"], "EV-VERIFY-1")
+        self.assertEqual(provenance[0]["criterion_ids"], ["AC-1"])
+        self.assertEqual(provenance[0]["task_id"], self.task_id)
+        self.assertRegex(provenance[0]["task_contract_sha256"], r"^[a-f0-9]{64}$")
+        self.assertRegex(provenance[0]["task_context_sha256"], r"^[a-f0-9]{64}$")
+        evidence = json.loads((self.bundle / "evidence.json").read_text())
+        self.assertEqual(
+            provenance[0]["run_receipt_refs"],
+            [evidence["claims"][0]["evidence"][0]["ref"]],
+        )
         owner_path = self.bundle / "owner-report.json"
         owner = json.loads(owner_path.read_text())
         self.assertEqual(owner["status"], "partial")
