@@ -384,11 +384,34 @@ def ranked_code_results(code_index: dict, query: str, limit: int) -> list[dict]:
     return selected[:final_limit]
 
 
+def exact_match_priority(reasons: list[str]) -> int:
+    """Preserve the source scorer's exactness through optional query fusion."""
+    def matches(label: str) -> bool:
+        return any(
+            reason == label or reason.endswith(": " + label)
+            for reason in reasons
+        )
+
+    if matches("exact stable id"):
+        return 3
+    if matches("exact title"):
+        return 2
+    if matches("exact alias"):
+        return 1
+    return 0
+
+
 def fuse_ranked_results(
     query_results: list[tuple[str, list[dict]]],
     limit: int,
+    *,
+    preserve_exact: bool = False,
 ) -> list[dict]:
-    """Fuse ranked lists with deterministic RRF plus bounded query diversity."""
+    """Fuse ranked lists with deterministic RRF plus bounded query diversity.
+
+    Only explicit optional intent retrieval reserves exact match candidates
+    before the RRF budget truncation. Legacy no-intent fusion is unchanged.
+    """
     final_limit = max(limit, 1)
     fused: dict[str, dict] = {}
 
@@ -461,10 +484,31 @@ def fuse_ranked_results(
         reserve_per_query = max(1, final_limit // (2 * query_count))
 
     selected_paths: set[str] = set()
+    if preserve_exact:
+        exact_candidates = sorted(
+            (
+                item for item in rendered.values()
+                if exact_match_priority(item.get("reasons", [])) > 0
+            ),
+            key=lambda item: (
+                -exact_match_priority(item.get("reasons", [])),
+                -int(item.get("score", 0)),
+                item.get("path", ""),
+            ),
+        )
+        for item in exact_candidates:
+            if len(selected_paths) >= final_limit:
+                break
+            selected_paths.add(item["path"])
+
     if reserve_per_query:
         for _, results in query_results:
+            if preserve_exact and len(selected_paths) >= final_limit:
+                break
             taken = 0
             for item in results:
+                if preserve_exact and len(selected_paths) >= final_limit:
+                    break
                 path = item.get("path")
                 if not path or path in selected_paths:
                     continue
@@ -519,30 +563,13 @@ def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
 
     # Preserve the lexical lookup hierarchy before any intent-dependent
     # preference: exact ID > exact title > exact alias > generic candidates.
+    # Fused reasons carry a query prefix; the shared helper understands both.
     # Historical/rejected lifecycle status cannot outweigh an exact lookup.
-    def exact_priority(item: dict) -> int:
-        reasons = item.get("reasons", [])
-        # Single-query reasons are bare; multi-query RRF fusion decorates
-        # the very same source reason as "<query>: <reason>". Recognize the
-        # terminal *exact scorer reason*, never an arbitrary query keyword.
-        def matches(label: str) -> bool:
-            return any(
-                reason == label or reason.endswith(": " + label)
-                for reason in reasons
-            )
-
-        if matches("exact stable id"):
-            return 3
-        if matches("exact title"):
-            return 2
-        if matches("exact alias"):
-            return 1
-        return 0
 
     return sorted(
         items,
         key=lambda item: (
-            -exact_priority(item),
+            -exact_match_priority(item.get("reasons", [])),
             -preference(item),
             -int(item.get("score", 0)),
             str(item.get("path", "")),
@@ -600,7 +627,10 @@ def main() -> int:
     if len(queries) == 1:
         ranked = knowledge_lists[0][1]
     else:
-        ranked = fuse_ranked_results(knowledge_lists, candidate_limit)
+        ranked = fuse_ranked_results(
+            knowledge_lists, candidate_limit,
+            preserve_exact=bool(args.intent),
+        )
     ranked = rerank_for_intent(ranked, args.intent)[:args.limit]
 
     code_results = []
