@@ -24,6 +24,7 @@ SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
 MODULE_README_HINT_LIMIT = 3
+MODULE_README_CODE_CANDIDATES = 24
 MODULE_README_SIZE_LIMIT = 128 * 1024
 GOVERNANCE_PATHS = (
     "docs/governance/truth-ownership.md",
@@ -178,7 +179,8 @@ def nearby_readme_hints(
     root = ROOT.resolve()
     found: set[str] = set()
     hints: list[str] = []
-    for code in selected_code:
+    # This stays bounded even if --code-limit is set extremely high.
+    for code in selected_code[:MODULE_README_CODE_CANDIDATES]:
         raw = str(code.get("path") or "")
         pure = pathlib.PurePosixPath(raw)
         if not raw or pure.is_absolute() or ".." in pure.parts:
