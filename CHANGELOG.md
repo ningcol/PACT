@@ -6,6 +6,10 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+No changes yet.
+
+## 0.4.0-rc.1 (release candidate; validation pending) — 2026-10-15
+
 ### Semantic Knowledge Gardening
 
 - Audit now surfaces explicitly superseded Decisions as
