@@ -56,9 +56,9 @@
       ]
     },
     {
-      "id": "decision-reject-history",
-      "task": "Find deprecated cache strategies and their rejected engineering reasons",
-      "success": "Prior alternative can be found without current product authority",
+      "id": "cache-retention-source",
+      "task": "Find implementation code that handles cache storage expiry and retention",
+      "success": "Source responsible for cache expiry and retention is located",
       "risk_level": "medium",
       "code_limit": 4,
       "token_budget": 4096,
