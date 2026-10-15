@@ -978,6 +978,10 @@ def main() -> int:
                  "architecture", "other"],
         default="test",
     )
+    verify_parser.add_argument(
+        "--timeout-seconds", type=int, default=900,
+        help="maximum seconds for pact run verification (default 900)",
+    )
     verify_parser.add_argument("--json", action="store_true")
     # Split the subprocess argv at the explicit '--' sentinel. A positional
     # argparse.REMAINDER would greedily swallow --claim/--criterion appearing
@@ -1000,6 +1004,8 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command == "verify" and args.timeout_seconds <= 0:
+        parser.error("--timeout-seconds must be positive")
     if args.command in {"draft", "verify"}:
         # These helpers depend on the prepared Task state/API but do not
         # invent semantic Convergence or completed Owner Reports.
