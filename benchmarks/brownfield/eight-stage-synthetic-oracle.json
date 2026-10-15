@@ -11,7 +11,7 @@
       "src/publishing/inline_styles.py",
       "src/publishing/content_pipeline.py"
     ],
-    "decision-reject-history": [
+    "cache-retention-source": [
       "src/cache/cache_storage.py"
     ]
   }
