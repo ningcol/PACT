@@ -139,7 +139,7 @@ domains = []
 **操作**：
 
 1. 在现有 `task` 下实现小而只读的 `assist <TASK-ID> --json`（若代码 Review 证实 `status` 组合能以更小变更提供同等能力，优先扩展 `status`）：校验准备时 Contract/Context SHA、当前 Evidence 引用有效性、按 AC 汇总未证实项、实际 task delta 未覆盖路径、需要重验的收据及原因、可安全机械填充的报告字段。
-2. 从**现有真实 passing Claim** 生成待审 Owner Report 的 `verification` 引用和原样 Claim 文案、Task ID/合同 SHA/相对路径；仅在显式 `--write-draft` 下创建或填空，永不覆盖 Agent 已编辑内容，也不自动将 `owner.status` 设为 completed、`convergence` 设为 aligned。
+2. 从**现有真实 passing Claim** 生成待审 Owner Report 的 `verification` 引用和原样 Claim 文案、Task ID/合同 SHA/相对路径；`acceptance` 的 criterion ID 与合同原文也只从显式 AC↔passing Claim 绑定机械复制，**不**由测试命令名猜测它证明的业务行为。仅在显式 `--write-draft` 下创建或填空，永不覆盖 Agent 已编辑内容，也不自动将 `owner.status` 设为 completed、`convergence` 设为 aligned。
 3. 执行推荐顺序：**先持久化代码/知识 → 取得稳定工作区指纹 → 最后一次真实验证 → Evidence/Convergence/Owner Report 语义 Review → finish**。如果验证后改受管理文件或验证执行时有写入，`assist` 在 finish 前给可操作的 stale/reverify 清单。
 4. 提供显式证据 `export`（可放在 `task` 下）：默认输出到用户指定的受控位置、只导出最小元数据/已验证收据/协议版本/合同摘要/校验和，不含原始 stdout、stderr、密钥或凭据；导出副本不升级证据可信度。对路径越界、符号链接、半写文件和在工作区产生新受管理变更进行防护；没有明确需要不新增复杂归档 Schema。**本轮所有写出与失败注入只允许针对 PACT 仓库或它自己的临时测试目录**，不得调用导出命令向任何其他项目的真实目录写入。
 
@@ -195,12 +195,13 @@ domains = []
 
 **A/B 规范**：
 
-1. 固定相同任务文字、源 commit、风险级别、预算、测试工具和 Agent 搜索提示；把「事后人工补的关键词」单列诊断，不记入无偏 A/B。
+1. **先封存评估样本/任务原话/Agent 可见材料/搜索提示，再揭示历史目标 diff/oracle**。固定相同任务文字、源 commit、风险级别、预算、测试工具和 Agent 搜索提示；把「事后人工补的关键词」单列诊断，不记入无偏 A/B。记录样本缺失/仓库不可访问的原因，不以成功样本补删失败样本。
 2. 报告每案例关键源文件 Recall/Precision、Context 数与估算 Token、必需规则遗漏数、Evidence 假通过拦截、Convergence/Claim 覆盖、Agent 额外 CLI/操作步骤、总耗时及 PACT 开销。用可复核的机器 log 记录事实，不凭估计填数字。
 3. Owner 技术升级提问、产品决策、澄清轮数、理解程度必须用**实际用户交互观察**；如果用户没有提供或无法合法采集，保留 `human_required/unverified`，即便机器指标好看也不声称减负已证明。
-4. 对不改善召回/任务正确性、只增加负担的 feature 回退、禁用或删去；记录变更与实验的对应关系。
-5. 候选版本仅当 S0～S6 全部强制 AC 通过、上述 A/B 可复核、无未说明的安全 P0/P1 缺陷时，才准备发行：正式 `.pact/VERSION`、CHANGELOG、已固定 Actions SHA、LICENSE/SECURITY/CONTRIBUTING、`pact.pyz`/bootstrap 的构建来源/校验和、Linux/macOS/Windows×3 Python，安装升级/回滚、原版/安装版 Schema 与行为一致。
-6. Release/tag/版本变化是**明确的 go/no-go 选择**；没有经批准的范围和真实数据时输出 `NO-GO: missing evidence`，不自动推版本或宣布 v0.4.0 已发布。只允许向 PACT 仓库打 tag、发布 PACT 自己的资产。
+4. 每个冻结案例采用**预先登记的判定规则**：已知假完成和强制规范遗漏必须为 0；同等预算下关键文件召回不得产生未说明的下降；误导 Agent 的错误权威提升直接判失败；成本增加而无正确性/召回收益的机制默认回退或保留为显式可选。主观效率/Owner 负担缺少观察时状态为 `inconclusive`，不能把少量历史样本外推为所有项目有效。
+5. 对不改善召回/任务正确性、只增加负担的 feature 回退、禁用或删去；记录变更与实验的对应关系。
+6. 候选版本仅当 S0～S6 全部强制 AC 通过、上述 A/B 可复核、无未说明的安全 P0/P1 缺陷时，才准备发行：正式 `.pact/VERSION`、CHANGELOG、已固定 Actions SHA、LICENSE/SECURITY/CONTRIBUTING、`pact.pyz`/bootstrap 的构建来源/校验和、Linux/macOS/Windows×3 Python，安装升级/回滚、原版/安装版 Schema 与行为一致。
+7. Release/tag/版本变化是**明确的 go/no-go 选择**；没有经批准的范围和真实数据时输出 `NO-GO: missing evidence`，不自动推版本或宣布 v0.4.0 已发布。只允许向 PACT 仓库打 tag、发布 PACT 自己的资产。
 
 **AC-S7**：有冻结实验对照、异常/无改善结论、三种 Agent 的实测状态、真实 Owner 指标或明确阻断、通过的发行验收矩阵、可审计 release decision；只有真实证据足以支持时关闭 #28/#32/#63 的相应验收。不能把一份 CI PASS 当作真正使用收益。
 
@@ -312,3 +313,11 @@ Reviewer 对照原始计划、本 Change、真实主干 SHA：检查实现是否
 - 2026-10-15：本文件是计划，不是功能实施或版本发布。
 - 此处记录三轮 **计划本身** 的审查：原始八阶段对齐、攻击性可执行性/边界、验收/回退。只有真正发生的独立 Agent 反馈才可标成「独立」。
 - 未来每个实施阶段单独追踪基准 SHA、PR、三轮 Review、测试 run ID、未完成 AC、回退路径。
+
+### 本计划三轮复核台账（与独立 Agent 审查分开记录）
+
+- **计划 Review 1 — 原始范围与协议映射（本次助手独立检查维度）**：核对 S0～S7 各自的 AC/PR 拆分、P0/P1 顺序、已有 PR #178～#184 复用以及仅 PACT 仓库可写原则。发现并修复「缺少每项 AC 的标准状态/签收证据模板」和「基线索引位置不明确」。
+- **计划 Review 2 — 敌对路径/可回退性（本次助手独立检查维度）**：从验证导出、交接输入、Doctor 宿主预检和 Git 回退路径寻找范围与信任漏洞。已约束所有测试写入仅 PACT 或自己的临时目录，标注交接叙述不具规范权威，禁止执行宿主命令探测，并补 `git revert`/协议回退要求。
+- **计划 Review 3 — A/B 与退出判定（本次助手独立检查维度）**：补冻结后揭示 oracle 的盲评规则，补零容忍假完成/缺失规则、非退化/负担回退标准，确保 Owner 未观测时不能虚称阶段 7/发布达标。
+- **独立 AI 子 Agent 审查（单独门禁）**：2026-10-15 已在 PACT PR #185 请求 GitHub Copilot Code Review，并发送 `@codex review`。两者均返回额度已达上限，**未形成有效的独立 Review**；此状态必须标为 `blocked`，不得把审查请求或本助手的三次检查冒充独立 Agent 审查。待可用时需按 PR head SHA 重新触发、阅读真实意见并修复/再验证。
+- **计划实现授权**：当前 PR 只交付执行计划；Review 台账、文档检查和任何 AI 请求均不构成实施 S0～S7 或创建发行 tag 的授权。
