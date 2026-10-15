@@ -54,6 +54,33 @@ jobs:
       - name: Test deterministic failure modes
         run: python -m unittest discover -s scripts/pact/tests -p 'test_*.py'
 
+      - name: Run all three PACT-only synthetic evaluation cases
+        run: |
+          python scripts/benchmark/eight_stage_synthetic.py > /tmp/pact-eight-stage-synthetic.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("/tmp/pact-eight-stage-synthetic.json")
+          report = json.loads(p.read_text(encoding="utf-8"))
+          assert report["case_count"] == 3, report
+          assert report["owner_time_minutes"] is None, report
+          assert report["owner_clarification_count"] is None, report
+          assert report["real_agent_compatibility_verified"] is False, report
+          assert report["release_attestation"] is False, report
+          for item in report["case_results"]:
+              for mode in ("default", "work"):
+                  scores = item[mode]
+                  assert scores["oracle_count"] > 0, item
+                  assert 0 <= scores["recall"] <= 1, item
+                  print(
+                      f"{item['id']}/{mode}: recall={scores['recall']:.3f} "
+                      f"code_files={scores['code_file_count']} "
+                      f"est_tokens={scores['selected_estimated_tokens']} "
+                      f"elapsed_ms={scores['elapsed_ms']}"
+                  )
+          print("PACT synthetic assessment: NOT a real Agent or Owner outcome")
+          PY
+
       - name: Build derived project map
         run: |
           python scripts/pact/pact.py map --output /tmp/pact-project-map.json --ensure
