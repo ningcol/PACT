@@ -173,8 +173,7 @@ class InitReadinessTests(unittest.TestCase):
             installed = self.run_init("--apply")
             self.assertEqual(
                 installed.returncode, 0,
-                installed.stdout + installed.stderr,
-                f"init attempt {attempt + 1}",
+                f"init attempt {attempt + 1}: " + installed.stdout + installed.stderr,
             )
             for relative, text in host_files.items():
                 self.assertEqual(
