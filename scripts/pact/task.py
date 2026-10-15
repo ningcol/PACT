@@ -522,6 +522,22 @@ def validate_finish_manifest(
 
 
 def finish(args) -> int:
+    """Serialize completion attempts for one task across cooperating PACT processes."""
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        if not task_dir.is_dir():
+            raise ValueError("task was not prepared")
+        # Import lazily: task_workflow imports task's prepared-state helpers.
+        from task_workflow import _exclusive_bundle
+        with _exclusive_bundle(task_dir):
+            return _finish_locked(args)
+    except (OSError, ValueError) as exc:
+        print(f"PACT task finish: {exc}", file=sys.stderr)
+        return 2
+
+
+def _finish_locked(args) -> int:
     try:
         validate_task_id(args.task_id)
     except ValueError as exc:
@@ -546,6 +562,9 @@ def finish(args) -> int:
         print(f"PACT task finish: {exc}", file=sys.stderr)
         return 2
 
+    if manifest.get("status") == "completed":
+        print("PACT task finish: task is already completed", file=sys.stderr)
+        return 2
     if manifest.get("task_id") != args.task_id:
         print(
             "PACT task finish: task manifest task_id does not match requested task "
