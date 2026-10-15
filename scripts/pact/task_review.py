@@ -80,10 +80,22 @@ def _diagnose(
         if claim.get("required") and claim.get("status") == "pass"
     ]
     eligible = not provenance_errors and not policy_gaps
+    required_fails_by_criterion = {
+        item["id"]: [
+            claim["id"] for claim in evidence["claims"]
+            if claim.get("required")
+            and claim.get("status") == "fail"
+            and item["id"] in claim.get("criteria", [])
+        ]
+        for item in criteria
+    }
+    # Do not backfill Owner acceptance when another required check for that
+    # same criterion is already known to have failed. A later passing check
+    # cannot silently hide an unresolved failing required assertion.
     by_criterion = {
         item["id"]: [claim for claim in passing_claims
                      if item["id"] in claim.get("criteria", [])]
-        if eligible else []
+        if eligible and not required_fails_by_criterion[item["id"]] else []
         for item in criteria
     }
     uncovered_ac = [
@@ -110,9 +122,11 @@ def _diagnose(
             "claim_ids": [claim["id"] for claim in attached],
             "execution_pass_claim_ids": verified_ids,
             "failed_claim_ids": failed_ids,
+            "blocking_required_failed_claim_ids": required_fails_by_criterion[item["id"]],
             "unverified_claim_ids": unknown_ids,
             "status": (
-                "evidence-pass-awaits-semantic-review" if verified_ids
+                "failed" if required_fails_by_criterion[item["id"]]
+                else "evidence-pass-awaits-semantic-review" if verified_ids
                 else "failed" if failed_ids
                 else "unverified"
             ),
