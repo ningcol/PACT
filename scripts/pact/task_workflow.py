@@ -313,6 +313,7 @@ def verify(args) -> int:
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
+                timeout=args.timeout_seconds,
             )
             if not receipt_path.is_file():
                 raise ValueError(
@@ -343,6 +344,13 @@ def verify(args) -> int:
                 raise ValueError("generated invalid Evidence: " + "; ".join(errors))
             write_json(evidence_path, data)
 
+    except subprocess.TimeoutExpired:
+        print(
+            f"PACT task verify: verification exceeded {args.timeout_seconds}s; "
+            "no passing Evidence was recorded",
+            file=sys.stderr,
+        )
+        return 2
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"PACT task verify: {exc}", file=sys.stderr)
         return 2

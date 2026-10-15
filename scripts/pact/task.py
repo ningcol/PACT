@@ -522,6 +522,22 @@ def validate_finish_manifest(
 
 
 def finish(args) -> int:
+    """Serialize completion attempts for one task across cooperating PACT processes."""
+    try:
+        validate_task_id(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        if not task_dir.is_dir():
+            raise ValueError("task was not prepared")
+        # Import lazily: task_workflow imports task's prepared-state helpers.
+        from task_workflow import _exclusive_bundle
+        with _exclusive_bundle(task_dir):
+            return _finish_locked(args)
+    except (OSError, ValueError) as exc:
+        print(f"PACT task finish: {exc}", file=sys.stderr)
+        return 2
+
+
+def _finish_locked(args) -> int:
     try:
         validate_task_id(args.task_id)
     except ValueError as exc:
@@ -959,6 +975,10 @@ def main() -> int:
                  "architecture", "other"],
         default="test",
     )
+    verify_parser.add_argument(
+        "--timeout-seconds", type=int, default=900,
+        help="maximum seconds for pact run verification (default 900)",
+    )
     verify_parser.add_argument("--json", action="store_true")
     # Split the subprocess argv at the explicit '--' sentinel. A positional
     # argparse.REMAINDER would greedily swallow --claim/--criterion appearing
@@ -981,6 +1001,8 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command == "verify" and args.timeout_seconds <= 0:
+        parser.error("--timeout-seconds must be positive")
     if args.command in {"draft", "verify"}:
         # These helpers depend on the prepared Task state/API but do not
         # invent semantic Convergence or completed Owner Reports.
