@@ -24,6 +24,7 @@ from task import validate_finish_manifest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "pilot-evaluation.schema.json"
 OBSERVATION_SCHEMA = ROOT / ".pact" / "schema" / "task-observation.schema.json"
+RUN_SCHEMA = ROOT / ".pact" / "schema" / "run-receipt.schema.json"
 
 
 def load(path: pathlib.Path) -> dict:
@@ -336,13 +337,26 @@ def run_receipts(task_id: str, evidence: dict | None) -> list[dict]:
 
     receipts: list[dict] = []
     seen: set[pathlib.Path] = set()
+    repository_root = ROOT.resolve()
+    schema = load_schema(RUN_SCHEMA) if paths else None
     for path in sorted(paths):
         resolved = path.resolve()
+        try:
+            resolved.relative_to(repository_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"PACT run receipt escapes repository root: {path}"
+            ) from exc
         if resolved in seen or not resolved.is_file():
             continue
         seen.add(resolved)
         item = load_optional(resolved)
-        if item and item.get("task_id") == task_id and "status" in item:
+        errors = validate_instance(item, schema)
+        if errors:
+            raise ValueError(
+                f"invalid PACT run receipt {resolved}: " + "; ".join(errors)
+            )
+        if item["task_id"] == task_id:
             receipts.append(item)
     return receipts
 

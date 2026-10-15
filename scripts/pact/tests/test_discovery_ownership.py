@@ -9,12 +9,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 MAP = PROJECT_ROOT / "scripts" / "pact" / "map.py"
 CODE_MAP = PROJECT_ROOT / "scripts" / "pact" / "code_map.py"
 CODE_SCHEMA = PROJECT_ROOT / ".pact" / "schema" / "code-map.schema.json"
+
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "pact"))
+from repository_files import repository_files
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -190,6 +194,52 @@ class AdoptedDiscoveryOwnershipTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         subprocess.run(["git", "add", "."], cwd=self.root, check=True)
         self.assert_external_symlinks_not_indexed()
+
+
+
+class GitEnumerationFailureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="pact-git-enumeration-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)
+        (self.root / "README.md").write_text("# Test\n", encoding="utf-8")
+
+    @mock.patch("repository_files.subprocess.run")
+    def test_non_git_directory_keeps_filesystem_fallback(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            ["git", "rev-parse"], 128, stdout="",
+        )
+        files, mode = repository_files(self.root)
+        self.assertEqual(mode, "filesystem")
+        self.assertIn(self.root / "README.md", files)
+
+    @mock.patch("repository_files.subprocess.run")
+    def test_git_ls_files_failure_does_not_fallback_to_walk(self, run) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(["git", "rev-parse"], 0, stdout="true\n"),
+            subprocess.CompletedProcess(["git", "ls-files"], 128, stdout=b""),
+        ]
+        with self.assertRaisesRegex(OSError, "Git visible-file enumeration failed"):
+            repository_files(self.root)
+        self.assertEqual(run.call_count, 2)
+
+    @mock.patch("repository_files.subprocess.run")
+    def test_git_ls_files_timeout_does_not_fallback_to_walk(self, run) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(["git", "rev-parse"], 0, stdout="true\n"),
+            subprocess.TimeoutExpired(["git", "ls-files"], 30),
+        ]
+        with self.assertRaisesRegex(OSError, "Git visible-file enumeration failed"):
+            repository_files(self.root)
+
+    @mock.patch("repository_files.subprocess.run")
+    def test_broken_git_marker_does_not_fallback_to_walk(self, run) -> None:
+        (self.root / ".git").mkdir()
+        run.return_value = subprocess.CompletedProcess(
+            ["git", "rev-parse"], 128, stdout="",
+        )
+        with self.assertRaisesRegex(OSError, "Git worktree marker exists"):
+            repository_files(self.root)
 
 
 if __name__ == "__main__":
