@@ -31,6 +31,31 @@ Evidence rather than being rewritten as success. Manual review of the
 Evidence-to-outcome relationship, Convergence and Owner Report is still
 required. Existing advanced primitives remain available.
 
+`task assist <TASK-ID> --json` is **read-only by default**. It distinguishes
+unverified criteria from explicitly failed Claims and lists missing prepared
+knowledge/change coverage, provenance gaps and non-authoritative Owner Report
+draft references. The optional `--write-draft` only fills *empty* verified-Claim
+arrays in an existing `partial` Owner Report; it does not overwrite reviewed
+content or turn Convergence into `aligned`. Each derived claim includes exact
+criterion/receipt/Contract/Context SHA metadata **in advisory diagnostics**;
+these are not extra Owner Report v1 schema fields.
+
+`task export <TASK-ID> --filename <safe-name.json>` writes **minimal audit-only**
+Claim and receipt hash metadata inside PACT-owned `.pact/runs/<TASK-ID>/`.
+It is atomic, no-overwrite and subject to the task Evidence lock. It neither
+exports raw process output nor turns the export into portable execution proof.
+Do not copy secrets or arbitrary local state into an Owner Report.
+
+`task checkpoint <TASK-ID>` records bounded, optional partial progress and
+Decision/run references without freezing new Product Truth. A separate process
+can call read-only `task resume <TASK-ID> --json` to recover the prepared
+Contract, acceptance criteria, changed-file state and current receipts.
+Untrusted Agent notes must never be executed or promoted to passing Evidence.
+Changed/replaced Decision references trigger explicit premise re-review;
+stale verification references require a fresh run. Neither checkpoint nor
+resume completes the task, alters frozen Contract/Context SHAs, or implements
+cross-device state synchronization.
+
 ### Verification input provenance
 
 By default `pact run` refuses directly named external script/config/schema
@@ -42,6 +67,9 @@ published. `task verify` forwards these declarations to `pact run`.
 `--allow-external-inputs` explicitly permits those paths for diagnostics,
 marking the receipt `external-opt-in`. A medium/high-risk required pass
 claim cannot use **only** such receipts to satisfy completion Evidence.
+Additionally, a medium/high-risk required passing Claim cannot rely solely
+on a `pact-run` receipt with `workspace_changed=true`: persist the managed
+change, re-establish a stable workspace and execute the check again.
 Existing v2 receipts without these optional provenance fields remain
 readable. Opaque commands, interpreter versions, shell expansions, network
 dependencies and all implicit environment inputs are not attested; neither
@@ -69,8 +97,12 @@ Completion requires the Convergence Report to:
 
 - bind to the exact prepared Context SHA;
 - explicitly cover every selected knowledge artifact;
-- state whether each artifact is aligned, updated, stale, owner-decision, or not applicable;
-- avoid claiming `updated` when the prepared artifact fingerprint proves the file did not change.
+- state whether each artifact is `aligned`, `updated`, `removed`,
+  `stale`, `owner-decision`, or `not-applicable`;
+- avoid claiming `updated` when the prepared artifact fingerprint proves the
+  file did not change **or that the file no longer exists**;
+- use `removed` only for an actually absent prepared file with valid prior
+  digest, without asserting that deleting confirmed knowledge was approved.
 
 This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
 
@@ -107,6 +139,23 @@ Completion then:
 Each change-coverage entry contains a path and an Agent-written rationale. PACT checks coverage mechanically; the rationale remains semantic review.
 
 For non-Git projects, PACT reports that exact task-delta path attribution is unavailable rather than inventing changed-file coverage.
+
+## Distinct states, not interchangeable success badges
+
+- `pact-ready` means the project's *starting baseline and adoption reviews*
+  reached the declared readiness stage; it does not finish a Task.
+- A command's exit code zero is evidence that a particular operation executed
+  successfully, **not** proof that it satisfied the Owner's observable outcome.
+- A `pact-run` receipt binds execution to a sampled local workspace; it does
+  not attest transient write-then-restore behavior, hidden dependencies,
+  product/business correctness or network side effects.
+- Only explicit, risk-appropriate AC↔Claim↔Evidence bindings, knowledge/change
+  Convergence and an actually reviewed Owner Report can satisfy `task finish`.
+  Mechanical integrity is checked by PACT; business semantics remain a
+  reviewer's responsibility.
+- `complete=true`, GitHub CI success, a historical replay pass, a real Agent
+  run and independently observed Owner benefit are **different assertions**.
+  Do not equate one with another or infer a zero Owner burden from missing data.
 
 ## Mechanical integrity versus semantic assertion
 
