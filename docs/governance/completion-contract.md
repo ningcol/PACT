@@ -34,11 +34,20 @@ required. Existing advanced primitives remain available.
 `task assist <TASK-ID> --json` is **read-only by default**. It distinguishes
 unverified criteria from explicitly failed Claims and lists missing prepared
 knowledge/change coverage, provenance gaps and non-authoritative Owner Report
-draft references. The optional `--write-draft` only fills *empty* verified-Claim
+draft references. The optional `--write-draft` fills *empty* verified-Claim
 arrays in an existing `partial` Owner Report; it does not overwrite reviewed
-content or turn Convergence into `aligned`. Each derived claim includes exact
-criterion/receipt/Contract/Context SHA metadata **in advisory diagnostics**;
-these are not extra Owner Report v1 schema fields.
+content or turn Convergence into `aligned`. PACT tracks its **own generated
+Owner acceptance** in a bounded, task-local `.pact-assist-generated.json`
+marker bound to the actual on-disk Owner Report digest. When new failed or
+unverified required Evidence, or stale execution provenance, invalidates a
+previously generated acceptance, a read-only assist reports the stale AC.
+Only an explicit `--write-draft` can retract the **unchanged, provably
+tool-generated** acceptance entry; a modified/unmarked Owner Report instead
+fails closed for manual reconciliation. The marker is local metadata, not a
+signed attestation, and neither path automatically completes the task.
+Each derived claim includes exact criterion/receipt/Contract/Context SHA
+metadata **in advisory diagnostics**; these are not extra Owner Report v1
+schema fields.
 
 `task export <TASK-ID> --filename <safe-name.json>` writes **minimal audit-only**
 Claim and receipt hash metadata inside PACT-owned `.pact/runs/<TASK-ID>/`.
