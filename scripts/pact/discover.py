@@ -521,7 +521,9 @@ def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
     return sorted(
         items,
         key=lambda item: (
-            -int("exact stable id" in item.get("reasons", [])),
+            -int(bool({
+                "exact stable id", "exact title", "exact alias",
+            }.intersection(item.get("reasons", [])))),
             -preference(item),
             -int(item.get("score", 0)),
             str(item.get("path", "")),
