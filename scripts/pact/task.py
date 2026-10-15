@@ -290,6 +290,10 @@ def prepare(args) -> int:
         )
         if args.goal:
             context_cmd.extend(["--goal", args.goal])
+        if args.intent:
+            context_cmd.extend(["--intent", args.intent])
+        for required_rule in args.required_rules:
+            context_cmd.extend(["--require-rule", required_rule])
         # High-level task preparation always preserves the owner's task wording
         # as primary retrieval intent. Repeatable --query values are additional
         # search hypotheses, matching the recommended inspect surface.
@@ -917,6 +921,8 @@ def main() -> int:
         type=int,
         help="override soft estimated materialization token budget",
     )
+    prep.add_argument("--intent", choices=["work", "decision", "history"], help="explicit optional retrieval intent")
+    prep.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="required confirmed Rule stable ID; repeatable")
     prep.add_argument("--task-id")
     prep.add_argument("--files", nargs="+")
     prep.add_argument("--base")
