@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "kind": "pact-owned-synthetic-retrieval-input",
+  "purpose": "Executable regression only; not an unseen holdout or real Owner pilot",
+  "cases": [
+    {
+      "id": "editor-retain-state",
+      "task": "Find editor platform and publish settings preserved when switching tabs",
+      "success": "Editor preserves platform publish settings",
+      "risk_level": "medium",
+      "code_limit": 4,
+      "token_budget": 4096,
+      "files": [
+        {
+          "path": "src/editor/state_store.py",
+          "text": "\"\"\"Editor platform publish settings persist on tab switching.\"\"\"\n\ndef preserve_editor_platform_publish_settings(state):\n    return dict(state)\n"
+        },
+        {
+          "path": "src/editor/restore_tabs.py",
+          "text": "\"\"\"Editor switching tabs restores platform state.\"\"\"\n\ndef restore_editor_tabs(state):\n    return dict(state)\n"
+        },
+        {
+          "path": "src/analytics/daily_stats.py",
+          "text": "\"\"\"Daily analytics views and event reporting.\"\"\"\n\ndef analytics_reports():\n    return 'metrics'\n"
+        },
+        {
+          "path": "src/editor/README.md",
+          "text": "# Editor module\n\nLocal code map for editor tab selection and settings persistence.\n"
+        }
+      ]
+    },
+    {
+      "id": "formatter-preserve-style",
+      "task": "Locate publishing formatter that preserves heading and inline code styles",
+      "success": "Heading and inline code survive conversion",
+      "risk_level": "medium",
+      "code_limit": 4,
+      "token_budget": 4096,
+      "files": [
+        {
+          "path": "src/publishing/inline_styles.py",
+          "text": "\"\"\"Publishing formatter keeps heading inline code styles.\"\"\"\n\ndef preserve_heading_inline_code_styles(html):\n    return html\n"
+        },
+        {
+          "path": "src/publishing/content_pipeline.py",
+          "text": "\"\"\"Publishing content pipeline converts rich editor HTML.\"\"\"\n\ndef publish_document(content):\n    return content\n"
+        },
+        {
+          "path": "src/payments/invoice.py",
+          "text": "\"\"\"Invoice tax calculation.\"\"\"\n\ndef calculate_invoice_tax(value):\n    return value\n"
+        },
+        {
+          "path": "src/publishing/README.md",
+          "text": "# Publishing module\n\nLocal formatter guidance, not a confirmed Product Rule.\n"
+        }
+      ]
+    },
+    {
+      "id": "cache-retention-source",
+      "task": "Find implementation code that handles cache storage expiry and retention",
+      "success": "Source responsible for cache expiry and retention is located",
+      "risk_level": "medium",
+      "code_limit": 4,
+      "token_budget": 4096,
+      "files": [
+        {
+          "path": "src/cache/cache_storage.py",
+          "text": "\"\"\"Cache storage expiry and retention implementation.\"\"\"\n\ndef expire_cache_entry(value):\n    return value\n"
+        },
+        {
+          "path": "src/cache/read_cache.py",
+          "text": "\"\"\"Read cached values.\"\"\"\n\ndef load_cache_value(value):\n    return value\n"
+        },
+        {
+          "path": "src/network/http_client.py",
+          "text": "\"\"\"HTTP request transport.\"\"\"\n\ndef request():\n    return None\n"
+        },
+        {
+          "path": "src/cache/README.md",
+          "text": "# Cache module\n\nHistorical cache tradeoffs require Decision review.\n"
+        }
+      ]
+    }
+  ]
+}
