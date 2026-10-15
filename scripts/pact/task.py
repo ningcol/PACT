@@ -957,6 +957,27 @@ def main() -> int:
                                help="safe .json basename; never an absolute or external path")
     export_parser.add_argument("--json", action="store_true")
 
+    checkpoint_parser = sub.add_parser(
+        "checkpoint", help="record bounded, non-authoritative partial task progress"
+    )
+    checkpoint_parser.add_argument("task_id")
+    checkpoint_parser.add_argument("--done", action="append", default=[])
+    checkpoint_parser.add_argument("--todo", action="append", default=[])
+    checkpoint_parser.add_argument("--assumption", action="append", default=[])
+    checkpoint_parser.add_argument("--decision", action="append", default=[],
+                                   help="repository-relative retained Decision path")
+    checkpoint_parser.add_argument("--receipt", action="append", default=[],
+                                   help="existing task-local pact-run receipt path")
+    checkpoint_parser.add_argument("--claim-id", dest="claim_ids", action="append",
+                                   default=[], help="existing Evidence Claim ID")
+    checkpoint_parser.add_argument("--json", action="store_true")
+
+    resume_parser = sub.add_parser(
+        "resume", help="read-only, no-chat task recovery with stale evidence checks"
+    )
+    resume_parser.add_argument("task_id")
+    resume_parser.add_argument("--json", action="store_true")
+
     verify_parser = sub.add_parser(
         "verify", help="run a command and record explicit acceptance-bound Evidence"
     )
@@ -1010,6 +1031,10 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command in {"checkpoint", "resume"}:
+        from task_handoff import checkpoint, resume
+
+        return checkpoint(args) if args.command == "checkpoint" else resume(args)
     if args.command in {"assist", "export"}:
         from task_review import assist, export
 
