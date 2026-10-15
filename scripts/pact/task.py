@@ -941,6 +941,22 @@ def main() -> int:
     draft_parser.add_argument("task_id")
     draft_parser.add_argument("--json", action="store_true")
 
+    assist_parser = sub.add_parser(
+        "assist", help="read-only completion diagnostics, optional mechanical draft fill"
+    )
+    assist_parser.add_argument("task_id")
+    assist_parser.add_argument("--write-draft", action="store_true",
+                               help="fill only empty Owner fields from valid passing explicit claims")
+    assist_parser.add_argument("--json", action="store_true")
+
+    export_parser = sub.add_parser(
+        "export", help="export verified audit metadata to this task's PACT run directory"
+    )
+    export_parser.add_argument("task_id")
+    export_parser.add_argument("--filename", required=True,
+                               help="safe .json basename; never an absolute or external path")
+    export_parser.add_argument("--json", action="store_true")
+
     verify_parser = sub.add_parser(
         "verify", help="run a command and record explicit acceptance-bound Evidence"
     )
@@ -994,6 +1010,10 @@ def main() -> int:
         return prepare(args)
     if args.command == "finish":
         return finish(args)
+    if args.command in {"assist", "export"}:
+        from task_review import assist, export
+
+        return assist(args) if args.command == "assist" else export(args)
     if args.command in {"draft", "verify"}:
         # These helpers depend on the prepared Task state/API but do not
         # invent semantic Convergence or completed Owner Reports.
