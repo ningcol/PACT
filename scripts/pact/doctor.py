@@ -129,7 +129,7 @@ HOST_GUIDES = (
 )
 HOST_READ_LIMIT = 128 * 1024
 HOST_WORKFLOW_LIMIT = 32
-MARKDOWN_INCLUDE = re.compile(r"\\]\\(([^)#]+)(?:#[^)]*)?\\)|(?m)^\\s*@([A-Za-z0-9_.\\/-]+\\.md)\\s*$")
+MARKDOWN_INCLUDE = re.compile(r"\\]\\(([^)#]+)(?:#[^)]*)?\\)|^\\s*@([A-Za-z0-9_.\\/-]+\\.md)\\s*$", re.MULTILINE)
 
 
 def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | None]:
@@ -142,7 +142,13 @@ def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | Non
             return None, None
         if not path.is_file():
             return None, "host config is not a regular file"
-        path.resolve().relative_to(root.resolve())
+        resolved_root = root.resolve()
+        path.resolve().relative_to(resolved_root)
+        ancestor = path.parent
+        while ancestor != resolved_root and resolved_root in ancestor.parents:
+            if ancestor.is_symlink():
+                return None, "symbolic host parent requires manual inspection"
+            ancestor = ancestor.parent
         if path.stat().st_size > HOST_READ_LIMIT:
             return None, "host config exceeds bounded static read size"
         return path.read_text(encoding="utf-8"), None
