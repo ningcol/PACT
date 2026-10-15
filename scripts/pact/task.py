@@ -290,6 +290,10 @@ def prepare(args) -> int:
         )
         if args.goal:
             context_cmd.extend(["--goal", args.goal])
+        if getattr(args, "intent", None):
+            context_cmd.extend(["--intent", args.intent])
+        for required_rule in getattr(args, "required_rules", []):
+            context_cmd.extend(["--require-rule", required_rule])
         # High-level task preparation always preserves the owner's task wording
         # as primary retrieval intent. Repeatable --query values are additional
         # search hypotheses, matching the recommended inspect surface.
@@ -895,6 +899,15 @@ def main() -> int:
         action="append",
         default=[],
         help="additional discovery query; repeat to fuse business/code vocabulary while preserving the task wording",
+    )
+    prep.add_argument(
+        "--intent",
+        choices=["work", "decision", "history"],
+        help="explicit optional retrieval intent; default unchanged",
+    )
+    prep.add_argument(
+        "--require-rule", dest="required_rules", action="append", default=[],
+        help="confirmed RULE-ID that must be present; repeatable, fail-closed",
     )
     prep.add_argument(
         "--token-budget",
