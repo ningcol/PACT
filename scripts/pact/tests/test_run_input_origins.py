@@ -141,6 +141,75 @@ class VerificationInputOriginsTests(unittest.TestCase):
         self.assertIn("source changed during execution", result.stderr)
         self.assertFalse(self.receipt.exists())
 
+
+    def test_required_medium_high_pass_rejects_run_that_changed_managed_files(self) -> None:
+        script = (
+            "from pathlib import Path; "
+            "p = Path('README.md'); p.write_text(p.read_text() + 'changed\\n')"
+        )
+        run = self.run_pact([], [sys.executable, "-c", script])
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        self.assertTrue(receipt["workspace_changed"])
+        ref = self.receipt.relative_to(self.root).as_posix()
+
+        for risk in ("medium", "high"):
+            with self.subTest(risk=risk):
+                evidence = {
+                    "task_id": "TASK-INPUTS", "risk_level": risk,
+                    "claims": [{
+                        "id": "EV-MUTATED", "claim": "Executed with a managed edit",
+                        "required": True, "status": "pass",
+                        "evidence": [{"kind": "test", "provenance": "pact-run", "ref": ref}],
+                    }],
+                }
+                errors, gaps, metrics = provenance_review(evidence, self.root)
+                self.assertEqual(errors, [])
+                self.assertTrue(any("workspace_changed" in g for g in gaps), gaps)
+                self.assertEqual(metrics["workspace_bound_claims"], 0)
+                self.assertEqual(readiness(evidence, gaps), "incomplete")
+
+    def test_managed_edit_is_allowed_for_low_risk_diagnostic_claim(self) -> None:
+        result = self.run_pact(
+            [], [sys.executable, "-c", "from pathlib import Path; Path('new.txt').write_text('changed')"]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(json.loads(self.receipt.read_text())["workspace_changed"])
+        evidence = {
+            "task_id": "TASK-INPUTS", "risk_level": "low",
+            "claims": [{
+                "id": "EV-LOW", "claim": "Exploratory work",
+                "required": True, "status": "pass",
+                "evidence": [{"kind": "test", "provenance": "pact-run",
+                              "ref": self.receipt.relative_to(self.root).as_posix()}],
+            }],
+        }
+        errors, gaps, _ = provenance_review(evidence, self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual(gaps, [])
+
+    def test_ignored_generated_files_do_not_poison_required_high_risk_pass(self) -> None:
+        result = self.run_pact(
+            [], [sys.executable, "-c",
+                 "from pathlib import Path; p=Path('.pact/tmp/generated.txt'); "
+                 "p.parent.mkdir(parents=True, exist_ok=True); p.write_text('output')"]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(json.loads(self.receipt.read_text())["workspace_changed"])
+        evidence = {
+            "task_id": "TASK-INPUTS", "risk_level": "high",
+            "claims": [{
+                "id": "EV-STABLE", "claim": "Generated output only",
+                "required": True, "status": "pass",
+                "evidence": [{"kind": "test", "provenance": "pact-run",
+                              "ref": self.receipt.relative_to(self.root).as_posix()}],
+            }],
+        }
+        errors, gaps, metrics = provenance_review(evidence, self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual(gaps, [])
+        self.assertEqual(metrics["workspace_bound_claims"], 1)
+
     def test_external_script_in_shell_argument_is_detected(self) -> None:
         result = self.run_pact(
             [], ["bash", "-lc", f"{sys.executable} {self.outside}"]
