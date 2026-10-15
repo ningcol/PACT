@@ -96,6 +96,44 @@ class InstalledIntentComparisonTests(unittest.TestCase):
             args.extend(["--intent", intent])
         return self.pact(*args)
 
+    def test_installed_tenth_query_exact_id_survives_budget_one(self):
+        # Nine broad queries repeatedly match nine confirmed Rules. Their
+        # fused RRF scores are much higher than one exact-ID lookup placed
+        # in the tenth query. Optional intent MUST reserve the exact result
+        # before the truncated nine-slot candidate pool is published.
+        queries = [
+            "cachetermnorth", "cachetermsouth", "cachetermeast",
+            "cachetermwest", "cachetermspring", "cachetermwinter",
+            "cachetermsummer", "cachetermautumn", "cachetermdelta",
+        ]
+        terms = " ".join(queries)
+        for i in range(9):
+            self.write(
+                f"docs/product/rules/broad-{i}.md",
+                "rule", f"RULE-BROAD-{i}", "confirmed",
+                f"Common test rule {i}",
+                f"Fictional shared words for retrieval only: {terms}",
+            )
+        argv = ["discover", queries[0], "--limit", "1", "--json"]
+        for query in [*queries[1:], "DEC-CACHE-OLD"]:
+            argv.extend(["--query", query])
+        normal, _ = self.pact(*argv)
+        self.assertEqual(normal["query_count"], 10)
+        self.assertEqual(normal["result_count"], 1)
+        self.assertNotEqual(
+            normal["results"][0]["id"], "DEC-CACHE-OLD",
+            "RED fixture: default broad RRF should crowd out the tenth hit",
+        )
+        intent, _ = self.pact(*argv, "--intent", "work")
+        self.assertEqual(intent["query_count"], 10)
+        self.assertEqual(intent["result_count"], 1)
+        self.assertEqual(intent["results"][0]["id"], "DEC-CACHE-OLD")
+        self.assertEqual(intent["intent"], "work")
+        self.assertTrue(any(
+            reason.endswith(": exact stable id")
+            for reason in intent["results"][0]["reasons"]
+        ), intent["results"][0]["reasons"])
+
     def test_real_installed_modes_preserve_authority_and_same_limits(self):
         # Check fixture front matter before indexed discovery.
         checked = subprocess.run(
