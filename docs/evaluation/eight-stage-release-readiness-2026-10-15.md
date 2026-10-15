@@ -49,6 +49,27 @@ python3 scripts/pact/pact.py audit --json
 
 **Explicit limit:** these cases were designed alongside the implementation; they are **NOT** an unseen or sealed holdout. The original S0 preregistered **independent blind A/B** remains `unverified`, and S7 MUST NOT claim `Pilot Validated` from these synthetic scores. Synthetic recall costs are factual for these artificial examples only; no post-hoc Agent query improvement or generic superiority is inferred. More cases are not automatically added merely to make scores green.
 
+### Three separate S7-E02 tracks (no cross-project writes)
+
+| Track | PACT-side executable evidence | Observed scope | Deliberate limitation |
+| --- | --- | --- | --- |
+| **A — ziliu historical replay** | Existing `docs/evaluation/real-ziliu-evidence-smoke-2026-10-15.md`, `benchmarks/brownfield/cases.json`, `scripts/benchmark/historical_replay.py`; the actual GitHub historical Benchmark run linked below | Previously recorded historical source-file localization and Evidence/Task finish Smoke on a disposable old-commit copy | This is *not* a new ziliu feature implementation, present-day checkout change, or an independently blind Owner prompt |
+| **B — PACT-owned fictional school-domain fixture** | `scripts/pact/tests/test_synthetic_domain_host.py`, run as part of the ordinary full suite and 3×3 selected matrix | Candidate Domain + candidate Rule are not promoted to confirmed; explicitly required candidate Rule fails, manually changed confirmed fixture is selected; nearby README is metadata-only; static host doctor does not execute host CI | This is a **fictional PACT fixture**, *not* code or Product Truth extracted from or written to `zx-zsb`; external validity is `unverified` |
+| **C — PACT-owned no-chat A→B handoff** | `scripts/pact/tests/test_task_handoff.py` | Two independent Python invocations preserve prepared Task Contract/Context SHAs, recheck current Evidence/managed workspace and flag changed Decision premises; no completion inferred from notes | This proves **process-separated mechanism only**, not live Codex/Claude/OpenCode user interaction |
+
+To interpret these: track A is retrospective, B/C are synthetic integration tests. A passing job in any of these tracks does not satisfy S6 real Agent E2E or S7 human V gates. All current fixture paths and any generated artifacts belong to PACT or disposable PACT-owned test directories, not other repositories.
+
+### Evidence slots that must remain NULL absent observation
+
+| Quantity | Machine-observed on a PACT synthetic run? | Human/real-Agent counterpart |
+| --- | --- | --- |
+| Per-case file oracle denominator, matched paths, recall, precision *proxy* | Yes, from source-file fixture scoring | Real task semantic precision and Owner success: `null/unverified` |
+| Selected Context estimated tokens and number of code files | Yes, Context runtime metrics | Actual real-Agent model tokens: `null/unverified` |
+| Command elapsed time for synthetic retrieval | Yes, measured in PACT Check logs | Matched real-Agent wall time and no-PACT control: `null/unverified` |
+| Required Rule omissions / false completion negative cases | Test cases deliberately refuse invalid inputs | Production false-positive incidence: `null/unverified` |
+| Claim/Convergence/changed-file coverage, safe partial handoff | CI test assertions and historical sample details | New authorized brownfield E2E field observation: `null/unverified` |
+| Real Agent CLI operation count / Owner questions and time | No genuine real-runner task executed for these cases | All `null/unverified`; **never** zero by default |
+
 ## 3. Acceptance status by evidence category
 
 | Metric / guarantee | Current admissible evidence | Status and what remains |
