@@ -522,11 +522,20 @@ def rerank_for_intent(items: list[dict], intent: str | None) -> list[dict]:
     # Historical/rejected lifecycle status cannot outweigh an exact lookup.
     def exact_priority(item: dict) -> int:
         reasons = item.get("reasons", [])
-        if "exact stable id" in reasons:
+        # Single-query reasons are bare; multi-query RRF fusion decorates
+        # the very same source reason as "<query>: <reason>". Recognize the
+        # terminal *exact scorer reason*, never an arbitrary query keyword.
+        def matches(label: str) -> bool:
+            return any(
+                reason == label or reason.endswith(": " + label)
+                for reason in reasons
+            )
+
+        if matches("exact stable id"):
             return 3
-        if "exact title" in reasons:
+        if matches("exact title"):
             return 2
-        if "exact alias" in reasons:
+        if matches("exact alias"):
             return 1
         return 0
 
