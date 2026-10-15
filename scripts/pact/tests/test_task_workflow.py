@@ -229,6 +229,99 @@ class TaskWorkflowTests(unittest.TestCase):
         )
         self.assertFalse(doc["owner_completed_automatically"])
 
+    def test_generated_acceptance_is_retracted_after_later_required_fail(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        written = self.pact("task", "assist", self.task_id, "--write-draft", "--json")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        owner_path = self.bundle / "owner-report.json"
+        marker = self.bundle / ".pact-assist-generated.json"
+        self.assertTrue(marker.is_file())
+        before = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [item["criterion_id"] for item in before["acceptance"]], ["AC-1"]
+        )
+
+        # A genuinely later check for the same required AC is now a failure.
+        self.assertEqual(self.verify(exit_code=9).returncode, 9)
+        saved_owner = owner_path.read_bytes()
+        diagnostic = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(diagnostic.returncode, 0, diagnostic.stdout + diagnostic.stderr)
+        report = json.loads(diagnostic.stdout)
+        self.assertEqual(report["stale_owner_acceptance_criteria"], ["AC-1"])
+        self.assertEqual(owner_path.read_bytes(), saved_owner, "diagnostic is read-only")
+
+        retract = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(retract.returncode, 0, retract.stdout + retract.stderr)
+        final = json.loads(retract.stdout)
+        self.assertTrue(final["draft_written"])
+        self.assertEqual(final["retracted_generated_acceptance"], ["AC-1"])
+        after = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertEqual(after["status"], "partial")
+        self.assertEqual(after["acceptance"], [])
+        self.assertEqual(
+            after["verification"],
+            before["verification"],
+            "actual passing command remains a historical factual verification",
+        )
+        self.assertEqual(
+            json.loads(marker.read_text())["generated_acceptance"], []
+        )
+        repeat = self.pact(
+            "task", "assist", self.task_id, "--write-draft", "--json"
+        )
+        self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
+        self.assertFalse(json.loads(repeat.stdout)["draft_written"])
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_modified_owner_report_is_never_overwritten_on_stale_acceptance(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        initial = self.pact("task", "assist", self.task_id, "--write-draft")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        owner_path = self.bundle / "owner-report.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        owner["summary"] = "Owner-edited summary; never clobber this text."
+        owner_path.write_text(json.dumps(owner) + "\n", encoding="utf-8")
+        owner_bytes = owner_path.read_bytes()
+        self.assertEqual(self.verify(exit_code=7).returncode, 7)
+        refused = self.pact("task", "assist", self.task_id, "--write-draft")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("manually edited or unmarked", refused.stderr)
+        self.assertEqual(owner_path.read_bytes(), owner_bytes)
+        status = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        self.assertEqual(
+            json.loads(status.stdout)["stale_owner_acceptance_criteria"], ["AC-1"]
+        )
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
+    def test_generated_acceptance_retracts_when_run_workspace_goes_stale(self):
+        self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+        initial = self.pact("task", "assist", self.task_id, "--write-draft")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        (self.root / "README.md").write_text(
+            "# Changed AFTER successful verification\n", encoding="utf-8",
+        )
+        view = self.pact("task", "assist", self.task_id, "--json")
+        self.assertEqual(view.returncode, 0, view.stdout + view.stderr)
+        self.assertEqual(
+            json.loads(view.stdout)["stale_owner_acceptance_criteria"], ["AC-1"]
+        )
+        retract = self.pact("task", "assist", self.task_id, "--write-draft", "--json")
+        self.assertEqual(retract.returncode, 0, retract.stdout + retract.stderr)
+        doc = json.loads(retract.stdout)
+        self.assertEqual(doc["retracted_generated_acceptance"], ["AC-1"])
+        owner = json.loads(
+            (self.bundle / "owner-report.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(owner["status"], "partial")
+        self.assertEqual(owner["acceptance"], [])
+        self.assertNotEqual(self.pact("task", "finish", self.task_id).returncode, 0)
+
     def test_assist_cannot_launder_failing_claim_into_owner_draft(self) -> None:
         self.assertEqual(self.pact("task", "draft", self.task_id).returncode, 0)
         self.assertEqual(self.verify(exit_code=3).returncode, 3)
