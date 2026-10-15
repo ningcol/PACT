@@ -183,6 +183,43 @@ class ExplicitRuleAndIntentTests(unittest.TestCase):
                     [{"path": "src/app.py"}],
                 ), [])
 
+    def test_git_ignored_readme_is_never_a_navigation_hint(self):
+        with tempfile.TemporaryDirectory(prefix="pact-s3-ignore-") as td:
+            root = pathlib.Path(td)
+            subprocess.run(
+                ["git", "init", "-q"], cwd=root, check=True, capture_output=True,
+            )
+            folder = root / "src" / "ignored"
+            folder.mkdir(parents=True)
+            (folder / "README.md").write_text("# ignored", encoding="utf-8")
+            (root / ".gitignore").write_text(
+                "src/ignored/README.md\n", encoding="utf-8",
+            )
+            with mock.patch.object(context, "ROOT", root):
+                result = context.nearby_readme_hints(
+                    [{"path": "src/ignored/app.py"}],
+                )
+            self.assertEqual(result, [])
+
+    def test_symlinked_parent_directory_is_excluded(self):
+        with tempfile.TemporaryDirectory(prefix="pact-s3-symlink-parent-") as td:
+            root = pathlib.Path(td) / "project"
+            root.mkdir()
+            outside = pathlib.Path(td) / "outside"
+            outside.mkdir()
+            (outside / "README.md").write_text(
+                "# must not use this", encoding="utf-8",
+            )
+            try:
+                (root / "src").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlink unavailable: {exc}")
+            with mock.patch.object(context, "ROOT", root):
+                result = context.nearby_readme_hints(
+                    [{"path": "src/app.py"}],
+                )
+            self.assertEqual(result, [])
+
     def test_governance_refs_are_metadata_not_confirmed_rules(self):
         with tempfile.TemporaryDirectory(prefix="pact-s3-gov-") as d:
             root = pathlib.Path(d)
