@@ -78,6 +78,15 @@ def confined_child(
     root = root.resolve()
     candidate = root / task_id
 
+    # Check the original direct child before resolving aliases. This catches
+    # broken symlinks on Windows too, where path spelling/casing differences
+    # can otherwise cause an unrelated "escapes state root" error first.
+    if candidate.is_symlink():
+        raise ValueError(
+            f"task_id state path must be a real direct child, not a symlink/alias: "
+            f"{task_id!r}"
+        )
+
     try:
         resolved = candidate.resolve()
     except (OSError, RuntimeError) as exc:
