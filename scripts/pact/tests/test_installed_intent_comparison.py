@@ -128,6 +128,13 @@ class InstalledIntentComparisonTests(unittest.TestCase):
             self.assertEqual(contexts[label]["version"], 1)
             self.assertIn("RULE-CACHE-001", contexts[label]["applicable_rules"])
             self.assertNotIn("DEC-CACHE-REJECTED", contexts[label]["applicable_rules"])
+        # Freeze the historical no-intent lexical order. Here the three
+        # equally scored matching titles are resolved by repository path,
+        # not by the new optional work/decision/history intent.
+        self.assertEqual(
+            [item["id"] for item in found["default"]["results"][:3]],
+            ["DEC-CACHE-CURRENT", "DEC-CACHE-REJECTED", "RULE-CACHE-001"],
+        )
         self.assertEqual(found["work"]["results"][0]["id"], "RULE-CACHE-001")
         self.assertIn(
             found["decision"]["results"][0]["id"],
