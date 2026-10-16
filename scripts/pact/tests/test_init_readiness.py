@@ -214,5 +214,30 @@ class InitReadinessTests(unittest.TestCase):
         self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
 
 
+    def test_existing_claude_and_opencode_host_configs_survive_repeated_init(self) -> None:
+        self.target.mkdir(parents=True, exist_ok=True)
+        host_files = {
+            "AGENTS.md": "EXISTING AGENT AUTHORITY\n",
+            "CLAUDE.md": "EXISTING CLAUDE DIRECTIVES\n",
+            "opencode.json": '{"mcp": {"protected": true}}\n',
+            ".opencode/opencode.json": '{"agents": {"custom": true}}\n',
+        }
+        for relative, text in host_files.items():
+            path = self.target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        for attempt in range(2):
+            installed = self.run_init("--apply")
+            self.assertEqual(
+                installed.returncode, 0,
+                f"init attempt {attempt + 1}: " + installed.stdout + installed.stderr,
+            )
+            for relative, text in host_files.items():
+                self.assertEqual(
+                    (self.target / relative).read_text(encoding="utf-8"),
+                    text,
+                    f"init attempt {attempt + 1} overwrote {relative}",
+                )
+
 if __name__ == "__main__":
     unittest.main()
