@@ -8,8 +8,8 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 
 1. Replace any `-dev.*` runtime version in `.pact/VERSION` with the exact release version.
 2. Move/finalize relevant `CHANGELOG.md` entries under that release heading.
-3. Ensure `PACT Check` and `PACT Core Matrix` are green on `main`.
-4. Run relevant manual external pilots when the release changes installation, Discovery, code mapping, Evidence, or completion semantics.
+3. Ensure `PACT Check` and the actual **fail-fast** 3 OS × 3 Python `PACT Core Matrix` are green for the **exact main commit intended for tagging**. Never count a Windows PowerShell step as passing if an earlier native command may have failed but a later command overwrote its exit status.
+4. Run and document the relevant authorized external Agent/Owner pilots when release changes installation, Discovery, code mapping, Evidence or completion semantics. A source-level synthetic fixture or Linux/macOS/Windows Python unit test does **not** substitute for actual Agent-host use or measured Owner benefit. If these required evidence gates remain unresolved, record **Release HOLD** under #63 rather than manufacturing a passing release claim.
 5. Resolve or explicitly document compatibility/migration behavior.
 6. Confirm `LICENSE` is present and release assets/checksums include the Apache-2.0 license file.
 

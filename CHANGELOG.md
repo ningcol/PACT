@@ -6,7 +6,38 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
-No changes yet.
+### Scoped S0–S7 engineering integration (2026-10-15/16)
+
+- Integrate S1 stable-workspace Evidence constraints, S2 premise-aware Decision
+  retention, S3 optional context `--intent` and caller-required confirmed Rules.
+- Add bounded `task assist`, metadata-only `task export`, read-only
+  `task resume` and untrusted partial `task checkpoint` primitives.
+- Add static Agent-host wiring diagnostics, never treating guide presence as
+  execution of a real Codex/Claude/OpenCode session.
+- Add PACT-owned frozen synthetic retrieval measurements. Oracle/score and
+  recorded runtimes are **proxies**, not independent blinded Agent or Owner
+  impact measurements.
+- Preserve original S0–S7 source/AC ledgers as explicitly labeled historical
+  snapshots, with remaining seven engineering and four actual Agent/Owner
+  evidence gaps tracked in #214, #28, #32 and release gate #63.
+
+### Source and release robustness
+
+- Recover transient Windows cache publication sharing conflicts using finite
+  WinError 5/32-only retries, without masking permanent permission failures.
+- Restore previously missing stage safety regressions (Owner acceptance,
+  Convergence, symlinked task state and repeated-init preservation).
+- Enforce explicit fail-fast shells in OS×Python and tagged release workflows,
+  add selected stage portability tests and all three synthetic source cases.
+- Fix Windows-specific LICENSE source-byte, symlink target and stdout newline
+  test assumptions that had been masked by CI step exit-code handling.
+- Bound `task verify` timeout cleanup to its local process tree where supported;
+  do not equate local process cleanup with a hostile-process sandbox.
+
+**Release status:** none of these changes asserts completion of the original
+48 acceptance criteria, publishes a tag, or verifies real Agent/Owner outcomes.
+The formal release decision stays under Issue #63.
+
 
 ## 0.4.0-rc.1 (release candidate; validation pending) — 2026-10-15
 
