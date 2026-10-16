@@ -8,6 +8,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 from typing import Callable, Iterable
 
 
@@ -52,6 +53,40 @@ def git_head(root: pathlib.Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+WINDOWS_CACHE_REPLACE_MAX_ATTEMPTS = 12
+WINDOWS_CACHE_REPLACE_RETRY_SECONDS = 0.01
+
+
+def _retryable_windows_cache_replace_error(error: OSError) -> bool:
+    """Do not retry arbitrary permission errors or suppress real denials."""
+    return (
+        os.name == "nt"
+        and isinstance(error, PermissionError)
+        and getattr(error, "winerror", None) in {5, 32}
+    )
+
+
+def _replace_cache_with_bounded_windows_retry(
+    temporary: pathlib.Path, target: pathlib.Path
+) -> None:
+    """Windows readers may briefly hold destination sharing locks.
+
+    Retry only recognized WinError 5/32, with a strictly finite deadline.
+    The staged file stays complete and unopened by readers until replacement.
+    """
+    for attempt in range(WINDOWS_CACHE_REPLACE_MAX_ATTEMPTS):
+        try:
+            os.replace(temporary, target)
+            return
+        except OSError as exc:
+            if (
+                attempt + 1 >= WINDOWS_CACHE_REPLACE_MAX_ATTEMPTS
+                or not _retryable_windows_cache_replace_error(exc)
+            ):
+                raise
+            time.sleep(WINDOWS_CACHE_REPLACE_RETRY_SECONDS * (attempt + 1))
+
+
 def atomic_write_json(path: pathlib.Path, data: dict) -> None:
     """Publish one complete JSON cache atomically using a unique sibling file.
 
@@ -71,7 +106,7 @@ def atomic_write_json(path: pathlib.Path, data: dict) -> None:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        _replace_cache_with_bounded_windows_retry(temporary, path)
     finally:
         try:
             temporary.unlink(missing_ok=True)
