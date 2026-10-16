@@ -33,14 +33,18 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Runtime entry points
+        shell: bash
         run: |
+          set -euo pipefail
           python pact.py --help
           python bootstrap.py --help
           python scripts/pact/pact.py schema-lint
           python scripts/pact/pact.py check
 
       - name: Cross-platform portability tests
+        shell: bash
         run: |
+          set -euo pipefail
           python -m unittest discover -s scripts/pact/tests -p "test_bootstrap.py"
           python -m unittest discover -s scripts/pact/tests -p "test_compact_runtime.py"
           python -m unittest discover -s scripts/pact/tests -p "test_distribution_upgrade.py"
@@ -62,3 +66,9 @@ jobs:
           python -m unittest discover -s scripts/pact/tests -p "test_run_pipe_shutdown.py"
           python -m unittest discover -s scripts/pact/tests -p "test_streaming_reliability.py"
           python -m unittest discover -s scripts/pact/tests -p "test_workspace_git_identity.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_context_intent_require_rules.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_installed_intent_comparison.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_task_handoff.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_host_wiring.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_eight_stage_synthetic.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_workflow_failfast.py"
