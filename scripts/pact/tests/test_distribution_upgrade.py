@@ -838,9 +838,41 @@ class DistributionUpgradeTests(unittest.TestCase):
         manifest = json.loads(
             (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
         )
+        # A source file's bytes, not text re-encoded from read_text(), are
+        # the package/manifest authority. On Windows write_text() can emit
+        # CRLF, so hashing changed.encode() can incorrectly expect LF bytes.
+        source_bytes = (self.new_source / "LICENSE").read_bytes()
+        installed_bytes = (self.target / ".pact" / "LICENSE").read_bytes()
+        self.assertEqual(installed_bytes, source_bytes)
         self.assertEqual(
             manifest["files"][".pact/LICENSE"]["installed_sha256"],
-            hashlib.sha256(changed.encode("utf-8")).hexdigest(),
+            hashlib.sha256(source_bytes).hexdigest(),
+        )
+        self.assertEqual(
+            manifest["files"][".pact/LICENSE"]["source_sha256"],
+            hashlib.sha256(source_bytes).hexdigest(),
+        )
+
+    def test_upgrade_license_preserves_explicit_crlf_source_bytes(self) -> None:
+        self.scaffold()
+        self.change_runtime_source()
+        crlf_bytes = b"PACT test-only license fixture\r\nSecond line\r\n"
+
+        (self.new_source / "LICENSE").write_bytes(crlf_bytes)
+
+        result = self.run_upgrade("--apply", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        installed = (self.target / ".pact" / "LICENSE").read_bytes()
+        self.assertEqual(installed, crlf_bytes)
+        manifest = json.loads(
+            (self.target / ".pact" / "install.json").read_text(encoding="utf-8")
+        )
+        digest = hashlib.sha256(crlf_bytes).hexdigest()
+        self.assertEqual(
+            manifest["files"][".pact/LICENSE"]["installed_sha256"], digest
+        )
+        self.assertEqual(
+            manifest["files"][".pact/LICENSE"]["source_sha256"], digest
         )
 
     def test_manifest_parent_symlink_escape_is_rejected_everywhere(self) -> None:
