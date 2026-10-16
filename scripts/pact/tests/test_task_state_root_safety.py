@@ -208,5 +208,21 @@ class TaskStateRootSafetyTests(unittest.TestCase):
         self.assertFalse((outside / task_id).exists())
 
 
+    def test_broken_task_child_symlink_rejected_before_resolution(self) -> None:
+        tasks = self.root / ".pact" / "tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        link = tasks / "TASK-LINK"
+        target = pathlib.Path(self.temp.name) / "uncreated-target"
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"directory symlinks unavailable: {exc}")
+        self.assertTrue(link.is_symlink())
+        self.assertFalse(link.exists())
+        result = self.pact("task", "status", "TASK-LINK")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("symlink/alias", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
