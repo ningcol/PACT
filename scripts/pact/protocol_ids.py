@@ -78,6 +78,14 @@ def confined_child(
     root = root.resolve()
     candidate = root / task_id
 
+    # Detect broken and existing aliases before resolving path spelling.
+    # On Windows resolution can produce an extended-length path.
+    if candidate.is_symlink():
+        raise ValueError(
+            "task_id state path must be a real direct child, not a symlink/alias: "
+            f"{task_id!r}"
+        )
+
     try:
         resolved = candidate.resolve()
     except (OSError, RuntimeError) as exc:
