@@ -8,6 +8,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -287,6 +288,25 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertFalse((self.bundle / "evidence.json").exists())
         followup = self.verify()
         self.assertEqual(followup.returncode, 0, followup.stderr)
+
+    def test_timeout_does_not_leave_verifier_child_alive(self) -> None:
+        marker = self.root / ".pact" / "tmp" / "verify-orphan.txt"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        command = (
+            "import time; from pathlib import Path; time.sleep(3); "
+            "Path('.pact/tmp/verify-orphan.txt').write_text('orphan')"
+        )
+        result = self.pact(
+            "task", "verify", self.task_id,
+            "--criterion", "AC-1", "--claim", "Timeout descendant check",
+            "--timeout-seconds", "1", "--",
+            sys.executable, "-c", command,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("verification exceeded", result.stderr)
+        time.sleep(3.5)
+        self.assertFalse(marker.exists(), "timed-out verifier survived and wrote after return")
+        self.assertFalse((self.bundle / "evidence.json").exists())
 
     def test_verify_rejects_nonpositive_timeout(self) -> None:
         result = self.pact(

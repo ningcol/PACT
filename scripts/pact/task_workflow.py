@@ -12,6 +12,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -258,6 +259,63 @@ def draft(args) -> int:
     return 0
 
 
+def _run_verification_with_timeout(
+    command: list[str], *, timeout_seconds: int
+) -> subprocess.CompletedProcess[str]:
+    """Bound a pact-run process and its local verifier descendants.
+
+    On POSIX a fresh process session contains the pact-run child plus normal
+    descendants. Windows needs an explicit descendant tree kill: Popen.kill()
+    on its own leaves a verification Python process holding project handles.
+    This coordinates local cooperative processes, not a malicious sandbox.
+    """
+    options: dict = {
+        "cwd": ROOT,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+
+    process = subprocess.Popen(command, **options)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            # taskkill is provided by Windows. /T terminates the verifier
+            # descendant process before we release Evidence's writer lock.
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    capture_output=True,
+                    timeout=15,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass  # Still fail closed; direct process cleanup below.
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.kill()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            # Do not let escaped descendants hold captured pipes forever.
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+            process.wait(timeout=5)
+        raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def verify(args) -> int:
     command = list(args.verification_command)
     if command and command[0] == "--":
@@ -308,12 +366,9 @@ def verify(args) -> int:
                 run_args.extend(["--source", source])
             if args.allow_external_inputs:
                 run_args.append("--allow-external-inputs")
-            proc = subprocess.run(
+            proc = _run_verification_with_timeout(
                 runtime_command("run", *run_args, "--", *command),
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-                timeout=args.timeout_seconds,
+                timeout_seconds=args.timeout_seconds,
             )
             if not receipt_path.is_file():
                 raise ValueError(
