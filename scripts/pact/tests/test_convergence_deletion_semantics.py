@@ -221,5 +221,20 @@ class ConvergenceRemovalTests(unittest.TestCase):
         self.assertTrue(any("no owner-decision finding" in e for e in errors))
 
 
+    def test_schema_runtime_and_skill_dispositions_are_consistent(self) -> None:
+        from convergence_coverage import VALID_DISPOSITIONS
+        schema = json.loads((
+            PROJECT_ROOT / ".pact" / "schema" / "convergence-report.schema.json"
+        ).read_text(encoding="utf-8"))
+        accepted = set(schema["properties"]["coverage"]["items"]["properties"]
+                       ["disposition"]["enum"])
+        self.assertEqual(accepted, VALID_DISPOSITIONS)
+        guide = (PROJECT_ROOT / ".agents" / "skills" / "convergence-review.md").read_text(
+            encoding="utf-8"
+        )
+        for disposition in sorted(accepted):
+            self.assertIn("`" + disposition + "`", guide)
+        self.assertIn("A missing artifact is **never** `updated`", guide)
+
 if __name__ == "__main__":
     unittest.main()
