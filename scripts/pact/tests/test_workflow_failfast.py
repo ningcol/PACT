@@ -52,5 +52,22 @@ class WorkflowFailFastTests(unittest.TestCase):
         )
 
 
+    def test_all_synthetic_cases_remain_an_explicit_failfast_check(self):
+        config = (
+            ROOT / ".github" / "workflows" / "pact-check.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "      - name: Run all three PACT-only synthetic evaluation cases\n"
+            "        shell: bash\n"
+            "        run: |\n"
+            "          set -euo pipefail\n"
+            "          python scripts/benchmark/eight_stage_synthetic.py",
+            config,
+        )
+        self.assertIn('assert report["case_count"] == 3', config)
+        self.assertIn('assert report["owner_time_minutes"] is None', config)
+        self.assertIn('assert report["release_attestation"] is False', config)
+
+
 if __name__ == "__main__":
     unittest.main()
