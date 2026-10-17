@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import pathlib
 import re
 import sys
@@ -227,6 +228,49 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
                     errors.append(
                         f"{path}: superseded_by '{superseded_by}' must target the same artifact type"
                     )
+
+    # Decision lineage must be acyclic. A valid existing ID alone cannot
+    # distinguish a historical chain from mutually superseding decisions.
+    # Convert either direction of the optional metadata to one successor ->
+    # predecessor edge. Matching two-way metadata produces the SAME edge.
+    # A missing reverse link stays legal for older one-way Decision records.
+    lineage: dict[str, set[str]] = {
+        ident: set()
+        for ident, artifact in seen_ids.items()
+        if isinstance(ident, str) and artifact.pact.get("type") == "decision"
+    }
+    for ident, artifact in seen_ids.items():
+        if ident not in lineage:
+            continue
+        predecessors = artifact.pact.get("supersedes", [])
+        if isinstance(predecessors, list):
+            for predecessor in predecessors:
+                if isinstance(predecessor, str) and predecessor in lineage:
+                    lineage[ident].add(predecessor)
+        successor = artifact.pact.get("superseded_by")
+        if isinstance(successor, str) and successor in lineage:
+            lineage[successor].add(ident)
+
+    incoming = {ident: 0 for ident in lineage}
+    for predecessors in lineage.values():
+        for predecessor in predecessors:
+            incoming[predecessor] += 1
+    ready = deque(sorted(ident for ident, degree in incoming.items() if degree == 0))
+    visited = 0
+    while ready:
+        ident = ready.popleft()
+        visited += 1
+        for predecessor in sorted(lineage[ident]):
+            incoming[predecessor] -= 1
+            if incoming[predecessor] == 0:
+                ready.append(predecessor)
+    if visited != len(lineage):
+        unresolved = sorted(ident for ident, degree in incoming.items() if degree > 0)
+        errors.append(
+            "decision supersession cycle detected (or downstream of a cycle): "
+            + ", ".join(unresolved[:12])
+            + (" ..." if len(unresolved) > 12 else "")
+        )
 
     return errors
 

@@ -18,8 +18,8 @@ from repository_files import repository_files
 
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-FORMAT_VERSION = 4
-PARSE_CACHE_VERSION = 1
+FORMAT_VERSION = 5
+PARSE_CACHE_VERSION = 2
 TITLE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -88,6 +88,8 @@ def parse_document(path: pathlib.Path, root: pathlib.Path) -> dict:
         "aliases": as_list(pact.get("aliases")),
         "paths": as_list(pact.get("paths")),
         "related": as_list(pact.get("related")),
+        "supersedes": as_list(pact.get("supersedes")),
+        "superseded_by": pact.get("superseded_by"),
         "verification": as_list(pact.get("verification")),
         "links": sorted(set(links)),
         "metadata_format": metadata_format,
@@ -147,12 +149,22 @@ def valid_project_index(index: dict, *, expected_paths: set[str]) -> bool:
             or not isinstance(doc.get("artifact_type"), str)
         ):
             return False
-        for name in ("domains", "aliases", "paths", "related", "verification", "links"):
+        for name in ("domains", "aliases", "paths", "related", "supersedes", "verification", "links"):
             values = doc.get(name)
             if not isinstance(values, list) or not all(
                 isinstance(value, str) for value in values
             ):
                 return False
+        # A complete current-generation index must not silently erase the
+        # relation back to an earlier Decision or its replacement. Values
+        # derive from source Markdown; the cache is never authority.
+        if "superseded_by" not in doc:
+            return False
+        replacement_id = doc["superseded_by"]
+        if replacement_id is not None and (
+            not isinstance(replacement_id, str) or not replacement_id
+        ):
+            return False
         observed_paths.add(path)
         if doc.get("id"):
             if not isinstance(doc["id"], str):
