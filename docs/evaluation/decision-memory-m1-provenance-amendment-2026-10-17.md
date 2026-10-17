@@ -16,3 +16,7 @@ Remediation is strictly provenance/instrument correctness:
 - Preserve the original CI failure as evidence of an **instrument defect**, not a PACT decision-memory retrieval failure. The first valid result can only be collected after this fix.
 
 The original preregistration's statement naming \`14693c...\` the M0 corpus should be read with this correction; this amendment does not authorize tuning scores or reinterpretation of synthetic diagnostics as real Agent evidence. The full real-Agent/Owner and release gates remain HOLD.
+
+## Cross-platform follow-up on the same frozen inputs
+
+On Windows CI at head `87a4f2525cd51b684855e814ffe10bd7139f59bc`, source checkout CRLF translation caused a second **instrument-only** false positive: worktree byte hashes differed from the original LF-normalized committed Git blobs. No scoring task/answer/corpus was changed. The runner now normalizes only CRLF-to-LF when reconstructing the Git text blob hash, while retaining content-sensitive verification; its regression proves that an added byte is still rejected. This does not relax any acceptance or allow post-freeze input edits.
