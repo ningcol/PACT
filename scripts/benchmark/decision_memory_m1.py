@@ -235,7 +235,7 @@ def normalized_installed_source_hashes(
     """Compare canonical text, unaffected by Windows write_text CRLF conversion."""
     return dict(sorted(
         (name, hashlib.sha256(
-            m0.safe_file(target, name).read_bytes().replace(b"\\r\\n", b"\\n")
+            m0.safe_file(target, name).read_bytes().replace(b"\r\n", b"\n")
         ).hexdigest())
         for name in relative_paths
     ))
