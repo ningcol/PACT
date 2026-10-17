@@ -6,6 +6,7 @@ metadata/index boundaries, not semantic validity or automatic approval.
 from __future__ import annotations
 
 import copy
+import json
 import pathlib
 import shutil
 import sys
@@ -17,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 
 import check
 import map as project_map
+from parse_cache import parse_with_cache, parsed_digest, signature
 
 
 class DecisionMemoryIndexIntegrityTests(unittest.TestCase):
@@ -77,6 +79,39 @@ class DecisionMemoryIndexIntegrityTests(unittest.TestCase):
         self.assertFalse(project_map.valid_project_index(
             incomplete, expected_paths={parsed["path"]},
         ))
+
+    def test_old_parse_cache_does_not_shadow_new_relation_metadata(self) -> None:
+        path = self.record(
+            "middle", "DEC-MIDDLE", supersedes=("DEC-OLD",),
+            superseded_by="DEC-NEW", status="superseded",
+        )
+        old_payload = project_map.parse_document(path, self.root)
+        old_payload.pop("supersedes")
+        old_payload.pop("superseded_by")
+        cache_path = self.root / ".pact" / "cache" / "project-file-cache.json"
+        cache_path.parent.mkdir(parents=True)
+        cache_path.write_text(json.dumps({
+            "version": 1,
+            "entries": {
+                path.relative_to(self.root).as_posix(): {
+                    "signature": signature(path),
+                    "parsed": old_payload,
+                    "parsed_sha256": parsed_digest(old_payload),
+                },
+            },
+        }), encoding="utf-8")
+        parsed, stats = parse_with_cache(
+            root=self.root,
+            paths=[path],
+            cache_path=cache_path,
+            cache_version=project_map.PARSE_CACHE_VERSION,
+            parser=lambda p: project_map.parse_document(p, self.root),
+        )
+        self.assertEqual(stats["parsed"], 1)
+        self.assertEqual(stats["reused"], 0)
+        restored = parsed[path.relative_to(self.root).as_posix()]
+        self.assertEqual(restored["supersedes"], ["DEC-OLD"])
+        self.assertEqual(restored["superseded_by"], "DEC-NEW")
 
     def test_cyclic_supersession_ids_do_not_pass_deterministic_check(self) -> None:
         self.record("a", "DEC-A", supersedes=("DEC-B",))
