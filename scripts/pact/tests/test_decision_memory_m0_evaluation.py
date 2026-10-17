@@ -87,16 +87,18 @@ class DecisionMemoryM0EvaluationTests(unittest.TestCase):
         }
         output = io.StringIO()
         with mock.patch.object(benchmark, "evaluate", return_value=deliberately_failed):
-            with contextlib.redirect_stdout(output):
-                result = benchmark.main()
+            with mock.patch.object(sys, "argv", ["decision_memory_m0.py"]):
+                with contextlib.redirect_stdout(output):
+                    result = benchmark.main()
         self.assertEqual(result, 1, "the benchmark must never exit green on FAIL")
         self.assertEqual(json.loads(output.getvalue()), deliberately_failed)
         with mock.patch.object(
             benchmark, "evaluate",
             return_value={"synthetic_engineering_gate": "PASS", "gate_failures": []},
         ):
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(benchmark.main(), 0)
+            with mock.patch.object(sys, "argv", ["decision_memory_m0.py"]):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(benchmark.main(), 0)
 
     def test_actual_installed_runtime_experiment_preserves_boundaries(self):
         report = benchmark.evaluate()
