@@ -38,6 +38,19 @@ class ColdStartM1Tests(unittest.TestCase):
             self.assertNotIn("explicit_decision_hint", case)
         self.assertEqual(cards["settings"]["max_path_hints"], 4)
 
+    def test_memory_snapshot_detects_non_markdown_long_term_notes(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="pact-m1-notes-") as temp:
+            root = pathlib.Path(temp)
+            folder = root / ".agents" / "decisions" / "implemented"
+            folder.mkdir(parents=True)
+            (folder / "original.md").write_text("# original", encoding="utf-8")
+            before = benchmark.source_snapshot(root)
+            (folder / "new-note.json").write_text('{"note":"unnecessary"}', encoding="utf-8")
+            after = benchmark.source_snapshot(root)
+            self.assertEqual(len(after), len(before) + 1)
+            self.assertIn(".agents/decisions/implemented/new-note.json", after)
+
     def test_git_blob_pin_ignores_checkout_crlf_but_not_content_changes(self):
         import tempfile
         original = benchmark.CARDS.read_bytes().replace(b"\r\n", b"\n")
@@ -119,7 +132,9 @@ class ColdStartM1Tests(unittest.TestCase):
                 "changed_paths": case["changed_paths"],
                 "A": {"context": {
                     "returncode": 0, "status": "candidate",
-                    "current_decision_ids": selected, "applicable_rule_ids": [],
+                    "current_decision_ids": selected,
+                    "selected_ids": [] if cid == "broker-local-counter" else selected,
+                    "applicable_rule_ids": [],
                     "selected_knowledge_files": 1, "estimated_selected_tokens": 10,
                     "code_files": 0},
                     "discovery": {"returncode": 0}},
@@ -139,6 +154,7 @@ class ColdStartM1Tests(unittest.TestCase):
         self.assertEqual(report["synthetic_safety_gate"], "FAIL")
         self.assertTrue(any("promoted" in failure for failure in report["gate_failures"]))
         self.assertTrue(any("unrelated" in failure for failure in report["gate_failures"]))
+        self.assertTrue(any("not materialized" in failure for failure in report["gate_failures"]))
         self.assertEqual(report["target_decision_count"], 7)
         self.assertFalse(report["agent_obedience_verified"])
         self.assertEqual(report["release_gate"], "HOLD")
@@ -162,6 +178,10 @@ class ColdStartM1Tests(unittest.TestCase):
         result = benchmark.evaluate()
         self.assertEqual(result["case_count"], 8)
         self.assertEqual(result["target_decision_count"], 7)
+        self.assertGreaterEqual(result["A_oracle_extraneous_current_candidates"], 0)
+        self.assertGreaterEqual(result["A_total_current_decision_candidates"],
+                                result["A_matched_decisions"])
+        self.assertTrue(result["precision_proxy_is_not_verified_semantic_precision"])
         self.assertEqual(result["knowledge_files_before"], 9)
         self.assertEqual(result["knowledge_source_mutations"], [])
         self.assertEqual(result["knowledge_files_after"], 9)
