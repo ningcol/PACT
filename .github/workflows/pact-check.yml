@@ -122,6 +122,37 @@ jobs:
           assert data["synthetic_engineering_gate"] == "PASS", data["gate_failures"]
           PY
 
+      - name: Frozen installed Decision-memory M1 cold-start diagnostic (not an Agent trial)
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_exit=0
+          python scripts/benchmark/decision_memory_m1.py > /tmp/pact-decision-memory-m1.json || run_exit=$?
+          echo "M1 complete case-level synthetic diagnostic JSON, including failures:"
+          cat /tmp/pact-decision-memory-m1.json
+          test "$run_exit" -eq 0
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/pact-decision-memory-m1.json").read_text(encoding="utf-8"))
+          assert report["case_count"] == 8
+          assert report["target_decision_count"] == 7
+          assert report["knowledge_source_mutations"] == []
+          assert report["synthetic_safety_gate"] == "PASS", report["gate_failures"]
+          assert report["real_agent_executed"] is False
+          assert report["independent_holdout"] is False
+          assert report["agent_obedience_verified"] is False
+          assert report["release_gate"] == "HOLD"
+          for case in report["case_results"]:
+              print(
+                  f"{case['id']}: A_found={case['A_matched']} "
+                  f"A_missed={case['A_missing']} "
+                  f"metadata_only={case['B_path_current_hit']} "
+                  f"extra_context_est_tokens=0"
+              )
+          print("M1 path suggestions never entered Context; NO real Agent/Owner claim")
+          PY
+
       - name: Build derived project map
         run: |
           python scripts/pact/pact.py map --output /tmp/pact-project-map.json --ensure
