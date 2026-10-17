@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "developer-authored-synthetic-decision-oracle",
+  "note": "Prepared together with fixture by the implementer. NOT independent, blinded, real-Agent or Owner evidence. Do not materialize this file into installed projects.",
+  "expected": {
+    "cache-lexical": [
+      "DEC-CACHE-OWNERSHIP"
+    ],
+    "code-path-vocabulary-gap": [
+      "DEC-BROKER-EDGE"
+    ],
+    "pathless-vocabulary-gap": [
+      "DEC-FLUX-CHANNEL"
+    ],
+    "stale-path-after-move": [
+      "DEC-PAYLOAD-ANCHOR"
+    ],
+    "partial-supersession": [
+      "DEC-REPLAY-CURRENT"
+    ],
+    "rejected-alternative": [
+      "DEC-CACHE-OWNERSHIP"
+    ],
+    "unrelated-task": []
+  },
+  "historical_for_review": {
+    "partial-supersession": [
+      "DEC-REPLAY-OLD"
+    ],
+    "rejected-alternative": [
+      "DEC-CACHE-GLOBAL"
+    ]
+  }
+}
