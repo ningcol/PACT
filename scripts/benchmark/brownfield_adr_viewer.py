@@ -115,6 +115,22 @@ def validate_frozen(cards: dict, target: pathlib.Path) -> None:
             raise ValueError(f"source ADR content no longer matches pin: {relative}")
 
 
+def rebase_legacy_adr_links(original: str) -> str:
+    """Keep original ADR text/labels, adjust ONLY relative Markdown link targets.
+
+    Original doc/adr/ siblings are relative to that directory. The test-only
+    PACT copy lives three directories deep under .agents/decisions/{status}/.
+    Leaving URLs unchanged makes the installed PACT link-integrity check fail.
+    We do not edit any original ADR, change heading text, or add task aliases.
+    """
+    return re.sub(
+        r"(\]\()(000[1-6]-[a-z0-9-]+\.md)(\))",
+        lambda match: match.group(1) + "../../../doc/adr/" +
+        match.group(2) + match.group(3),
+        original,
+    )
+
+
 def render_adapted_original(doc: dict, source_text: str) -> str:
     """No new aliases, paths, domain hypotheses or invented Owner approval."""
     match = re.search(r"^#\s+(.+)$", source_text, flags=re.MULTILINE)
@@ -141,7 +157,8 @@ def render_adapted_original(doc: dict, source_text: str) -> str:
         *lines, "+++", "", "# " + match.group(1), "",
         "Source (unchanged, project-authored): " + doc["source"],
         "Test-only projection of source ADR; not authenticated PACT Owner approval.",
-        "", source_text.rstrip(), "",
+        "Original prose retained; relative Markdown link targets are rebased in this copy.",
+        "", rebase_legacy_adr_links(source_text.rstrip()), "",
     ])
 
 
