@@ -95,6 +95,81 @@ class ColdStartM1Tests(unittest.TestCase):
         )
         self.assertEqual(small["omitted_candidates"], 2)
 
+    def test_malformed_unclaimed_context_artifact_is_not_safe(self):
+        self.assertFalse(benchmark.valid_context_artifact({}))
+        self.assertFalse(benchmark.valid_context_artifact({
+            "id": None, "artifact_type": "document", "path": "README.md",
+            "sha256": "not-a-digest",
+        }))
+        self.assertTrue(benchmark.valid_context_artifact({
+            "id": None, "artifact_type": "document", "path": "README.md",
+            "sha256": "a" * 64,
+        }))
+        cards, corpus, oracle = self.inputs()
+        predictions = []
+        for card in cards["cases"]:
+            discovery = {
+                "command": ["pact.py", "discover", card["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {"results": []},
+            }
+            packet = {
+                "command": ["pact.py", "context", card["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {
+                    "status": "candidate", "artifacts": [{}],
+                    "decisions": [], "applicable_rules": [],
+                    "code_artifacts": [], "known_unknowns": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                },
+            }
+            with mock.patch.object(m0, "run_json", side_effect=[discovery, packet]):
+                a = benchmark.context_probe(pathlib.Path("/tmp/unused"), card,
+                                            cards["settings"])
+            self.assertTrue(a["context"]["schema_errors"])
+            predictions.append({
+                "id": card["id"], "task": card["task"],
+                "type": card["type"], "changed_paths": card["changed_paths"],
+                "A": a,
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False,
+                    "retrieval_treatment": False,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        scored = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(scored["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("malformed discovery/context" in issue
+                            for issue in scored["gate_failures"]))
+
+    def test_main_preserves_completed_a_probes_on_map_failure(self):
+        import subprocess
+        previous = {"id": "pre-failure", "A": {"context": {"returncode": 0}},
+                    "B_path_navigation_only": None}
+        def interrupted(progress):
+            progress["stage"] = "collect-predictions"
+            progress["predictions"] = [previous]
+            raise ValueError("installed Project Map malformed")
+        output = io.StringIO()
+        with mock.patch.object(benchmark, "evaluate", side_effect=interrupted):
+            with mock.patch.object(sys, "argv", ["decision_memory_m1.py"]):
+                with redirect_stdout(output):
+                    result = benchmark.main()
+        self.assertEqual(result, 1)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(report["completed_probes_preserved"])
+        self.assertEqual(report["partial_probe_evidence"]["predictions"], [previous])
+        self.assertIn("Project Map malformed", report["gate_failures"][0])
+        self.assertEqual(report["release_gate"], "HOLD")
+
     def test_malformed_discovery_record_is_not_a_valid_empty_hit(self):
         self.assertFalse(benchmark.valid_discovery_hit({}))
         self.assertFalse(benchmark.valid_discovery_hit({
