@@ -52,6 +52,29 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
         self.assertIn("paths = []", md)
         self.assertNotIn('status = "confirmed"', md)
 
+    def test_copied_adrs_preserve_text_and_rebase_only_original_sibling_links(self):
+        original = (
+            "# 4. Distinguish superseded records with colour\n\n"
+            "## Status\n\nAccepted\n\n"
+            "Supercedes [3. Old header](0003-use-same-colour-for-all-headers.md)\n\n"
+            "Amended by [5. Amendments](0005-distinguish-amendments-to-records-with-colour.md)\n"
+        )
+        untouched = original[:]
+        md = pilot.render_adapted_original(self.fixture()["upstream_docs"][3], original)
+        self.assertEqual(original, untouched)
+        self.assertIn(
+            "[3. Old header](../../../doc/adr/0003-use-same-colour-for-all-headers.md)",
+            md,
+        )
+        self.assertIn(
+            "[5. Amendments](../../../doc/adr/0005-distinguish-amendments-to-records-with-colour.md)",
+            md,
+        )
+        self.assertIn("Supercedes", md)
+        self.assertIn("Amended by", md)
+        self.assertNotIn("aliases = [", md.replace("aliases = []", ""))
+
+
     def test_reject_invented_or_tampered_source_status(self):
         original = self.fixture()["upstream_docs"][3]
         with self.assertRaisesRegex(ValueError, "upgrade"):
