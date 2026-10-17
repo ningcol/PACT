@@ -111,6 +111,8 @@ jobs:
           print("M0 observed gate failures:", json.dumps(report["gate_failures"]))
           print("PACT M0: diagnostic only, NOT a real Agent/Owner benefit experiment")
           PY
+          echo "M0 full synthetic CLI raw A/B report (fictional data; no actual Agent/Owner):"
+          cat /tmp/pact-decision-memory-m0.json
 
       - name: Build derived project map
         run: |
