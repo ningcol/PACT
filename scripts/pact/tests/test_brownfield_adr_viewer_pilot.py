@@ -109,6 +109,74 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             (folder / "extra.json").write_text("{}", encoding="utf-8")
             self.assertEqual(len(pilot.source_snapshot(target)), len(baseline) + 1)
 
+    def test_nested_success_records_reject_missing_source_and_type(self):
+        self.assertFalse(pilot.valid_discovery_result({}))
+        self.assertFalse(pilot.valid_discovery_result({
+            "path": "docs/test.md", "artifact_type": "decision",
+            "id": None, "status": "implemented",
+        }))
+        self.assertTrue(pilot.valid_discovery_result({
+            "path": "docs/README.md", "artifact_type": "document",
+            "id": None, "status": None,
+        }))
+        self.assertFalse(pilot.valid_context_artifact({"id": "DEC-ADR-0002"}))
+        self.assertFalse(pilot.valid_context_artifact({
+            "id": "DEC-ADR-0002", "artifact_type": "decision",
+            "path": ".agents/decisions/implemented/foo.md", "sha256": "",
+        }))
+
+    def test_ab_probe_preserves_finished_cases_when_later_cli_times_out(self):
+        cards = self.fixture()
+        calls = []
+        def scripted(_target, command):
+            calls.append(command)
+            if len(calls) == 3:
+                raise subprocess.TimeoutExpired(command, 1)
+            if command[0] == "discover":
+                data = {"results": []}
+            else:
+                data = {
+                    "status": "candidate", "artifacts": [],
+                    "decisions": [], "applicable_rules": [],
+                    "known_unknowns": [], "code_artifacts": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                }
+            return {"command": ["pact.py", *command], "returncode": 0,
+                    "elapsed_ms": 1, "stderr": "", "data": data}
+        progress = []
+        with mock.patch.object(pilot.m0, "run_json", side_effect=scripted):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                pilot.probe(pathlib.Path("/tmp/not-accessed"), cards, progress)
+        self.assertEqual(len(progress), 1)
+        self.assertEqual(progress[0]["id"], cards["tasks"][0]["id"])
+        self.assertEqual(progress[0]["context"]["returncode"], 0)
+
+    def test_main_preserves_partial_probe_data_on_mid_evaluation_failure(self):
+        progress_record = {"id": "completed-case", "context": {"returncode": 0}}
+        def abort(_target, _cards, progress):
+            progress["stage"] = "legacy-probing"
+            progress["A_plain_legacy"] = [progress_record]
+            raise subprocess.TimeoutExpired(["installed-pact.py"], 3)
+        with tempfile.TemporaryDirectory(prefix="pact-partial-evidence-") as td:
+            target = pathlib.Path(td) / "public-project"
+            target.mkdir()
+            with mock.patch.dict("os.environ", {
+                "GITHUB_ACTIONS": "true", "RUNNER_TEMP": td,
+            }):
+                with mock.patch.object(sys, "argv", [
+                    "brownfield_adr_viewer.py", "--target", str(target),
+                ]):
+                    with mock.patch.object(pilot, "evaluate", side_effect=abort):
+                        output = io.StringIO()
+                        with redirect_stdout(output):
+                            rc = pilot.main()
+        self.assertEqual(rc, 1)
+        report = json.loads(output.getvalue())
+        self.assertTrue(report["partial_collection_failed"])
+        self.assertTrue(report["completed_probes_preserved"])
+        self.assertEqual(report["raw_probes"]["A_plain_legacy"], [progress_record])
+        self.assertEqual(report["engineering_safety_gate"], "FAIL")
+
     def test_installed_archive_must_match_source_rebuilt_bytes(self):
         """Pinned source runtime digest, not merely a present pyz filename."""
         with tempfile.TemporaryDirectory(prefix="pact-brownfield-runtime-") as td:
