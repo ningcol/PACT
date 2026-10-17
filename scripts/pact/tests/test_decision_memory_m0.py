@@ -79,6 +79,11 @@ class DecisionMemoryIndexIntegrityTests(unittest.TestCase):
         self.assertFalse(project_map.valid_project_index(
             incomplete, expected_paths={parsed["path"]},
         ))
+        incomplete_reverse = copy.deepcopy(index)
+        del incomplete_reverse["documents"][0]["superseded_by"]
+        self.assertFalse(project_map.valid_project_index(
+            incomplete_reverse, expected_paths={parsed["path"]},
+        ))
 
     def test_old_parse_cache_does_not_shadow_new_relation_metadata(self) -> None:
         path = self.record(
