@@ -95,6 +95,52 @@ class ColdStartM1Tests(unittest.TestCase):
         )
         self.assertEqual(small["omitted_candidates"], 2)
 
+    def test_successful_malformed_discover_is_not_silently_treated_as_no_hits(self):
+        cards, corpus, oracle = self.inputs()
+        predictions = []
+        for case in cards["cases"]:
+            discovery = {
+                "command": ["pact.py", "discover", case["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {"results": "unexpected-object-not-array"},
+            }
+            context = {
+                "command": ["pact.py", "context", case["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {
+                    "status": "candidate", "artifacts": [],
+                    "decisions": [], "applicable_rules": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                    "code_artifacts": [], "known_unknowns": [],
+                },
+            }
+            with mock.patch.object(m0, "run_json", side_effect=[discovery, context]):
+                probed = benchmark.context_probe(
+                    pathlib.Path("/tmp/synthetic-no-cli"), case, cards["settings"]
+                )
+            self.assertTrue(probed["discovery"]["schema_errors"])
+            predictions.append({
+                "id": case["id"], "task": case["task"],
+                "type": case["type"], "changed_paths": case["changed_paths"],
+                "A": probed,
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False, "retrieval_treatment": False,
+                    "total_raw_matches": 0, "omitted_candidates": 0,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        result = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(result["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("malformed discovery/context" in x
+                            for x in result["gate_failures"]))
+
     def test_installed_commands_never_receive_scoring_oracle_or_decision_id(self):
         cards, _, _ = self.inputs()
         calls = []
@@ -134,7 +180,7 @@ class ColdStartM1Tests(unittest.TestCase):
                     "returncode": 0, "status": "candidate",
                     "current_decision_ids": selected,
                     "selected_ids": [] if cid == "broker-local-counter" else selected,
-                    "applicable_rule_ids": [],
+                    "applicable_rule_ids": ["RULE-CACHE-RETENTION"] if cid == "cache-owner-conflict" else [],
                     "selected_knowledge_files": 1, "estimated_selected_tokens": 10,
                     "code_files": 0},
                     "discovery": {"returncode": 0}},
@@ -155,6 +201,7 @@ class ColdStartM1Tests(unittest.TestCase):
         self.assertTrue(any("promoted" in failure for failure in report["gate_failures"]))
         self.assertTrue(any("unrelated" in failure for failure in report["gate_failures"]))
         self.assertTrue(any("not materialized" in failure for failure in report["gate_failures"]))
+        self.assertTrue(any("applicable Rule not materialized" in failure for failure in report["gate_failures"]))
         self.assertEqual(report["target_decision_count"], 7)
         self.assertFalse(report["agent_obedience_verified"])
         self.assertEqual(report["release_gate"], "HOLD")
@@ -178,6 +225,8 @@ class ColdStartM1Tests(unittest.TestCase):
         result = benchmark.evaluate()
         self.assertEqual(result["case_count"], 8)
         self.assertEqual(result["target_decision_count"], 7)
+        self.assertRegex(result["evaluated_installed_compact_runtime_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(result["evaluated_source_checkout_git_sha"], r"^[0-9a-f]{40}$")
         self.assertGreaterEqual(result["A_oracle_extraneous_current_candidates"], 0)
         self.assertGreaterEqual(result["A_total_current_decision_candidates"],
                                 result["A_matched_decisions"])
