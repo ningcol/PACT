@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "kind": "decision-memory-m0-frozen-synthetic-input",
+  "authority_notice": "Fixture documents are fictional and unapproved; never claim an actual Owner or real Agent reviewed these.",
+  "baseline_main_sha": "1192363a1539ee77d5819a9cee6d9df64fb1fe17",
+  "settings": {
+    "intent": "work",
+    "knowledge_limit": 4,
+    "token_budget": 2048,
+    "code_context": false,
+    "risk": "low",
+    "success": "Locate existing decision rationale before changing behavior"
+  },
+  "documents": [
+    {
+      "path": ".agents/decisions/implemented/cache-ownership.md",
+      "type": "decision",
+      "id": "DEC-CACHE-OWNERSHIP",
+      "status": "implemented",
+      "title": "Guarded cache ownership",
+      "aliases": [
+        "shared cache"
+      ],
+      "paths": [
+        "src/cache/coordinator.py"
+      ],
+      "body": "Keep eviction in one coordinator. Multiple independent mutable maps leave stale entries under concurrency. Revisit only if a separately verified eviction owner exists."
+    },
+    {
+      "path": ".agents/decisions/rejected/cache-global.md",
+      "type": "decision",
+      "id": "DEC-CACHE-GLOBAL",
+      "status": "rejected",
+      "title": "Unbounded global cache allocation",
+      "aliases": [],
+      "paths": [
+        "src/cache/coordinator.py"
+      ],
+      "body": "Rejected a single unbounded mutable cache map because eviction and stale writes were uncontrolled. The rejection assumes there is no independent bound enforcement; reconsider if that premise changes."
+    },
+    {
+      "path": ".agents/decisions/implemented/broker-boundary.md",
+      "type": "decision",
+      "id": "DEC-BROKER-EDGE",
+      "status": "implemented",
+      "title": "Broker lease authority",
+      "aliases": [],
+      "paths": [
+        "src/auth/token_gate.py"
+      ],
+      "body": "The upstream broker alone owns renewal epochs. Duplicating a local epoch store creates conflicting authorities. Revisit if the single upstream producer guarantee changes."
+    },
+    {
+      "path": ".agents/decisions/implemented/flux-channel.md",
+      "type": "decision",
+      "id": "DEC-FLUX-CHANNEL",
+      "status": "implemented",
+      "title": "Flux arbitration ownership",
+      "aliases": [],
+      "paths": [],
+      "body": "A sole producer grants ordered sequence leases. Cloned local counter state can create a split-brain. Revisit when monotonic ordering is externally guaranteed."
+    },
+    {
+      "path": ".agents/decisions/implemented/envelope-boundary.md",
+      "type": "decision",
+      "id": "DEC-PAYLOAD-ANCHOR",
+      "status": "implemented",
+      "title": "Deterministic envelope boundary",
+      "aliases": [],
+      "paths": [
+        "src/account/legacy_bridge.py"
+      ],
+      "body": "Canonical serialization belongs at ingress. Repeated serializers fork digest identity; revisit only if an authenticated upstream canonicalizer is introduced."
+    },
+    {
+      "path": ".agents/decisions/implemented/replay-current.md",
+      "type": "decision",
+      "id": "DEC-REPLAY-CURRENT",
+      "status": "implemented",
+      "title": "Bounded webhook replay",
+      "aliases": [],
+      "paths": [
+        "src/webhook/replay.py"
+      ],
+      "supersedes": [
+        "DEC-REPLAY-OLD"
+      ],
+      "body": "Bounded webhook replay retries preserve the original arrival order; only the historic backoff cap was changed. Original order-preservation rationale remains active. Revisit after authenticated sequence acknowledgements."
+    },
+    {
+      "path": ".agents/decisions/implemented/replay-old.md",
+      "type": "decision",
+      "id": "DEC-REPLAY-OLD",
+      "status": "superseded",
+      "title": "Legacy webhook replay",
+      "aliases": [],
+      "paths": [
+        "src/webhook/replay.py"
+      ],
+      "superseded_by": "DEC-REPLAY-CURRENT",
+      "body": "Previously webhook replay waited indefinitely. The older ordering invariant is recorded for history; see DEC-REPLAY-CURRENT for the current cap and constraints."
+    },
+    {
+      "path": ".agents/decisions/implemented/protocol-wire.md",
+      "type": "decision",
+      "id": "DEC-WIRE-ORDER",
+      "status": "implemented",
+      "title": "Binary wire encoding endianness",
+      "aliases": [],
+      "paths": [
+        "src/transport/wire.py"
+      ],
+      "body": "The wire encoding uses network byte order because deployed peers require consistent byte layouts. Revisit when the external wire contract is versioned."
+    },
+    {
+      "path": "docs/product/rules/cache-retention.md",
+      "type": "rule",
+      "id": "RULE-CACHE-RETENTION",
+      "status": "confirmed",
+      "title": "Cache retention observable behavior",
+      "aliases": [],
+      "paths": [
+        "src/cache/coordinator.py"
+      ],
+      "body": "Cached results visible to the user must expire under the documented retention policy. This is a fictional confirmed Rule inside a local test fixture only."
+    }
+  ],
+  "code_files": [
+    {
+      "path": "src/cache/coordinator.py",
+      "text": "def evict():\n    return None\n"
+    },
+    {
+      "path": "src/auth/token_gate.py",
+      "text": "def rollover():\n    return None\n"
+    },
+    {
+      "path": "src/replay/processor.py",
+      "text": "def deduplicate():\n    return None\n"
+    },
+    {
+      "path": "src/account/identity_bridge.py",
+      "text": "def handle_route():\n    return None\n"
+    },
+    {
+      "path": "src/webhook/replay.py",
+      "text": "def retry():\n    return None\n"
+    },
+    {
+      "path": "src/transport/wire.py",
+      "text": "def encode():\n    return None\n"
+    }
+  ],
+  "cases": [
+    {
+      "id": "cache-lexical",
+      "task": "Refine shared cache eviction process",
+      "explicit_decision_hint": "DEC-CACHE-OWNERSHIP",
+      "signal": "known-id and matching vocabulary"
+    },
+    {
+      "id": "code-path-vocabulary-gap",
+      "task": "Update src/auth/token_gate.py during rollover",
+      "explicit_decision_hint": "DEC-BROKER-EDGE",
+      "signal": "known-id, path in metadata only, unrelated decision vocabulary"
+    },
+    {
+      "id": "pathless-vocabulary-gap",
+      "task": "Harden src/replay/processor.py deduplication",
+      "explicit_decision_hint": "DEC-FLUX-CHANNEL",
+      "signal": "known-id only for B, no path or matching words"
+    },
+    {
+      "id": "stale-path-after-move",
+      "task": "Change src/account/identity_bridge.py routing",
+      "explicit_decision_hint": "DEC-PAYLOAD-ANCHOR",
+      "signal": "old path is absent and only the destination code exists"
+    },
+    {
+      "id": "partial-supersession",
+      "task": "Adjust bounded webhook replay retries",
+      "explicit_decision_hint": "DEC-REPLAY-CURRENT",
+      "signal": "new implemented Decision and superseded historical rationale"
+    },
+    {
+      "id": "rejected-alternative",
+      "task": "Consider unbounded global cache allocation",
+      "explicit_decision_hint": "DEC-CACHE-OWNERSHIP",
+      "signal": "a rejected Decision is evidence, not an automatically confirmed Rule"
+    },
+    {
+      "id": "unrelated-task",
+      "task": "Polish release changelog heading style",
+      "explicit_decision_hint": null,
+      "signal": "unrelated low-risk routine task must not accrue Decision overhead"
+    }
+  ]
+}
