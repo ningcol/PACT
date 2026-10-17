@@ -15,6 +15,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 import decision_memory_m0 as m0
 
@@ -162,6 +163,39 @@ def render_adapted_original(doc: dict, source_text: str) -> str:
     ])
 
 
+def verify_installed_runtime_against_source(installed_archive: pathlib.Path) -> dict:
+    """Rebuild from *this checkout* in a fresh scratch dir and compare exact bytes."""
+    if not installed_archive.is_file() or installed_archive.is_symlink():
+        raise ValueError("installed compact PACT archive is missing or symlinked")
+    with tempfile.TemporaryDirectory(prefix="pact-brownfield-source-bundle-") as td:
+        expected = pathlib.Path(td) / "source-rebuilt.pyz"
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "pact" / "runtime_bundle.py"),
+             "--source-root", str(ROOT), "--output", str(expected)],
+            cwd=ROOT, capture_output=True, text=True, check=False, timeout=90,
+        )
+        if completed.returncode or not expected.is_file():
+            raise RuntimeError("cannot build trusted source PACT runtime: " +
+                               completed.stderr[:500])
+        expected_sha = m0.digest_file(expected)
+    actual_sha = m0.digest_file(installed_archive)
+    if actual_sha != expected_sha:
+        raise ValueError(
+            "installed PACT compact runtime differs from exact source checkout "
+            f"(installed={actual_sha}, expected={expected_sha})"
+        )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT,
+        capture_output=True, text=True, check=False, timeout=15,
+    )
+    return {
+        "source_checkout_git_sha": revision.stdout.strip() if revision.returncode == 0 else None,
+        "installed_archive_sha256": actual_sha,
+        "source_rebuilt_archive_sha256": expected_sha,
+        "installed_source_match": True,
+    }
+
+
 def install_pact(target: pathlib.Path) -> dict:
     call = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pact" / "init.py"),
@@ -175,9 +209,10 @@ def install_pact(target: pathlib.Path) -> dict:
             "PACT installation failed or installed runtime is not unique: " +
             (call.stderr + call.stdout)[:1000]
         )
+    identity = verify_installed_runtime_against_source(archives[0])
     return {"pact_loader": True, "installed_pyz_count": len(archives),
             "installed_pyz_relative": archives[0].relative_to(target).as_posix(),
-            "init_returncode": call.returncode}
+            "init_returncode": call.returncode, **identity}
 
 
 def project_adrs(target: pathlib.Path, cards: dict) -> list[str]:
@@ -217,8 +252,32 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
         ])
         disc = discovery["data"] if isinstance(discovery["data"], dict) else {}
         envelope = context["data"] if isinstance(context["data"], dict) else {}
-        budget = envelope.get("context_budget") or {}
-        selected = envelope.get("artifacts") or []
+        discovery_schema_errors = []
+        context_schema_errors = []
+        if discovery["returncode"] == 0:
+            if not isinstance(discovery["data"], dict):
+                discovery_schema_errors.append("successful discovery response is not an object")
+            if not isinstance(disc.get("results"), list) or any(
+                not isinstance(v, dict) for v in disc.get("results", [])
+            ):
+                discovery_schema_errors.append("successful discovery results not a list of objects")
+        if context["returncode"] == 0:
+            if not isinstance(context["data"], dict):
+                context_schema_errors.append("successful Context response is not an object")
+            for key in ("artifacts", "decisions", "applicable_rules", "code_artifacts", "known_unknowns"):
+                if not isinstance(envelope.get(key), list):
+                    context_schema_errors.append(f"Context {key} not a list")
+            if not isinstance(envelope.get("context_budget"), dict):
+                context_schema_errors.append("Context budget not an object")
+        budget = envelope.get("context_budget")
+        if not isinstance(budget, dict):
+            budget = {}
+        selected = envelope.get("artifacts")
+        if not isinstance(selected, list):
+            selected = []
+        if any(not isinstance(v, dict) for v in selected):
+            context_schema_errors.append("Context artifacts contain non-object values")
+            selected = [v for v in selected if isinstance(v, dict)]
         result.append({
             "id": case["id"], "task": task, "kind": case["kind"],
             "discovery": {
@@ -226,6 +285,7 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
                 "returncode": discovery["returncode"],
                 "elapsed_ms": discovery["elapsed_ms"],
                 "stderr": discovery["stderr"],
+                "schema_errors": discovery_schema_errors,
                 "hits": [
                     {"id": x.get("id"), "status": x.get("status"),
                      "type": x.get("artifact_type")}
@@ -237,6 +297,7 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
                 "returncode": context["returncode"],
                 "elapsed_ms": context["elapsed_ms"],
                 "stderr": context["stderr"],
+                "schema_errors": context_schema_errors,
                 "status": envelope.get("status"),
                 "selected_ids": [x.get("id") for x in selected if isinstance(x, dict)],
                 "current_decision_ids": envelope.get("decisions") or [],
@@ -293,6 +354,8 @@ def score(predictions: dict, cards: dict, oracle: dict) -> dict:
             context = rec["context"]
             if rec["discovery"]["returncode"] or context["returncode"]:
                 failures.append(f"{cid}/{phase}: CLI failure")
+            if rec["discovery"].get("schema_errors") or context.get("schema_errors"):
+                failures.append(f"{cid}/{phase}: malformed successful CLI payload")
             if context["status"] != "candidate":
                 failures.append(f"{cid}/{phase}: unexpected authority envelope")
             if context["selected_knowledge_files"] > cards["settings"]["knowledge_limit"]:
@@ -365,6 +428,8 @@ def score(predictions: dict, cards: dict, oracle: dict) -> dict:
         "real_model_tokens": None, "owner_clarification_count": None,
         "owner_time_minutes": None, "release_gate": "HOLD",
         "install": predictions["install"],
+        "evaluated_source_checkout_git_sha": predictions["install"].get("source_checkout_git_sha"),
+        "evaluated_installed_runtime_sha256": predictions["install"].get("installed_archive_sha256"),
         "pact_project_check_returncode": predictions["project_check_returncode"],
         "cases": cards_output,
         "raw_probes": predictions,
