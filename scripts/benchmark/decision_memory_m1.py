@@ -104,7 +104,9 @@ def source_snapshot(target: pathlib.Path) -> dict[str, str]:
     for relative in (".agents/decisions", "docs/product/rules"):
         folder = target / relative
         if folder.exists():
-            sources.extend(folder.rglob("*.md"))
+            # Detect new/modified notes even if an Agent chose a non-Markdown extension.
+            sources.extend(path for path in folder.rglob("*")
+                           if path.is_file() or path.is_symlink())
     data = {}
     for path in sources:
         if path.is_symlink() or not path.resolve().is_relative_to(target.resolve()):
@@ -260,6 +262,7 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
     if not evidence["installation"].get("compact_archive_present"):
         failures.append("installed compact runtime missing")
     target_count = matched = candidate_union_hits = unrelated_selected = 0
+    total_current_candidates = oracle_extraneous = 0
     rows = []
     for prediction in predictions:
         cid = prediction["id"]
@@ -273,6 +276,10 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
             failures.append(f"{cid}: malformed installed Context authority lists")
             current, rules = [], []
         found = set(current)
+        # IDs in the summary are not proof the source document was selected.
+        selected_ids = runtime.get("selected_ids")
+        if not isinstance(selected_ids, list) or not found.issubset(set(selected_ids)):
+            failures.append(f"{cid}: claimed current Decision not materialized in Context")
         expected = set(oracle["expected_current"][cid])
         history = set(oracle["relevant_history"][cid])
         nav_current = {x["id"] for x in nav["current_candidates"]}
@@ -281,6 +288,8 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         matched += len(found & expected)
         candidate_union_hits += len(expected & (found | nav_current))
         unexpected = sorted(found - expected)
+        total_current_candidates += len(found)
+        oracle_extraneous += len(unexpected)
         if runtime["returncode"] or discovery["returncode"]:
             failures.append(f"{cid}: installed CLI returned nonzero")
         if runtime["status"] != "candidate":
@@ -343,13 +352,17 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         "case_count": len(rows),
         "target_decision_count": target_count,
         "A_matched_decisions": matched,
+        "A_total_current_decision_candidates": total_current_candidates,
+        "A_oracle_extraneous_current_candidates": oracle_extraneous,
+        "A_oracle_candidate_precision_proxy": matched / total_current_candidates if total_current_candidates else None,
+        "precision_proxy_is_not_verified_semantic_precision": True,
         "A_weighted_recall": matched / target_count if target_count else None,
         "B_diagnostic_union_candidate_coverage": candidate_union_hits / target_count if target_count else None,
         "B_is_actual_context_or_agent_recall": False,
         "unexpected_current_decisions_on_routine_task": unrelated_selected,
         "synthetic_safety_gate": "FAIL" if failures else "PASS",
         "gate_failures": failures,
-        "cold_start_effectiveness": "HOLD" if matched != target_count else "DIAGNOSTIC_ONLY",
+        "cold_start_effectiveness": "HOLD" if (matched != target_count or oracle_extraneous) else "DIAGNOSTIC_ONLY",
         "independent_real_agent_gate": "BLOCKED_NO_AUTHORIZED_RUNNER",
         "real_agent_executed": False,
         "independent_holdout": False,
