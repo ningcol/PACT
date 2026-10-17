@@ -30,6 +30,10 @@ class ColdStartM1Tests(unittest.TestCase):
         cards, corpus, oracle = self.inputs()
         benchmark.validate_cards(cards, corpus)
         benchmark.validate_oracle(oracle, cards, corpus)
+        self.assertEqual(
+            benchmark.blob_sha(benchmark.ROOT / "scripts" / "benchmark" / "decision_memory_m0.py"),
+            benchmark.M0_ORIGINAL_CARD_PROVENANCE_FIELD,
+        )
         self.assertEqual(cards["baseline_main_sha"],
                          "b96a64485e1c855c5caeedb2a2addcd766f6398b")
         self.assertEqual(len(cards["cases"]), 8)
@@ -207,6 +211,8 @@ class ColdStartM1Tests(unittest.TestCase):
         self.assertEqual(outcome["context"]["code_files"], 0)
         self.assertEqual(outcome["context"]["known_unknown_count"], 0)
         self.assertTrue(outcome["context"]["schema_errors"])
+        self.assertIn("context_before_normalization", progress)
+        self.assertEqual(progress["context_before_normalization"], malformed)
         self.assertEqual(progress["context"]["schema_errors"],
                          outcome["context"]["schema_errors"])
 
@@ -318,6 +324,16 @@ class ColdStartM1Tests(unittest.TestCase):
         self.assertTrue(benchmark.valid_discovery_hit({
             "artifact_type": "document", "id": None,
             "status": None, "path": "docs/readme.md",
+            "title": "Readme", "score": 5, "reasons": ["body contains query"],
+            "mixed_authority": False, "domains": [], "related": [],
+            "verification": [],
+        }))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "document", "id": None,
+            "status": None, "path": "docs/readme.md",
+            "title": "Readme", "score": "invalid", "reasons": [],
+            "mixed_authority": False, "domains": [], "related": [],
+            "verification": [],
         }))
 
     def test_invalid_project_map_cannot_hide_frozen_decisions(self):
