@@ -95,6 +95,67 @@ class ColdStartM1Tests(unittest.TestCase):
         )
         self.assertEqual(small["omitted_candidates"], 2)
 
+    def test_no_unknown_discover_id_or_forged_unclaimed_document(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="pact-m1-tamper-") as td:
+            project = pathlib.Path(td)
+            real_doc = project / "docs" / "project.md"
+            real_doc.parent.mkdir()
+            real_doc.write_text("# Real doc\n", encoding="utf-8")
+            genuine = benchmark.m0.digest_file(real_doc)
+            index = {"documents": [{
+                "path": "docs/project.md", "id": None,
+                "artifact_type": "document", "status": None
+            }]}
+            item = {
+                "A": {
+                    "discovery": {
+                        "hits": [{"path": "docs/project.md",
+                                  "id": "DEC-NOT-IN-FIXTURE",
+                                  "type": "decision", "status": "implemented"}],
+                        "schema_errors": [],
+                    },
+                    "context": {
+                        "selected_artifacts": [
+                            {"path": "docs/project.md", "id": None,
+                             "artifact_type": "document", "sha256": "a" * 64}
+                        ],
+                        "schema_errors": [],
+                    },
+                }
+            }
+            benchmark.verify_probe_source_evidence(project, item, index)
+            self.assertTrue(item["A"]["discovery"]["schema_errors"])
+            self.assertTrue(item["A"]["context"]["schema_errors"])
+            item["A"]["discovery"]["hits"] = [{
+                "path": "docs/project.md", "id": None,
+                "type": "document", "status": None
+            }]
+            item["A"]["context"]["selected_artifacts"][0]["sha256"] = genuine
+            item["A"]["discovery"]["schema_errors"] = []
+            item["A"]["context"]["schema_errors"] = []
+            benchmark.verify_probe_source_evidence(project, item, index)
+            self.assertEqual(item["A"]["discovery"]["schema_errors"], [])
+            self.assertEqual(item["A"]["context"]["schema_errors"], [])
+
+    def test_completed_discover_receipt_survives_context_timeout(self):
+        cards, _, _ = self.inputs()
+        discovery = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "elapsed_ms": 2, "stderr": "", "data": {"results": []},
+        }
+        partial = {}
+        with mock.patch.object(
+            m0, "run_json",
+            side_effect=[discovery, subprocess.TimeoutExpired(["context"], 2)],
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                benchmark.context_probe(
+                    pathlib.Path("/tmp/fake-m1"), cards["cases"][0],
+                    cards["settings"], partial,
+                )
+        self.assertEqual(partial["discovery_before_context"], discovery)
+
     def test_malformed_unclaimed_context_artifact_is_not_safe(self):
         self.assertFalse(benchmark.valid_context_artifact({}))
         self.assertFalse(benchmark.valid_context_artifact({
