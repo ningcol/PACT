@@ -50,6 +50,8 @@ def blob_sha(path: pathlib.Path) -> str:
 def validate_cards(cards: dict, corpus: dict) -> None:
     if blob_sha(CARDS) != CARDS_BLOB or blob_sha(m0.INPUTS) != M0_CORPUS_BLOB:
         raise ValueError("M1 frozen task cards or M0 source corpus were changed")
+    if blob_sha(ROOT / "scripts" / "benchmark" / "decision_memory_m0.py") != M0_ORIGINAL_CARD_PROVENANCE_FIELD:
+        raise ValueError("frozen M0 renderer/fixture builder changed")
     m0.validate_inputs(corpus)
     settings = cards.get("settings")
     if not isinstance(settings, dict) or settings != {
@@ -131,6 +133,18 @@ def valid_discovery_hit(hit: object) -> bool:
     if (not isinstance(path, str) or not path or chr(92) in path
             or pathlib.PurePosixPath(path).is_absolute()
             or ".." in pathlib.PurePosixPath(path).parts):
+        return False
+    # Scoring metadata is evidence too; reject malformed score/reason records
+    # rather than silently dropping invalid fields from the compact report.
+    score, reasons = hit.get("score"), hit.get("reasons")
+    if (not isinstance(score, int) or isinstance(score, bool) or score <= 0
+            or not isinstance(reasons, list)
+            or not all(isinstance(value, str) for value in reasons)
+            or not isinstance(hit.get("title"), str)
+            or not isinstance(hit.get("mixed_authority"), bool)
+            or any(not isinstance(hit.get(key), list)
+                   or not all(isinstance(v, str) for v in hit[key])
+                   for key in ("domains", "related", "verification"))):
         return False
     kind, ident, status = hit.get("artifact_type"), hit.get("id"), hit.get("status")
     if kind == "document":
@@ -366,6 +380,20 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dic
         if not isinstance(packet.get("context_budget"), dict):
             context_schema_errors.append("context budget is not an object")
         context_schema_errors.extend(validate_instance(packet, CONTEXT_SCHEMA))
+        if (packet.get("task") != task
+                or packet.get("goal") != task
+                or packet.get("observable_success") != settings["success"]
+                or packet.get("risk_level") != settings["risk"]
+                or packet.get("discovery_query") != task
+                or packet.get("discovery_queries") != [task]):
+            context_schema_errors.append("Context task/goal/query echoes differ from frozen no-hint invocation")
+        policy = packet.get("risk_policy")
+        if (not isinstance(policy, dict)
+                or policy.get("knowledge_limit") != settings["knowledge_limit"]
+                or policy.get("code_context") is not False
+                or policy.get("materialization_token_budget") != settings["token_budget"]):
+            context_schema_errors.append("Context risk policy differs from frozen limits")
+
     artifacts = packet.get("artifacts")
     if not isinstance(artifacts, list):
         artifacts = []
@@ -416,7 +444,8 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dic
     if partial is not None:
         partial.update(result)
         partial.pop("discovery_before_context", None)
-        partial.pop("context_before_normalization", None)
+        if not context_schema_errors:
+            partial.pop("context_before_normalization", None)
     return result
 
 
@@ -435,6 +464,14 @@ def verify_probe_source_evidence(
                 or hit["status"] != source.get("status")):
             discovery.setdefault("schema_errors", []).append(
                 f"Discover hit not present in installed Project Map: {hit!r}"
+            )
+        try:
+            physical = m0.safe_file(target, hit["path"])
+            if not physical.is_file():
+                raise ValueError("source file absent")
+        except (OSError, ValueError) as exc:
+            discovery.setdefault("schema_errors", []).append(
+                f"Discover hit source does not exist: {hit['path']!r}: {exc}"
             )
     for item in context.get("selected_artifacts", []):
         path = item.get("path")
