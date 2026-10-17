@@ -298,12 +298,19 @@ def verify_installed_probe_sources(
     """All returned sources must exist; typed IDs must refer to exact projections."""
     failures = []
     by_id = projected_decision_paths(cards)
+    by_status = {doc["id"]: doc["status"] for doc in cards["upstream_docs"]}
     for hit in hits:
         if not isinstance(hit, dict):
             continue
         path, ident = hit.get("path"), hit.get("id")
-        if ident is not None and by_id.get(ident) != path:
-            failures.append(f"Discover has forged decision ID/source: {ident!r} {path!r}")
+        if ident is not None and (
+            by_id.get(ident) != path
+            or hit.get("artifact_type") != "decision"
+            or hit.get("status") != by_status.get(ident)
+        ):
+            failures.append(
+                f"Discover has forged Decision ID/source/status: {ident!r} {path!r}"
+            )
         if isinstance(path, str):
             try:
                 source = m0.safe_file(target, path)
