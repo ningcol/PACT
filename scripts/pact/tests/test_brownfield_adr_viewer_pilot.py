@@ -195,6 +195,56 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from exact source"):
                 pilot.verify_installed_runtime_against_source(installed)
 
+    def test_installed_successful_context_requires_complete_pact_schema(self):
+        cards = self.fixture()
+        def scripted(_target, command):
+            data = {"results": []} if command[0] == "discover" else {
+                "status": "candidate", "artifacts": [], "decisions": [],
+                "applicable_rules": [], "known_unknowns": [],
+                "code_artifacts": [], "context_budget": {
+                    "selected_estimated_tokens": 0,
+                },
+            }
+            return {"command": ["pact.py", *command], "returncode": 0,
+                    "elapsed_ms": 1, "stderr": "", "data": data}
+        with mock.patch.object(pilot.m0, "run_json", side_effect=scripted):
+            report = pilot.probe(pathlib.Path("/tmp/no-real-cli"), cards)
+        self.assertEqual(len(report), 6)
+        for case in report:
+            errors = case["context"]["schema_errors"]
+            self.assertTrue(any("missing required property" in err
+                                for err in errors), errors)
+            self.assertTrue(any("version" in err for err in errors), errors)
+
+    def test_project_check_receipt_survives_adapted_probe_timeout(self):
+        import types
+        cards = self.fixture()
+        progress = {}
+        timeout = subprocess.TimeoutExpired(["pact.py", "context"], 2)
+        with tempfile.TemporaryDirectory(prefix="pact-check-receipt-") as td:
+            target = pathlib.Path(td)
+            with mock.patch.object(pilot, "validate_frozen"):
+                with mock.patch.object(pilot.m0, "digest_file", return_value="sha"):
+                    with mock.patch.object(pilot, "install_pact", return_value={"runtime": "tested"}):
+                        with mock.patch.object(pilot, "source_snapshot", return_value={}):
+                            with mock.patch.object(pilot, "project_adrs", return_value=[]):
+                                with mock.patch.object(
+                                    pilot.subprocess, "run",
+                                    return_value=types.SimpleNamespace(
+                                        returncode=7, stdout="check failed",
+                                        stderr="bad Project Truth"
+                                    ),
+                                ):
+                                    with mock.patch.object(
+                                        pilot, "probe", side_effect=[[], timeout],
+                                    ):
+                                        with self.assertRaises(subprocess.TimeoutExpired):
+                                            pilot.evaluate(target, cards, progress)
+        self.assertEqual(progress["stage"], "adapted-probing")
+        self.assertEqual(progress["project_check_returncode"], 7)
+        self.assertEqual(progress["project_check_stdout"], "check failed")
+        self.assertEqual(progress["project_check_stderr"], "bad Project Truth")
+
     def test_successful_malformed_discover_payload_cannot_be_scored_as_no_hits(self):
         cards = self.fixture()
         oracle = json.loads(pilot.ORACLE.read_text(encoding="utf-8"))
