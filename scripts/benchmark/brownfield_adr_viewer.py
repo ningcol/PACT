@@ -21,6 +21,14 @@ import decision_memory_m0 as m0
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "pact"))
+from schema_validate import validate_instance  # stdlib PACT schema validator
+
+CONTEXT_SCHEMA = json.loads(
+    (ROOT / ".pact" / "schema" / "context-envelope.schema.json").read_text(
+        encoding="utf-8"
+    )
+)
 CARDS = ROOT / "benchmarks" / "brownfield-adr-viewer" / "pilot-cards.json"
 ORACLE = ROOT / "benchmarks" / "brownfield-adr-viewer" / "pilot-oracle.json"
 CARDS_BLOB = "b4bc6e790b6b3777db1cb2983e476673280cc242"
@@ -309,6 +317,7 @@ def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -
                     context_schema_errors.append(f"Context {key} not a list")
             if not isinstance(envelope.get("context_budget"), dict):
                 context_schema_errors.append("Context budget not an object")
+            context_schema_errors.extend(validate_instance(envelope, CONTEXT_SCHEMA))
         budget = envelope.get("context_budget")
         if not isinstance(budget, dict):
             budget = {}
@@ -508,6 +517,10 @@ def evaluate(target: pathlib.Path, cards: dict, progress: dict | None = None) ->
         [sys.executable, str(target / "pact.py"), "check"],
         cwd=target, capture_output=True, text=True, timeout=120, check=False,
     )
+    progress["project_check_returncode"] = check.returncode
+    progress["project_check_stdout"] = check.stdout[:1200]
+    progress["project_check_stderr"] = check.stderr[:1200]
+    progress["knowledge_expected"] = snapshot
     progress["stage"] = "adapted-probing"
     progress["B_adapted"] = []
     b = probe(target, cards, progress["B_adapted"])
