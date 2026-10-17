@@ -116,6 +116,61 @@ def source_snapshot(target: pathlib.Path) -> dict[str, str]:
     return dict(sorted(data.items()))
 
 
+def valid_discovery_hit(hit: object) -> bool:
+    if not isinstance(hit, dict):
+        return False
+    path = hit.get("path")
+    if (not isinstance(path, str) or not path or "\\\\" in path
+            or pathlib.PurePosixPath(path).is_absolute()
+            or ".." in pathlib.PurePosixPath(path).parts):
+        return False
+    kind, ident, status = hit.get("artifact_type"), hit.get("id"), hit.get("status")
+    if kind == "document":
+        return ident is None and status is None
+    if kind in {"decision", "rule"}:
+        return (isinstance(ident, str) and
+                ident.startswith("DEC-" if kind == "decision" else "RULE-") and
+                isinstance(status, str) and bool(status))
+    return False
+
+
+def validate_installed_project_map(index: object, corpus: dict) -> None:
+    """Reject malformed/missing frozen IDs; never score a corrupt disposable map."""
+    if (not isinstance(index, dict)
+            or not isinstance(index.get("documents"), list)
+            or not isinstance(index.get("id_to_path"), dict)
+            or index.get("repository_root") != "."):
+        raise ValueError("installed Project Map has invalid top-level schema")
+    expected = {entry["id"]: entry for entry in corpus["documents"]}
+    observed = {}
+    for entry in index["documents"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            raise ValueError("installed Project Map contains malformed document records")
+        if not isinstance(entry.get("artifact_type"), str):
+            raise ValueError("installed Project Map has missing artifact type")
+        if not isinstance(entry.get("paths"), list) or any(
+            not isinstance(p, str) for p in entry.get("paths", [])
+        ):
+            raise ValueError("installed Project Map has malformed code anchors")
+        ident = entry.get("id")
+        if ident is None:
+            continue
+        if (not isinstance(ident, str) or ident in observed
+                or ident not in expected):
+            raise ValueError("installed Project Map has missing, duplicated or unknown IDs")
+        saved = expected[ident]
+        if (entry["path"] != saved["path"]
+                or entry["artifact_type"] != saved["type"]
+                or entry.get("status") != saved["status"]
+                or entry["paths"] != saved.get("paths", [])):
+            raise ValueError("installed Project Map differs from frozen decision metadata")
+        observed[ident] = entry["path"]
+    if observed != {ident: entry["path"] for ident, entry in expected.items()}:
+        raise ValueError("installed Project Map omits frozen Decision/Rule metadata")
+    if index["id_to_path"] != observed:
+        raise ValueError("installed Project Map ID lookup disagrees with documents")
+
+
 def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
     """Run the actual installed pact.py; no external ID or query expansion."""
     task = case["task"]
@@ -137,9 +192,9 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
         if not isinstance(discovery["data"], dict):
             discovery_schema_errors.append("successful discover response is not an object")
         if not isinstance(disc.get("results"), list) or any(
-            not isinstance(hit, dict) for hit in disc.get("results", [])
+            not valid_discovery_hit(hit) for hit in disc.get("results", [])
         ):
-            discovery_schema_errors.append("successful discover results are not a list of objects")
+            discovery_schema_errors.append("successful discover results have invalid hit/path/type/status records")
     if envelope["returncode"] == 0:
         if not isinstance(envelope["data"], dict):
             context_schema_errors.append("successful context response is not an object")
@@ -179,6 +234,12 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
             "schema_errors": context_schema_errors,
             "status": packet.get("status"),
             "selected_ids": [x.get("id") for x in artifacts if isinstance(x, dict)],
+            "selected_artifacts": [
+                {"id": x.get("id"), "path": x.get("path"),
+                 "artifact_type": x.get("artifact_type"),
+                 "sha256": x.get("sha256")}
+                for x in artifacts if isinstance(x, dict)
+            ],
             "current_decision_ids": packet.get("decisions"),
             "applicable_rule_ids": packet.get("applicable_rules"),
             "selected_knowledge_files": len(artifacts),
@@ -250,6 +311,7 @@ def collect(cards: dict, corpus: dict) -> dict:
             if not index_path.is_file() or index_path.is_symlink():
                 raise ValueError("installed Project Map not generated safely")
             index = json.loads(index_path.read_text(encoding="utf-8"))
+            validate_installed_project_map(index, corpus)
             b = path_diagnostic(
                 index, case["changed_paths"],
                 cards["settings"]["max_path_hints"],
@@ -275,6 +337,7 @@ def collect(cards: dict, corpus: dict) -> dict:
         "predictions": predictions, "installation": installed,
         "knowledge_files_before": len(baseline),
         "knowledge_files_after": len(end),
+        "knowledge_source_sha256": baseline,
         "knowledge_source_mutations": mutations,
         "stale_declared_code_anchors": [
             {"decision_id": ident, "path": path} for ident, path in stale
@@ -319,6 +382,31 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
             failures.append(f"{cid}: claimed current Decision not materialized in Context")
         if not set(rules).issubset(set(selected_ids)):
             failures.append(f"{cid}: claimed applicable Rule not materialized in Context")
+        # IDs alone are insufficient: require a selected source path, type and
+        # content digest matching the frozen installed fixture's actual file.
+        selected_records = runtime.get("selected_artifacts")
+        if not isinstance(selected_records, list):
+            failures.append(f"{cid}: Context selected artifact records are malformed")
+            selected_records = []
+        for ident in found | set(rules):
+            if ident not in docs:
+                continue  # Existing authority validation rejects unknown IDs.
+            source = docs[ident]
+            matching = [
+                record for record in selected_records
+                if isinstance(record, dict)
+                and record.get("id") == ident
+                and record.get("path") == source["path"]
+                and record.get("artifact_type") == source["type"]
+                and isinstance(record.get("sha256"), str)
+                and record["sha256"] == evidence.get(
+                    "knowledge_source_sha256", {}
+                ).get(source["path"])
+            ]
+            if not matching:
+                failures.append(
+                    f"{cid}: {ident} missing valid materialized source record"
+                )
         expected = set(oracle["expected_current"][cid])
         history = set(oracle["relevant_history"][cid])
         nav_current = {x["id"] for x in nav["current_candidates"]}
@@ -419,6 +507,7 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         "installation": evidence["installation"],
         "knowledge_files_before": evidence["knowledge_files_before"],
         "knowledge_files_after": evidence["knowledge_files_after"],
+        "knowledge_source_sha256": evidence.get("knowledge_source_sha256", {}),
         "knowledge_source_mutations": evidence["knowledge_source_mutations"],
         "stale_declared_code_anchors": evidence["stale_declared_code_anchors"],
         "case_results": rows,
