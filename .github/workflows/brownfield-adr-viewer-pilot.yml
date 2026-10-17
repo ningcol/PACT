@@ -1,0 +1,107 @@
+name: PACT Brownfield ADR Viewer Pilot
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/brownfield-adr-viewer-pilot.yml"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+      - "scripts/pact/tests/test_brownfield_adr_viewer_pilot.py"
+      - "benchmarks/brownfield-adr-viewer/**"
+      - "docs/evaluation/brownfield-adr-viewer-*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-public-brownfield:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out only PACT (no write credentials)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate immutable source and scorer instrument
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts/pact/tests -p 'test_brownfield_adr_viewer_pilot.py'
+          python scripts/pact/pact.py schema-lint
+          python scripts/pact/pact.py check
+
+      - name: Clone pinned public GitHub repo into disposable runner ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/pact-adr-viewer-brownfield"
+          echo "PACT_PILOT_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/mrwilson/adr-viewer.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet \
+            a25f1c71e031bdaa63fe3175f969f197139f2044
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "a25f1c71e031bdaa63fe3175f969f197139f2044"
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+          echo "READ-ONLY public upstream at pinned SHA; no Git push credentials."
+
+      - name: Verify upstream's actual Python tests in isolated clone
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            "click==8.1.7" "mistune==3.0.2" "beautifulsoup4==4.12.3" \
+            "Jinja2==3.1.4" "pytest==8.3.2" "bottle==0.12.25"
+          cd "$PACT_PILOT_TARGET"
+          python -m pytest -q adr_viewer \
+            2>&1 | tee "$RUNNER_TEMP/adr-viewer-upstream-pytest.txt"
+
+      - name: Execute real-clone installed PACT trial and retain full JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_exit=0
+          python scripts/benchmark/brownfield_adr_viewer.py \
+            --target "$PACT_PILOT_TARGET" \
+            > "$RUNNER_TEMP/adr-viewer-pact-pilot.json" || run_exit=$?
+          echo "Real GitHub repository source, fictional tasks, actual installed PACT."
+          cat "$RUNNER_TEMP/adr-viewer-pact-pilot.json"
+          test "$run_exit" -eq 0
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) /
+               "adr-viewer-pact-pilot.json").read_text(encoding="utf-8")
+          )
+          assert report["engineering_safety_gate"] == "PASS", report["safety_gate_failures"]
+          assert report["case_count"] == 6
+          assert report["real_agent_executed"] is False
+          assert report["owner_approval_authenticated"] is False
+          assert report["release_gate"] == "HOLD"
+          print("Pinned real-repository pilot:", report["upstream"], report["upstream_sha"])
+          print("Unadapted/adapted target recall:",
+                report["A_unadapted_current_hits"], report["B_adapted_matched"],
+                "of", report["target_decision_count"])
+          print("Extra current Decision candidates:",
+                report["B_oracle_extraneous_current_candidates"])
+          print("This is NOT an independent Agent/Owner outcome.")
+          PY
+
+      - name: Preserve original tests and PACT raw evaluation receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pinned-adr-viewer-pact-brownfield-receipts
+          path: |
+            ${{ runner.temp }}/adr-viewer-pact-pilot.json
+            ${{ runner.temp }}/adr-viewer-upstream-pytest.txt
+          if-no-files-found: warn
+          retention-days: 14
