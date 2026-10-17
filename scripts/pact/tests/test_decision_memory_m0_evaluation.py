@@ -111,6 +111,7 @@ class DecisionMemoryM0EvaluationTests(unittest.TestCase):
         # or claims a genuine blind/Owner/Agent win from its synthetic oracle.
         self.assertIn(report["synthetic_engineering_gate"], ("PASS", "FAIL"))
         self.assertIsInstance(report["gate_failures"], list)
+        self.assertEqual(report["synthetic_engineering_gate"], "PASS", report["gate_failures"])
         print(
             "PACT M0 installed synthetic decision A/B (not Agent/Owner): "
             + json.dumps({
