@@ -31,7 +31,9 @@ ALLOWED_STATUS = {"implemented", "superseded", "rejected", "archived"}
 
 
 def blob_sha(path: pathlib.Path) -> str:
-    payload = path.read_bytes()
+    # Git worktree JSON can have CRLF on Windows while its committed blob is LF.
+    # Compare canonical *text bytes*, not checkout-specific line endings.
+    payload = path.read_bytes().replace(b"\r\n", b"\n")
     return hashlib.sha1(b"blob " + str(len(payload)).encode("ascii")
                         + b"\0" + payload).hexdigest()
 
