@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "kind": "decision-memory-m1-developer-oracle-not-independent",
+  "note": "Authored by the same development process as the synthetic tasks. Separate for scoring only; never copy into installed target, provide to Agent, or claim independent blindness.",
+  "expected_current": {
+    "cache-owner-conflict": [
+      "DEC-CACHE-OWNERSHIP"
+    ],
+    "broker-local-counter": [
+      "DEC-BROKER-EDGE"
+    ],
+    "pathless-counter": [
+      "DEC-FLUX-CHANNEL"
+    ],
+    "renamed-ingress": [
+      "DEC-PAYLOAD-ANCHOR"
+    ],
+    "partial-webhook": [
+      "DEC-REPLAY-CURRENT"
+    ],
+    "rejected-global": [
+      "DEC-CACHE-OWNERSHIP"
+    ],
+    "wire-contract": [
+      "DEC-WIRE-ORDER"
+    ],
+    "routine-docs": []
+  },
+  "relevant_history": {
+    "cache-owner-conflict": [],
+    "broker-local-counter": [],
+    "pathless-counter": [],
+    "renamed-ingress": [],
+    "partial-webhook": [
+      "DEC-REPLAY-OLD"
+    ],
+    "rejected-global": [
+      "DEC-CACHE-GLOBAL"
+    ],
+    "wire-contract": [],
+    "routine-docs": []
+  },
+  "semantic_outcome_requires_real_agent": true,
+  "no_new_decision_expected_for": [
+    "routine-docs"
+  ]
+}

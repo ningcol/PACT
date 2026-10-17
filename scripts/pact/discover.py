@@ -89,9 +89,19 @@ def normalize_queries(primary: str, extras: list[str] | None = None) -> list[str
     return queries
 
 
+# Knowledge retrieval must not mistake common prose connectors for a Decision
+# match. Keep exact ID/title/alias and whole-phrase matching unchanged; this
+# filter does not alter code-symbol/path search, which still uses terms().
+DOCUMENT_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "been", "being", "by",
+    "for", "from", "in", "into", "is", "it", "of", "on", "or",
+    "the", "to", "was", "were", "with",
+})
+
+
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
-    ts = terms(query)
+    ts = [term for term in terms(query) if term not in DOCUMENT_STOPWORDS]
     score = 0
     reasons: list[str] = []
 

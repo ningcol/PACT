@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "kind": "decision-memory-m1-frozen-no-id-task-cards",
+  "baseline_main_sha": "b96a64485e1c855c5caeedb2a2addcd766f6398b",
+  "m0_corpus_blob_sha": "14693c6b209b8ef734edbd9e3e9842efd5bca3cd",
+  "notice": "Synthetic developer-authored tasks; no prior conversation, Decision ID, target list, or hidden oracle is given to either retrieval arm. NOT independently blinded or a real Agent trial.",
+  "settings": {
+    "intent": "work",
+    "knowledge_limit": 4,
+    "token_budget": 2048,
+    "code_context": false,
+    "risk": "low",
+    "success": "Preserve applicable existing decisions before modifying the named behavior",
+    "max_path_hints": 4
+  },
+  "cases": [
+    {
+      "id": "cache-owner-conflict",
+      "task": "Replace cache eviction coordinator with worker-local maps to improve throughput",
+      "changed_paths": [
+        "src/cache/coordinator.py"
+      ],
+      "type": "proposed-conflict"
+    },
+    {
+      "id": "broker-local-counter",
+      "task": "Shift rollover bookkeeping into src/auth/token_gate.py and stop asking the upstream service",
+      "changed_paths": [
+        "src/auth/token_gate.py"
+      ],
+      "type": "proposed-conflict"
+    },
+    {
+      "id": "pathless-counter",
+      "task": "Update src/replay/processor.py to keep independent per-worker dedupe counters",
+      "changed_paths": [
+        "src/replay/processor.py"
+      ],
+      "type": "proposed-conflict"
+    },
+    {
+      "id": "renamed-ingress",
+      "task": "Update src/account/identity_bridge.py to generate its own login digest fields",
+      "changed_paths": [
+        "src/account/identity_bridge.py"
+      ],
+      "type": "stale-code-path"
+    },
+    {
+      "id": "partial-webhook",
+      "task": "Change webhook replay backoff while preserving received event order",
+      "changed_paths": [
+        "src/webhook/replay.py"
+      ],
+      "type": "partial-supersession"
+    },
+    {
+      "id": "rejected-global",
+      "task": "Use an unlimited global cache map to avoid eviction overhead",
+      "changed_paths": [
+        "src/cache/coordinator.py"
+      ],
+      "type": "rejected-rationale"
+    },
+    {
+      "id": "wire-contract",
+      "task": "Change src/transport/wire.py to encode packets in native byte order",
+      "changed_paths": [
+        "src/transport/wire.py"
+      ],
+      "type": "proposed-conflict"
+    },
+    {
+      "id": "routine-docs",
+      "task": "Tidy Markdown headings in CHANGELOG and documentation index",
+      "changed_paths": [],
+      "type": "routine-no-memory"
+    }
+  ]
+}
