@@ -234,9 +234,49 @@ def project_adrs(target: pathlib.Path, cards: dict) -> list[str]:
     return paths
 
 
-def probe(target: pathlib.Path, cards: dict) -> list[dict]:
+def valid_discovery_result(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    path = record.get("path")
+    if (not isinstance(path, str) or not path or chr(92) in path
+            or pathlib.PurePosixPath(path).is_absolute()
+            or ".." in pathlib.PurePosixPath(path).parts):
+        return False
+    kind = record.get("artifact_type")
+    if kind == "document":
+        return record.get("id") is None and record.get("status") is None
+    if kind in {"decision", "rule"}:
+        ident, status = record.get("id"), record.get("status")
+        return (isinstance(ident, str)
+                and ident.startswith("DEC-" if kind == "decision" else "RULE-")
+                and isinstance(status, str) and bool(status))
+    return False
+
+
+def valid_context_artifact(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    path, sha = record.get("path"), record.get("sha256")
+    if (not isinstance(path, str) or not path or chr(92) in path
+            or pathlib.PurePosixPath(path).is_absolute()
+            or ".." in pathlib.PurePosixPath(path).parts
+            or not isinstance(sha, str) or
+            re.fullmatch(r"[0-9a-f]{64}", sha) is None):
+        return False
+    kind, ident = record.get("artifact_type"), record.get("id")
+    if kind == "document":
+        return ident is None
+    if kind in {"decision", "rule"}:
+        return isinstance(ident, str) and ident.startswith(
+            "DEC-" if kind == "decision" else "RULE-"
+        )
+    return False
+
+
+def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -> list[dict]:
     settings = cards["settings"]
-    result = []
+    if result is None:
+        result = []
     for case in cards["tasks"]:
         task = case["task"]
         discovery = m0.run_json(target, [
@@ -258,9 +298,9 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
             if not isinstance(discovery["data"], dict):
                 discovery_schema_errors.append("successful discovery response is not an object")
             if not isinstance(disc.get("results"), list) or any(
-                not isinstance(v, dict) for v in disc.get("results", [])
+                not valid_discovery_result(v) for v in disc.get("results", [])
             ):
-                discovery_schema_errors.append("successful discovery results not a list of objects")
+                discovery_schema_errors.append("successful discovery results contain malformed entries")
         if context["returncode"] == 0:
             if not isinstance(context["data"], dict):
                 context_schema_errors.append("successful Context response is not an object")
@@ -275,8 +315,8 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
         selected = envelope.get("artifacts")
         if not isinstance(selected, list):
             selected = []
-        if any(not isinstance(v, dict) for v in selected):
-            context_schema_errors.append("Context artifacts contain non-object values")
+        if any(not valid_context_artifact(v) for v in selected):
+            context_schema_errors.append("Context artifacts have malformed source/path/type/digest")
             selected = [v for v in selected if isinstance(v, dict)]
         result.append({
             "id": case["id"], "task": task, "kind": case["kind"],
@@ -300,6 +340,12 @@ def probe(target: pathlib.Path, cards: dict) -> list[dict]:
                 "schema_errors": context_schema_errors,
                 "status": envelope.get("status"),
                 "selected_ids": [x.get("id") for x in selected if isinstance(x, dict)],
+                "selected_artifacts": [
+                    {"id": x.get("id"), "path": x.get("path"),
+                     "artifact_type": x.get("artifact_type"),
+                     "sha256": x.get("sha256")}
+                    for x in selected if isinstance(x, dict)
+                ],
                 "current_decision_ids": envelope.get("decisions") or [],
                 "applicable_rule_ids": envelope.get("applicable_rules") or [],
                 "selected_knowledge_files": len(selected),
@@ -436,25 +482,36 @@ def score(predictions: dict, cards: dict, oracle: dict) -> dict:
     }
 
 
-def evaluate(target: pathlib.Path, cards: dict) -> dict:
+def evaluate(target: pathlib.Path, cards: dict, progress: dict | None = None) -> dict:
+    if progress is None:
+        progress = {}
+    progress["stage"] = "source-validation"
     validate_frozen(cards, target)
     original_hashes = {
         doc["source"]: m0.digest_file(target / doc["source"])
         for doc in cards["upstream_docs"]
     }
     install = install_pact(target)
+    progress["install"] = install
+    progress["stage"] = "legacy-probing"
     knowledge_baseline = source_snapshot(target)
     if knowledge_baseline:
         raise ValueError("unexpected initial long-term Decision files in target")
     # Collect all original-ADR behavior before adapting any note or reading oracle.
-    a = probe(target, cards)
+    progress["A_plain_legacy"] = []
+    a = probe(target, cards, progress["A_plain_legacy"])
+    progress["stage"] = "projection"
     projected = project_adrs(target, cards)
+    progress["projected_paths"] = projected
     snapshot = source_snapshot(target)
     check = subprocess.run(
         [sys.executable, str(target / "pact.py"), "check"],
         cwd=target, capture_output=True, text=True, timeout=120, check=False,
     )
-    b = probe(target, cards)
+    progress["stage"] = "adapted-probing"
+    progress["B_adapted"] = []
+    b = probe(target, cards, progress["B_adapted"])
+    progress["stage"] = "source-verification"
     final_snapshot = source_snapshot(target)
     still_original = (
         not git_output(target, "status", "--porcelain", "--untracked-files=no")
@@ -478,6 +535,7 @@ def main() -> int:
     parser.add_argument("--target", required=True)
     args = parser.parse_args()
     evidence = None  # Keep completed installed-CLI probes even if scoring fails.
+    progress: dict = {}
     try:
         if os.environ.get("GITHUB_ACTIONS") != "true":
             raise ValueError("run only on isolated GitHub Actions temp runner")
@@ -486,7 +544,7 @@ def main() -> int:
         if target == runner_temp or not target.is_relative_to(runner_temp):
             raise ValueError("must use a disposable checkout inside RUNNER_TEMP")
         cards = json.loads(CARDS.read_text(encoding="utf-8"))
-        evidence = evaluate(target, cards)
+        evidence = evaluate(target, cards, progress)
         # Public developer-authored oracle read only AFTER all calls and inputs.
         oracle = json.loads(ORACLE.read_text(encoding="utf-8"))
         report = score(evidence, cards, oracle)
@@ -496,8 +554,9 @@ def main() -> int:
             "kind": "real GitHub clone installed PACT engineering probe",
             "engineering_safety_gate": "FAIL",
             "safety_gate_failures": [f"{type(exc).__name__}: {exc}"],
-            "raw_probes": evidence,  # None if failed before completed collection.
-            "completed_probes_preserved": isinstance(evidence, dict),
+            "raw_probes": evidence if evidence is not None else (progress or None),
+            "completed_probes_preserved": bool(evidence or progress),
+            "partial_collection_failed": evidence is None,
             "real_agent_executed": False,
             "owner_approval_authenticated": False,
             "release_gate": "HOLD",
