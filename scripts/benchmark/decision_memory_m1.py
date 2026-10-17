@@ -171,6 +171,26 @@ def validate_installed_project_map(index: object, corpus: dict) -> None:
         raise ValueError("installed Project Map ID lookup disagrees with documents")
 
 
+def valid_context_artifact(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    path, digest = item.get("path"), item.get("sha256")
+    if (not isinstance(path, str) or not path or chr(92) in path
+            or pathlib.PurePosixPath(path).is_absolute()
+            or ".." in pathlib.PurePosixPath(path).parts
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+        return False
+    kind, ident = item.get("artifact_type"), item.get("id")
+    if kind == "document":
+        return ident is None
+    if kind in {"decision", "rule"}:
+        return isinstance(ident, str) and ident.startswith(
+            "DEC-" if kind == "decision" else "RULE-"
+        )
+    return False
+
+
 def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
     """Run the actual installed pact.py; no external ID or query expansion."""
     task = case["task"]
@@ -206,8 +226,8 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
     artifacts = packet.get("artifacts")
     if not isinstance(artifacts, list):
         artifacts = []
-    if any(not isinstance(item, dict) for item in artifacts):
-        context_schema_errors.append("context artifacts contain non-object records")
+    if any(not valid_context_artifact(item) for item in artifacts):
+        context_schema_errors.append("successful Context artifacts have malformed path/type/digest records")
         artifacts = [item for item in artifacts if isinstance(item, dict)]
     budget = packet.get("context_budget")
     if not isinstance(budget, dict):
@@ -285,7 +305,10 @@ def path_diagnostic(index: dict, changed_paths: list[str], limit: int) -> dict:
     }
 
 
-def collect(cards: dict, corpus: dict) -> dict:
+def collect(cards: dict, corpus: dict, progress: dict | None = None) -> dict:
+    if progress is None:
+        progress = {}
+    progress["stage"] = "install"
     with tempfile.TemporaryDirectory(prefix="pact-m1-cold-start-") as tmp:
         target = pathlib.Path(tmp) / "project"
         installed = m0.install_fixture(target, corpus)
@@ -301,12 +324,23 @@ def collect(cards: dict, corpus: dict) -> dict:
             revision.stdout.strip() if revision.returncode == 0 else None
         )
         baseline = source_snapshot(target)
+        progress["installation"] = installed
+        progress["knowledge_source_sha256"] = baseline
         if len(baseline) != len(corpus["documents"]):
             raise ValueError("unexpected pre-existing durable knowledge in fixture")
         predictions = []
+        progress["predictions"] = predictions
+        progress["stage"] = "collect-predictions"
         for case in cards["cases"]:
-            # Collect A BEFORE looking up public path metadata or consulting oracle.
+            # Persist this A observation before map validation; preserve it even
+            # if Project Map JSON is missing/corrupt or B diagnostics fail.
             a = context_probe(target, case, cards["settings"])
+            observation = {
+                "id": case["id"], "task": case["task"],
+                "type": case["type"], "changed_paths": case["changed_paths"],
+                "A": a, "B_path_navigation_only": None,
+            }
+            predictions.append(observation)
             index_path = target / ".pact" / "cache" / "project-map.json"
             if not index_path.is_file() or index_path.is_symlink():
                 raise ValueError("installed Project Map not generated safely")
@@ -316,11 +350,7 @@ def collect(cards: dict, corpus: dict) -> dict:
                 index, case["changed_paths"],
                 cards["settings"]["max_path_hints"],
             )
-            predictions.append({
-                "id": case["id"], "task": case["task"],
-                "type": case["type"], "changed_paths": case["changed_paths"],
-                "A": a, "B_path_navigation_only": b,
-            })
+            observation["B_path_navigation_only"] = b
         end = source_snapshot(target)
         mutations = sorted(
             name for name in baseline.keys() | end.keys()
@@ -514,11 +544,11 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
     }
 
 
-def evaluate() -> dict:
+def evaluate(progress: dict | None = None) -> dict:
     cards = json.loads(CARDS.read_text(encoding="utf-8"))
     corpus = json.loads(m0.INPUTS.read_text(encoding="utf-8"))
     validate_cards(cards, corpus)
-    evidence = collect(cards, corpus)
+    evidence = collect(cards, corpus, progress)
     # Developer oracle is never read until predictions are complete and the
     # installed disposable project has been destroyed.
     oracle = json.loads(ORACLE.read_text(encoding="utf-8"))
@@ -528,13 +558,16 @@ def evaluate() -> dict:
 def main() -> int:
     if len(sys.argv) != 1:
         raise SystemExit("frozen M1 benchmark accepts no external fixture arguments")
+    progress: dict = {}
     try:
-        result = evaluate()
+        result = evaluate(progress)
     except Exception as exc:
         result = {
             "version": 1, "evaluation_kind": "M1 synthetic benchmark failure",
             "synthetic_safety_gate": "FAIL",
             "gate_failures": [f"{type(exc).__name__}: {exc}"],
+            "partial_probe_evidence": progress or None,
+            "completed_probes_preserved": bool(progress.get("predictions")),
             "real_agent_executed": False,
             "release_gate": "HOLD",
         }
