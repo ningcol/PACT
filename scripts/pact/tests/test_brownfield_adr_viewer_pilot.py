@@ -6,6 +6,9 @@ import pathlib
 import sys
 import tempfile
 import unittest
+import io
+from contextlib import redirect_stdout
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -104,6 +107,40 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             baseline = pilot.source_snapshot(target)
             (folder / "extra.json").write_text("{}", encoding="utf-8")
             self.assertEqual(len(pilot.source_snapshot(target)), len(baseline) + 1)
+
+    def test_scoring_exception_retains_completed_a_b_probe_receipts(self):
+        """Regression: an invalid sealed oracle cannot erase pre-scored runs."""
+        finished = {
+            "A_plain_legacy": [{"id": "case-a", "context": {"returncode": 0}}],
+            "B_adapted": [{"id": "case-a", "context": {"returncode": 0}}],
+            "unmodified_tracked_sources": True,
+            "projected_paths": ["test-only-record"],
+        }
+        with tempfile.TemporaryDirectory(prefix="pact-brownfield-failure-") as td:
+            target = pathlib.Path(td) / "copied-public-source"
+            target.mkdir()
+            with mock.patch.dict("os.environ", {
+                "GITHUB_ACTIONS": "true", "RUNNER_TEMP": td,
+            }):
+                with mock.patch.object(sys, "argv", [
+                    "brownfield_adr_viewer.py", "--target", str(target),
+                ]):
+                    with mock.patch.object(pilot, "evaluate", return_value=finished):
+                        with mock.patch.object(
+                            pilot, "score",
+                            side_effect=ValueError("independent oracle failed validation"),
+                        ):
+                            output = io.StringIO()
+                            with redirect_stdout(output):
+                                rc = pilot.main()
+        self.assertEqual(rc, 1)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["engineering_safety_gate"], "FAIL")
+        self.assertTrue(report["completed_probes_preserved"])
+        self.assertEqual(report["raw_probes"], finished)
+        self.assertIn("oracle failed", report["safety_gate_failures"][0])
+        self.assertFalse(report["real_agent_executed"])
+        self.assertEqual(report["release_gate"], "HOLD")
 
     def test_scoring_fails_closed_if_source_or_history_changed(self):
         cards = self.fixture()
