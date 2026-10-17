@@ -6,12 +6,15 @@ it does not create an LLM agent and must never claim independent blindness.
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import io
 import json
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -73,6 +76,27 @@ class DecisionMemoryM0EvaluationTests(unittest.TestCase):
             benchmark.score(
                 {"predictions": []}, {"version": 1, "expected": {}}, inputs
             )
+
+    def test_failed_gate_is_nonzero_and_full_json_is_preserved(self):
+        deliberately_failed = {
+            "synthetic_engineering_gate": "FAIL",
+            "gate_failures": [
+                "pathless-vocabulary-gap/B: explicit current Decision ID not selected",
+                "unrelated-task/A: irrelevant Decision selected",
+            ],
+        }
+        output = io.StringIO()
+        with mock.patch.object(benchmark, "evaluate", return_value=deliberately_failed):
+            with contextlib.redirect_stdout(output):
+                result = benchmark.main()
+        self.assertEqual(result, 1, "the benchmark must never exit green on FAIL")
+        self.assertEqual(json.loads(output.getvalue()), deliberately_failed)
+        with mock.patch.object(
+            benchmark, "evaluate",
+            return_value={"synthetic_engineering_gate": "PASS", "gate_failures": []},
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(benchmark.main(), 0)
 
     def test_actual_installed_runtime_experiment_preserves_boundaries(self):
         report = benchmark.evaluate()
