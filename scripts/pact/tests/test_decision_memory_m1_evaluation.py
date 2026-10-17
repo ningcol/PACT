@@ -6,6 +6,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
