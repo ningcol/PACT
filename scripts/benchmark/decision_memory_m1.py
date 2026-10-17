@@ -21,7 +21,10 @@ CARDS = ROOT / "benchmarks" / "decision-memory" / "m1-task-cards.json"
 ORACLE = ROOT / "benchmarks" / "decision-memory" / "m1-oracle.json"
 CARDS_BLOB = "5b5c80d2f772c75d3c7984c0ffbc2d380870a6fa"
 ORACLE_BLOB = "bba20149d96b624bc6d9cae09008b91a1c9bfe44"
-M0_CORPUS_BLOB = "14693c6b209b8ef734edbd9e3e9842efd5bca3cd"
+M0_CORPUS_BLOB = "753babf70317c6af1b292b1b031e0afaec503ec3"
+# Frozen task-card field mistakenly recorded the M0 *runner* blob instead.
+# Keep that frozen field unchanged, and validate its exact recorded mistake.
+M0_ORIGINAL_CARD_PROVENANCE_FIELD = "14693c6b209b8ef734edbd9e3e9842efd5bca3cd"
 CASE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 MAX_CASES = 8
 ALLOWED_STATUS = {"implemented", "superseded", "rejected", "archived"}
@@ -66,7 +69,7 @@ def validate_cards(cards: dict, corpus: dict) -> None:
                 for path in paths)
         ):
             raise ValueError(f"M1 case leaks hints or invalid code paths: {case.get('id')}")
-    if cards.get("m0_corpus_blob_sha") != M0_CORPUS_BLOB:
+    if cards.get("m0_corpus_blob_sha") != M0_ORIGINAL_CARD_PROVENANCE_FIELD:
         raise ValueError("M1 corpus provenance mismatch")
 
 
@@ -333,6 +336,8 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         "frozen_task_cards_git_blob": CARDS_BLOB,
         "frozen_oracle_git_blob": ORACLE_BLOB,
         "frozen_m0_corpus_git_blob": M0_CORPUS_BLOB,
+        "frozen_task_card_corpus_field_mislabeled_m0_runner_blob": M0_ORIGINAL_CARD_PROVENANCE_FIELD,
+        "corpus_provenance_correction_documented": True,
         "case_count": len(rows),
         "target_decision_count": target_count,
         "A_matched_decisions": matched,
