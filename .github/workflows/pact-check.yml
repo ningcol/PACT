@@ -113,6 +113,12 @@ jobs:
           PY
           echo "M0 full synthetic CLI raw A/B report (fictional data; no actual Agent/Owner):"
           cat /tmp/pact-decision-memory-m0.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/pact-decision-memory-m0.json").read_text(encoding="utf-8"))
+          assert data["synthetic_engineering_gate"] == "PASS", data["gate_failures"]
+          PY
 
       - name: Build derived project map
         run: |
