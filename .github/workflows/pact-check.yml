@@ -83,6 +83,45 @@ jobs:
           print("PACT synthetic assessment: NOT a real Agent or Owner outcome")
           PY
 
+      - name: Frozen installed Decision-memory M0 A/B diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_exit=0
+          python scripts/benchmark/decision_memory_m0.py > /tmp/pact-decision-memory-m0.json || run_exit=$?
+          echo "M0 full synthetic A/B JSON, including any FAIL evidence:"
+          cat /tmp/pact-decision-memory-m0.json
+          test "$run_exit" -eq 0
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/pact-decision-memory-m0.json").read_text(encoding="utf-8"))
+          assert report["case_count"] == 7
+          assert report["oracle_target_count"] == 6
+          assert report["installation"]["compact_archive_present"]
+          assert report["real_agent_executed"] is False
+          assert report["real_owner_data_observed"] is False
+          assert report["independently_withheld_oracle"] is False
+          for item in report["case_results"]:
+              a = item["A"]["context"]
+              b = item["B"]["context"]
+              print(
+                  f"{item['id']}: A_hits={a['matched_ids']} B_hits={b['matched_ids']} "
+                  f"A_missing={a['missing_ids']} B_missing={b['missing_ids']} "
+                  f"extra_est_tokens={item['delta_B_minus_A_est_tokens']} "
+                  f"extra_ms={item['delta_B_minus_A_elapsed_ms']}"
+              )
+          print("M0 synthetic engineering gate:", report["synthetic_engineering_gate"])
+          print("M0 observed gate failures:", json.dumps(report["gate_failures"]))
+          print("PACT M0: diagnostic only, NOT a real Agent/Owner benefit experiment")
+          PY
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/pact-decision-memory-m0.json").read_text(encoding="utf-8"))
+          assert data["synthetic_engineering_gate"] == "PASS", data["gate_failures"]
+          PY
+
       - name: Build derived project map
         run: |
           python scripts/pact/pact.py map --output /tmp/pact-project-map.json --ensure
