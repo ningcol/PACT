@@ -38,6 +38,16 @@ class ColdStartM1Tests(unittest.TestCase):
             self.assertNotIn("explicit_decision_hint", case)
         self.assertEqual(cards["settings"]["max_path_hints"], 4)
 
+    def test_git_blob_pin_ignores_checkout_crlf_but_not_content_changes(self):
+        import tempfile
+        original = benchmark.CARDS.read_bytes().replace(b"\r\n", b"\n")
+        with tempfile.TemporaryDirectory(prefix="pact-m1-hash-") as tmp:
+            target = pathlib.Path(tmp) / "cards.json"
+            target.write_bytes(original.replace(b"\n", b"\r\n"))
+            self.assertEqual(benchmark.blob_sha(target), benchmark.CARDS_BLOB)
+            target.write_bytes(original.replace(b"\n", b"\r\n") + b"x")
+            self.assertNotEqual(benchmark.blob_sha(target), benchmark.CARDS_BLOB)
+
     def test_caller_cannot_override_frozen_fixture(self):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "benchmark" /
