@@ -555,7 +555,7 @@ def main() -> int:
             "engineering_safety_gate": "FAIL",
             "safety_gate_failures": [f"{type(exc).__name__}: {exc}"],
             "raw_probes": evidence if evidence is not None else (progress or None),
-            "completed_probes_preserved": bool(evidence or progress),
+            "completed_probes_preserved": bool(evidence is not None or progress.get("A_plain_legacy") or progress.get("B_adapted")),
             "partial_collection_failed": evidence is None,
             "real_agent_executed": False,
             "owner_approval_authenticated": False,
