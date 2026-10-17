@@ -10,6 +10,7 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -130,9 +131,29 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
     ])
     disc = discovery["data"] if isinstance(discovery["data"], dict) else {}
     packet = envelope["data"] if isinstance(envelope["data"], dict) else {}
+    discovery_schema_errors = []
+    context_schema_errors = []
+    if discovery["returncode"] == 0:
+        if not isinstance(discovery["data"], dict):
+            discovery_schema_errors.append("successful discover response is not an object")
+        if not isinstance(disc.get("results"), list) or any(
+            not isinstance(hit, dict) for hit in disc.get("results", [])
+        ):
+            discovery_schema_errors.append("successful discover results are not a list of objects")
+    if envelope["returncode"] == 0:
+        if not isinstance(envelope["data"], dict):
+            context_schema_errors.append("successful context response is not an object")
+        for key in ("artifacts", "decisions", "applicable_rules", "code_artifacts", "known_unknowns"):
+            if not isinstance(packet.get(key), list):
+                context_schema_errors.append(f"context {key} is not a list")
+        if not isinstance(packet.get("context_budget"), dict):
+            context_schema_errors.append("context budget is not an object")
     artifacts = packet.get("artifacts")
     if not isinstance(artifacts, list):
         artifacts = []
+    if any(not isinstance(item, dict) for item in artifacts):
+        context_schema_errors.append("context artifacts contain non-object records")
+        artifacts = [item for item in artifacts if isinstance(item, dict)]
     budget = packet.get("context_budget")
     if not isinstance(budget, dict):
         budget = {}
@@ -142,6 +163,7 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
             "returncode": discovery["returncode"],
             "elapsed_ms": discovery["elapsed_ms"],
             "stderr": discovery["stderr"],
+            "schema_errors": discovery_schema_errors,
             "hits": [
                 {"id": hit.get("id"), "status": hit.get("status"),
                  "type": hit.get("artifact_type"), "path": hit.get("path")}
@@ -154,6 +176,7 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
             "returncode": envelope["returncode"],
             "elapsed_ms": envelope["elapsed_ms"],
             "stderr": envelope["stderr"],
+            "schema_errors": context_schema_errors,
             "status": packet.get("status"),
             "selected_ids": [x.get("id") for x in artifacts if isinstance(x, dict)],
             "current_decision_ids": packet.get("decisions"),
@@ -205,6 +228,17 @@ def collect(cards: dict, corpus: dict) -> dict:
     with tempfile.TemporaryDirectory(prefix="pact-m1-cold-start-") as tmp:
         target = pathlib.Path(tmp) / "project"
         installed = m0.install_fixture(target, corpus)
+        installed_archive = target / installed["compact_runtime_relative"]
+        if not installed_archive.is_file() or installed_archive.is_symlink():
+            raise ValueError("installed compact runtime artifact not verifiable")
+        installed["compact_archive_sha256"] = m0.digest_file(installed_archive)
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+            text=True, timeout=20, check=False,
+        )
+        installed["source_checkout_git_sha"] = (
+            revision.stdout.strip() if revision.returncode == 0 else None
+        )
         baseline = source_snapshot(target)
         if len(baseline) != len(corpus["documents"]):
             raise ValueError("unexpected pre-existing durable knowledge in fixture")
@@ -278,8 +312,13 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         found = set(current)
         # IDs in the summary are not proof the source document was selected.
         selected_ids = runtime.get("selected_ids")
-        if not isinstance(selected_ids, list) or not found.issubset(set(selected_ids)):
+        if not isinstance(selected_ids, list):
+            failures.append(f"{cid}: Context selected artifact IDs are malformed")
+            selected_ids = []
+        if not found.issubset(set(selected_ids)):
             failures.append(f"{cid}: claimed current Decision not materialized in Context")
+        if not set(rules).issubset(set(selected_ids)):
+            failures.append(f"{cid}: claimed applicable Rule not materialized in Context")
         expected = set(oracle["expected_current"][cid])
         history = set(oracle["relevant_history"][cid])
         nav_current = {x["id"] for x in nav["current_candidates"]}
@@ -292,6 +331,8 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         oracle_extraneous += len(unexpected)
         if runtime["returncode"] or discovery["returncode"]:
             failures.append(f"{cid}: installed CLI returned nonzero")
+        if discovery.get("schema_errors") or runtime.get("schema_errors"):
+            failures.append(f"{cid}: successful CLI output had malformed discovery/context schema")
         if runtime["status"] != "candidate":
             failures.append(f"{cid}: unexpected candidate Context status")
         bad = sorted(
@@ -344,6 +385,8 @@ def score(evidence: dict, oracle: dict, cards: dict, corpus: dict) -> dict:
         "version": 1,
         "evaluation_kind": "M1 developer-authored synthetic no-ID installed-retrieval and metadata navigation diagnostic",
         "frozen_baseline_main_sha": cards["baseline_main_sha"],
+        "evaluated_source_checkout_git_sha": evidence["installation"].get("source_checkout_git_sha"),
+        "evaluated_installed_compact_runtime_sha256": evidence["installation"].get("compact_archive_sha256"),
         "frozen_task_cards_git_blob": CARDS_BLOB,
         "frozen_oracle_git_blob": ORACLE_BLOB,
         "frozen_m0_corpus_git_blob": M0_CORPUS_BLOB,
