@@ -149,11 +149,11 @@ class ColdStartM1Tests(unittest.TestCase):
                 path = root / entry["path"]
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(m0._doc_text(entry), encoding="utf-8")
-            self.assertEqual(benchmark.source_snapshot(root), expected)
+            self.assertEqual(benchmark.normalized_installed_source_hashes(root, list(expected)), expected)
             first = root / corpus["documents"][0]["path"]
             first.write_text(first.read_text(encoding="utf-8") + "altered\n",
                              encoding="utf-8")
-            self.assertNotEqual(benchmark.source_snapshot(root), expected)
+            self.assertNotEqual(benchmark.normalized_installed_source_hashes(root, list(expected)), expected)
 
     def test_installer_nonzero_and_timeout_receipts_are_not_erased(self):
         import types
