@@ -195,6 +195,69 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from exact source"):
                 pilot.verify_installed_runtime_against_source(installed)
 
+    def test_forged_decision_path_or_sha_cannot_claim_retrieval(self):
+        cards = self.fixture()
+        known = pilot.projected_decision_paths(cards)
+        decision_path = known["DEC-ADR-0002"]
+        with tempfile.TemporaryDirectory(prefix="pact-forged-decision-") as td:
+            root = pathlib.Path(td)
+            file = root / decision_path
+            file.parent.mkdir(parents=True)
+            file.write_text("# projected\n", encoding="utf-8")
+            digest = pilot.m0.digest_file(file)
+            good_hit = {
+                "id": "DEC-ADR-0002", "path": decision_path,
+                "artifact_type": "decision", "status": "implemented",
+            }
+            good_artifact = {
+                "id": "DEC-ADR-0002", "path": decision_path,
+                "artifact_type": "decision", "sha256": digest,
+            }
+            self.assertEqual(
+                pilot.verify_installed_probe_sources(root, cards,
+                                                     [good_hit], [good_artifact]), []
+            )
+            for forged in (
+                {**good_hit, "path": "README.md"},
+                {**good_hit, "id": "DEC-ADR-0003"},
+            ):
+                self.assertTrue(pilot.verify_installed_probe_sources(
+                    root, cards, [forged], []
+                ))
+            for forged in (
+                {**good_artifact, "sha256": "a" * 64},
+                {**good_artifact, "path": "README.md"},
+            ):
+                self.assertTrue(pilot.verify_installed_probe_sources(
+                    root, cards, [], [forged]
+                ))
+
+    def test_timeout_buffer_is_retained_in_failing_receipt(self):
+        with tempfile.TemporaryDirectory(prefix="pact-timeout-buffer-") as td:
+            target = pathlib.Path(td) / "upstream"
+            target.mkdir()
+            error = subprocess.TimeoutExpired(
+                ["pact.py", "check"], 4,
+                output=b"broken observed stdout", stderr=b"bad stderr"
+            )
+            with mock.patch.dict("os.environ", {
+                "GITHUB_ACTIONS": "true", "RUNNER_TEMP": td
+            }):
+                with mock.patch.object(sys, "argv", [
+                    "brownfield_adr_viewer.py", "--target", str(target)
+                ]):
+                    with mock.patch.object(pilot, "evaluate", side_effect=error):
+                        output = io.StringIO()
+                        with redirect_stdout(output):
+                            rc = pilot.main()
+            self.assertEqual(rc, 1)
+            report = json.loads(output.getvalue())
+            self.assertEqual(report["engineering_safety_gate"], "FAIL")
+            self.assertIn("broken observed stdout",
+                          report["interrupted_subprocess"]["stdout_excerpt"])
+            self.assertIn("bad stderr",
+                          report["interrupted_subprocess"]["stderr_excerpt"])
+
     def test_installed_successful_context_requires_complete_pact_schema(self):
         cards = self.fixture()
         def scripted(_target, command):
