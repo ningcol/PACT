@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import io
+import subprocess
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -107,6 +108,58 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             baseline = pilot.source_snapshot(target)
             (folder / "extra.json").write_text("{}", encoding="utf-8")
             self.assertEqual(len(pilot.source_snapshot(target)), len(baseline) + 1)
+
+    def test_installed_archive_must_match_source_rebuilt_bytes(self):
+        """Pinned source runtime digest, not merely a present pyz filename."""
+        with tempfile.TemporaryDirectory(prefix="pact-brownfield-runtime-") as td:
+            installed = pathlib.Path(td) / "pact.pyz"
+            subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "pact" / "runtime_bundle.py"),
+                 "--source-root", str(ROOT), "--output", str(installed)],
+                check=True, capture_output=True, text=True, timeout=90,
+            )
+            identity = pilot.verify_installed_runtime_against_source(installed)
+            self.assertTrue(identity["installed_source_match"])
+            self.assertRegex(identity["installed_archive_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(identity["installed_archive_sha256"],
+                             identity["source_rebuilt_archive_sha256"])
+            installed.write_bytes(installed.read_bytes() + b"tamper")
+            with self.assertRaisesRegex(ValueError, "differs from exact source"):
+                pilot.verify_installed_runtime_against_source(installed)
+
+    def test_successful_malformed_discover_payload_cannot_be_scored_as_no_hits(self):
+        cards = self.fixture()
+        oracle = json.loads(pilot.ORACLE.read_text(encoding="utf-8"))
+        def fake_run(_target, command):
+            if command[0] == "discover":
+                return {"command": ["pact.py", *command], "returncode": 0,
+                        "elapsed_ms": 1, "stderr": "", "data": {"results": {}}}
+            return {
+                "command": ["pact.py", *command], "returncode": 0,
+                "elapsed_ms": 1, "stderr": "",
+                "data": {
+                    "status": "candidate", "artifacts": [], "decisions": [],
+                    "applicable_rules": [], "known_unknowns": [],
+                    "code_artifacts": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                },
+            }
+        with mock.patch.object(pilot.m0, "run_json", side_effect=fake_run):
+            probes = pilot.probe(pathlib.Path("/tmp/frozen-fixture-not-accessed"), cards)
+        self.assertEqual(len(probes), 6)
+        self.assertTrue(all(x["discovery"]["schema_errors"] for x in probes))
+        evidence = {
+            "A_plain_legacy": probes, "B_adapted": probes,
+            "unmodified_tracked_sources": True,
+            "projected_paths": list(range(6)),
+            "project_check_returncode": 0,
+            "knowledge_expected": {}, "knowledge_after": {}, "install": {},
+        }
+        scored = pilot.score(evidence, cards, oracle)
+        self.assertEqual(scored["engineering_safety_gate"], "FAIL")
+        self.assertTrue(any("malformed successful CLI payload" in failure
+                            for failure in scored["safety_gate_failures"]))
+        self.assertFalse(scored["agent_semantic_obedience_verified"])
 
     def test_scoring_exception_retains_completed_a_b_probe_receipts(self):
         """Regression: an invalid sealed oracle cannot erase pre-scored runs."""
