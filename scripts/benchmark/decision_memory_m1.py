@@ -18,6 +18,14 @@ import decision_memory_m0 as m0
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "pact"))
+from schema_validate import validate_instance  # PACT-owned stdlib schema validator
+
+CONTEXT_SCHEMA = json.loads(
+    (ROOT / ".pact" / "schema" / "context-envelope.schema.json").read_text(
+        encoding="utf-8"
+    )
+)
 CARDS = ROOT / "benchmarks" / "decision-memory" / "m1-task-cards.json"
 ORACLE = ROOT / "benchmarks" / "decision-memory" / "m1-oracle.json"
 CARDS_BLOB = "5b5c80d2f772c75d3c7984c0ffbc2d380870a6fa"
@@ -191,13 +199,16 @@ def valid_context_artifact(item: object) -> bool:
     return False
 
 
-def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
+def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dict | None = None) -> dict:
     """Run the actual installed pact.py; no external ID or query expansion."""
     task = case["task"]
     discovery = m0.run_json(target, [
         "discover", task, "--limit", str(settings["knowledge_limit"]),
         "--intent", settings["intent"], "--json",
     ])
+    if partial is not None:
+        # Save the completed Discover receipt BEFORE Context can fail/timeout.
+        partial["discovery_before_context"] = discovery
     envelope = m0.run_json(target, [
         "context", task, "--success", settings["success"],
         "--risk", settings["risk"], "--intent", settings["intent"],
@@ -223,6 +234,7 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
                 context_schema_errors.append(f"context {key} is not a list")
         if not isinstance(packet.get("context_budget"), dict):
             context_schema_errors.append("context budget is not an object")
+        context_schema_errors.extend(validate_instance(packet, CONTEXT_SCHEMA))
     artifacts = packet.get("artifacts")
     if not isinstance(artifacts, list):
         artifacts = []
@@ -232,7 +244,7 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
     budget = packet.get("context_budget")
     if not isinstance(budget, dict):
         budget = {}
-    return {
+    result = {
         "discovery": {
             "command": discovery["command"],
             "returncode": discovery["returncode"],
@@ -268,6 +280,45 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict) -> dict:
             "known_unknown_count": len(packet.get("known_unknowns") or []),
         },
     }
+    if partial is not None:
+        partial.update(result)
+        partial.pop("discovery_before_context", None)
+    return result
+
+
+def verify_probe_source_evidence(
+    target: pathlib.Path, recorded: dict, index: dict,
+) -> None:
+    """Bind every retrieved hit and artifact to actual installed source bytes."""
+    by_path = {doc["path"]: doc for doc in index["documents"]}
+    discovery = recorded["A"]["discovery"]
+    context = recorded["A"]["context"]
+    for hit in discovery.get("hits", []):
+        source = by_path.get(hit["path"])
+        if (source is None
+                or hit["id"] != source.get("id")
+                or hit["type"] != source.get("artifact_type")
+                or hit["status"] != source.get("status")):
+            discovery.setdefault("schema_errors", []).append(
+                f"Discover hit not present in installed Project Map: {hit!r}"
+            )
+    for item in context.get("selected_artifacts", []):
+        path = item.get("path")
+        source = by_path.get(path)
+        if (source is None or item.get("id") != source.get("id")
+                or item.get("artifact_type") != source.get("artifact_type")):
+            context.setdefault("schema_errors", []).append(
+                f"Context artifact absent from installed Project Map: {path!r}"
+            )
+            continue
+        try:
+            physical = m0.safe_file(target, path)
+            if not physical.is_file() or m0.digest_file(physical) != item.get("sha256"):
+                raise ValueError("source digest differs")
+        except (OSError, ValueError) as exc:
+            context.setdefault("schema_errors", []).append(
+                f"Context artifact source missing/invalid: {path!r}: {exc}"
+            )
 
 
 def path_diagnostic(index: dict, changed_paths: list[str], limit: int) -> dict:
@@ -332,20 +383,20 @@ def collect(cards: dict, corpus: dict, progress: dict | None = None) -> dict:
         progress["predictions"] = predictions
         progress["stage"] = "collect-predictions"
         for case in cards["cases"]:
-            # Persist this A observation before map validation; preserve it even
-            # if Project Map JSON is missing/corrupt or B diagnostics fail.
-            a = context_probe(target, case, cards["settings"])
+            # Preserve the current case even if Context times out after Discover.
             observation = {
                 "id": case["id"], "task": case["task"],
                 "type": case["type"], "changed_paths": case["changed_paths"],
-                "A": a, "B_path_navigation_only": None,
+                "A": {}, "B_path_navigation_only": None,
             }
             predictions.append(observation)
+            context_probe(target, case, cards["settings"], observation["A"])
             index_path = target / ".pact" / "cache" / "project-map.json"
             if not index_path.is_file() or index_path.is_symlink():
                 raise ValueError("installed Project Map not generated safely")
             index = json.loads(index_path.read_text(encoding="utf-8"))
             validate_installed_project_map(index, corpus)
+            verify_probe_source_evidence(target, observation, index)
             b = path_diagnostic(
                 index, case["changed_paths"],
                 cards["settings"]["max_path_hints"],
