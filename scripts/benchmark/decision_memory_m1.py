@@ -199,6 +199,108 @@ def valid_context_artifact(item: object) -> bool:
     return False
 
 
+def safe_output(value: bytes | str | None) -> str:
+    return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value or "")
+
+
+def run_fixture_step(
+    argv: list[str], *, cwd: pathlib.Path, stage: str, progress: dict,
+) -> subprocess.CompletedProcess:
+    """Keep every installer/check outcome, including both streams and timeouts."""
+    receipt = {"stage": stage, "command": list(argv)}
+    progress.setdefault("fixture_process_receipts", []).append(receipt)
+    try:
+        completed = subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True,
+            timeout=90, check=False,
+        )
+        receipt.update({
+            "returncode": completed.returncode,
+            "stdout": completed.stdout, "stderr": completed.stderr,
+        })
+        return completed
+    except subprocess.TimeoutExpired as exc:
+        receipt.update({
+            "returncode": None, "timed_out": True,
+            "timeout_seconds": exc.timeout,
+            "stdout": safe_output(exc.stdout),
+            "stderr": safe_output(exc.stderr),
+        })
+        raise
+
+
+def fixture_expected_source_hashes(corpus: dict) -> dict[str, str]:
+    """Expected bytes come from the frozen corpus, not a post-check snapshot."""
+    expected = {
+        row["path"]: hashlib.sha256(
+            m0._doc_text(row).encode("utf-8")
+        ).hexdigest()
+        for row in corpus["documents"]
+    }
+    return dict(sorted(expected.items()))
+
+
+def install_fixture_with_receipts(
+    target: pathlib.Path, corpus: dict, progress: dict,
+) -> dict:
+    """M0-compatible fixture, instrumented without modifying the frozen M0 runner."""
+    target.mkdir(parents=True, exist_ok=False)
+    (target / "README.md").write_text(
+        "# Disposable PACT M0 synthetic project\n", encoding="utf-8"
+    )
+    applied = run_fixture_step(
+        [sys.executable, str(ROOT / "scripts" / "pact" / "init.py"),
+         "--target", str(target), "--apply"],
+        cwd=ROOT, stage="pact-init", progress=progress,
+    )
+    if applied.returncode != 0 or not (target / "pact.py").is_file():
+        raise RuntimeError("PACT installed runtime initialization failed")
+    archives = sorted((target / ".pact").rglob("*.pyz"))
+    if not archives:
+        raise RuntimeError("PACT installed without compact runtime")
+    runtime = target / ".pact" / "runtime" / "pact.pyz"
+    if not runtime.is_file():
+        runtime = archives[0]
+    for doc in corpus["documents"]:
+        file = m0.safe_file(target, doc["path"])
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(m0._doc_text(doc), encoding="utf-8")
+    for entry in corpus["code_files"]:
+        file = m0.safe_file(target, entry["path"])
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(entry["text"], encoding="utf-8")
+    before = source_snapshot(target)
+    expected = fixture_expected_source_hashes(corpus)
+    progress["frozen_expected_knowledge_sha256"] = expected
+    progress["before_check_knowledge_sha256"] = before
+    if before != expected:
+        raise ValueError("installed fixture bytes differ from frozen corpus BEFORE check")
+    progress["stage"] = "installed-pact-check"
+    checked = run_fixture_step(
+        [sys.executable, str(target / "pact.py"), "check"],
+        cwd=target, stage="installed-pact-check", progress=progress,
+    )
+    after = source_snapshot(target)
+    progress["after_check_knowledge_sha256"] = after
+    if before != after:
+        raise ValueError("installed PACT check modified frozen knowledge sources")
+    expected_code = {row["path"]: hashlib.sha256(
+        row["text"].encode("utf-8")
+    ).hexdigest() for row in corpus["code_files"]}
+    code_after = {name: m0.digest_file(m0.safe_file(target, name))
+                  for name in expected_code}
+    if expected_code != code_after:
+        raise ValueError("installed PACT check modified frozen source code")
+    if checked.returncode != 0:
+        raise RuntimeError("installed PACT check rejected frozen project")
+    return {
+        "installed_launcher_present": True,
+        "compact_archive_present": True,
+        "installed_artifact_check_passed": True,
+        "compact_runtime_relative": runtime.relative_to(target).as_posix(),
+    }
+
+
 def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dict | None = None) -> dict:
     """Run the actual installed pact.py; no external ID or query expansion."""
     task = case["task"]
@@ -209,12 +311,27 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dic
     if partial is not None:
         # Save the completed Discover receipt BEFORE Context can fail/timeout.
         partial["discovery_before_context"] = discovery
-    envelope = m0.run_json(target, [
+    context_command = [
         "context", task, "--success", settings["success"],
         "--risk", settings["risk"], "--intent", settings["intent"],
         "--no-code", "--limit", str(settings["knowledge_limit"]),
         "--token-budget", str(settings["token_budget"]),
-    ])
+    ]
+    try:
+        envelope = m0.run_json(target, context_command)
+    except subprocess.TimeoutExpired as exc:
+        if partial is not None:
+            partial["context_failure"] = {
+                "command": ["pact.py", *context_command],
+                "returncode": None,
+                "timed_out": True,
+                "timeout_seconds": exc.timeout,
+                "stdout": safe_output(exc.stdout),
+                "stderr": safe_output(exc.stderr),
+            }
+        raise
+    if partial is not None:
+        partial["context_before_normalization"] = envelope
     disc = discovery["data"] if isinstance(discovery["data"], dict) else {}
     packet = envelope["data"] if isinstance(envelope["data"], dict) else {}
     discovery_schema_errors = []
@@ -276,13 +393,16 @@ def context_probe(target: pathlib.Path, case: dict, settings: dict, partial: dic
             "applicable_rule_ids": packet.get("applicable_rules"),
             "selected_knowledge_files": len(artifacts),
             "estimated_selected_tokens": budget.get("selected_estimated_tokens"),
-            "code_files": len(packet.get("code_artifacts") or []),
-            "known_unknown_count": len(packet.get("known_unknowns") or []),
+            "code_files": len(packet.get("code_artifacts"))
+            if isinstance(packet.get("code_artifacts"), list) else 0,
+            "known_unknown_count": len(packet.get("known_unknowns"))
+            if isinstance(packet.get("known_unknowns"), list) else 0,
         },
     }
     if partial is not None:
         partial.update(result)
         partial.pop("discovery_before_context", None)
+        partial.pop("context_before_normalization", None)
     return result
 
 
@@ -362,7 +482,7 @@ def collect(cards: dict, corpus: dict, progress: dict | None = None) -> dict:
     progress["stage"] = "install"
     with tempfile.TemporaryDirectory(prefix="pact-m1-cold-start-") as tmp:
         target = pathlib.Path(tmp) / "project"
-        installed = m0.install_fixture(target, corpus)
+        installed = install_fixture_with_receipts(target, corpus, progress)
         installed_archive = target / installed["compact_runtime_relative"]
         if not installed_archive.is_file() or installed_archive.is_symlink():
             raise ValueError("installed compact runtime artifact not verifiable")
@@ -613,10 +733,19 @@ def main() -> int:
     try:
         result = evaluate(progress)
     except Exception as exc:
+        interruption = None
+        if isinstance(exc, subprocess.TimeoutExpired):
+            interruption = {
+                "command": exc.cmd,
+                "timeout_seconds": exc.timeout,
+                "stdout": safe_output(exc.stdout),
+                "stderr": safe_output(exc.stderr),
+            }
         result = {
             "version": 1, "evaluation_kind": "M1 synthetic benchmark failure",
             "synthetic_safety_gate": "FAIL",
             "gate_failures": [f"{type(exc).__name__}: {exc}"],
+            "interrupted_subprocess": interruption,
             "partial_probe_evidence": progress or None,
             "completed_probes_preserved": bool(progress.get("predictions")),
             "real_agent_executed": False,
