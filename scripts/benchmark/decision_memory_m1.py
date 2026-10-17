@@ -120,7 +120,7 @@ def valid_discovery_hit(hit: object) -> bool:
     if not isinstance(hit, dict):
         return False
     path = hit.get("path")
-    if (not isinstance(path, str) or not path or "\\\\" in path
+    if (not isinstance(path, str) or not path or chr(92) in path
             or pathlib.PurePosixPath(path).is_absolute()
             or ".." in pathlib.PurePosixPath(path).parts):
         return False
