@@ -95,6 +95,99 @@ class ColdStartM1Tests(unittest.TestCase):
         )
         self.assertEqual(small["omitted_candidates"], 2)
 
+    def test_malformed_discovery_record_is_not_a_valid_empty_hit(self):
+        self.assertFalse(benchmark.valid_discovery_hit({}))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "decision", "id": None,
+            "status": "implemented", "path": ".agents/decisions/a.md",
+        }))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "decision", "id": "DEC-TEST",
+            "status": "implemented", "path": "../escape.md",
+        }))
+        self.assertTrue(benchmark.valid_discovery_hit({
+            "artifact_type": "document", "id": None,
+            "status": None, "path": "docs/readme.md",
+        }))
+
+    def test_invalid_project_map_cannot_hide_frozen_decisions(self):
+        cards, corpus, _ = self.inputs()
+        docs = [
+            {"id": row["id"], "path": row["path"],
+             "artifact_type": row["type"], "status": row["status"],
+             "paths": row.get("paths", [])}
+            for row in corpus["documents"]
+        ]
+        lookup = {x["id"]: x["path"] for x in corpus["documents"]}
+        index = {
+            "repository_root": ".", "documents": docs, "id_to_path": lookup,
+        }
+        benchmark.validate_installed_project_map(index, corpus)
+        with self.assertRaisesRegex(ValueError, "omits"):
+            benchmark.validate_installed_project_map(
+                {**index, "documents": docs[:-1],
+                 "id_to_path": dict(list(lookup.items())[:-1])}, corpus
+            )
+        with self.assertRaisesRegex(ValueError, "malformed document"):
+            benchmark.validate_installed_project_map(
+                {**index, "documents": docs[:-1] + [{}]}, corpus
+            )
+        with self.assertRaisesRegex(ValueError, "top-level"):
+            benchmark.validate_installed_project_map(
+                {"repository_root": ".", "id_to_path": {}, "documents": "corrupt"}, corpus
+            )
+
+    def test_claimed_current_decision_needs_real_path_type_and_digest(self):
+        cards, corpus, oracle = self.inputs()
+        doc = next(x for x in corpus["documents"]
+                   if x["id"] == "DEC-CACHE-OWNERSHIP")
+        digest = "d" * 64
+        predictions = []
+        for case in cards["cases"]:
+            current = ["DEC-CACHE-OWNERSHIP"] if case["id"] == "cache-owner-conflict" else []
+            predictions.append({
+                "id": case["id"], "task": case["task"],
+                "type": case["type"], "changed_paths": case["changed_paths"],
+                "A": {
+                    "discovery": {"returncode": 0, "schema_errors": []},
+                    "context": {
+                        "returncode": 0, "status": "candidate",
+                        "current_decision_ids": current,
+                        "applicable_rule_ids": [],
+                        "selected_ids": current,
+                        "selected_artifacts": (
+                            [{"id": current[0]}] if current else []
+                        ),
+                        "schema_errors": [],
+                        "selected_knowledge_files": len(current),
+                        "estimated_selected_tokens": 100,
+                        "code_files": 0,
+                    },
+                },
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False, "retrieval_treatment": False,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_source_sha256": {doc["path"]: digest},
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        rejected = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(rejected["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("missing valid materialized source record" in x
+                            for x in rejected["gate_failures"]))
+        predictions[0]["A"]["context"]["selected_artifacts"][0].update({
+            "path": doc["path"], "artifact_type": "decision", "sha256": digest,
+        })
+        accepted = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(accepted["synthetic_safety_gate"], "PASS")
+        self.assertEqual(accepted["cold_start_effectiveness"], "HOLD")
+
     def test_successful_malformed_discover_is_not_silently_treated_as_no_hits(self):
         cards, corpus, oracle = self.inputs()
         predictions = []
