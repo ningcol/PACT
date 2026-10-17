@@ -220,6 +220,8 @@ class BrownfieldAdrViewerPilotTests(unittest.TestCase):
             for forged in (
                 {**good_hit, "path": "README.md"},
                 {**good_hit, "id": "DEC-ADR-0003"},
+                {**good_hit, "status": "superseded"},
+                {**good_hit, "artifact_type": "rule"},
             ):
                 self.assertTrue(pilot.verify_installed_probe_sources(
                     root, cards, [forged], []
