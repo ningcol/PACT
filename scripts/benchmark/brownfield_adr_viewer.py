@@ -412,6 +412,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True)
     args = parser.parse_args()
+    evidence = None  # Keep completed installed-CLI probes even if scoring fails.
     try:
         if os.environ.get("GITHUB_ACTIONS") != "true":
             raise ValueError("run only on isolated GitHub Actions temp runner")
@@ -430,6 +431,8 @@ def main() -> int:
             "kind": "real GitHub clone installed PACT engineering probe",
             "engineering_safety_gate": "FAIL",
             "safety_gate_failures": [f"{type(exc).__name__}: {exc}"],
+            "raw_probes": evidence,  # None if failed before completed collection.
+            "completed_probes_preserved": isinstance(evidence, dict),
             "real_agent_executed": False,
             "owner_approval_authenticated": False,
             "release_gate": "HOLD",
