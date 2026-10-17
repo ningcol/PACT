@@ -385,10 +385,10 @@ def main() -> int:
         raise SystemExit("frozen M0 benchmark accepts no arbitrary fixture paths")
     result = evaluate()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    # The purpose is to reveal the current baseline, INCLUDING hard gate
-    # failures, rather than conceal failures by crashing or retuning inputs.
-    # Callers must treat synthetic_engineering_gate=FAIL as a NO-GO.
-    return 0
+    # Emit the complete JSON before failing so CI can retain diagnostics.
+    # A violated preregistered synthetic correctness gate is a real nonzero
+    # exit status, not a "green" benchmark with an internal FAIL message.
+    return 0 if result["synthetic_engineering_gate"] == "PASS" else 1
 
 
 if __name__ == "__main__":
