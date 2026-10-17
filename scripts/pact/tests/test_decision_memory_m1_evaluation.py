@@ -138,6 +138,77 @@ class ColdStartM1Tests(unittest.TestCase):
             self.assertEqual(item["A"]["discovery"]["schema_errors"], [])
             self.assertEqual(item["A"]["context"]["schema_errors"], [])
 
+    def test_mutated_frozen_source_is_detected_by_independent_expected_bytes(self):
+        cards, corpus, _ = self.inputs()
+        expected = benchmark.fixture_expected_source_hashes(corpus)
+        self.assertEqual(len(expected), 9)
+        with tempfile.TemporaryDirectory(prefix="pact-m1-frozen-") as td:
+            root = pathlib.Path(td)
+            for entry in corpus["documents"]:
+                path = root / entry["path"]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(m0._doc_text(entry), encoding="utf-8")
+            self.assertEqual(benchmark.source_snapshot(root), expected)
+            first = root / corpus["documents"][0]["path"]
+            first.write_text(first.read_text(encoding="utf-8") + "altered\n",
+                             encoding="utf-8")
+            self.assertNotEqual(benchmark.source_snapshot(root), expected)
+
+    def test_installer_nonzero_and_timeout_receipts_are_not_erased(self):
+        import types
+        progress = {}
+        failed = types.SimpleNamespace(returncode=19, stdout="invalid fixture",
+                                       stderr="authorities conflict")
+        with mock.patch.object(benchmark.subprocess, "run", return_value=failed):
+            outcome = benchmark.run_fixture_step(
+                [sys.executable, "pact.py", "check"], cwd=benchmark.ROOT,
+                stage="check", progress=progress
+            )
+        self.assertEqual(outcome.returncode, 19)
+        self.assertEqual(progress["fixture_process_receipts"][0]["returncode"], 19)
+        self.assertIn("authorities", progress["fixture_process_receipts"][0]["stderr"])
+        exc = subprocess.TimeoutExpired(
+            ["pact.py", "check"], 3, output=b"partial output", stderr=b"timeout stderr"
+        )
+        with mock.patch.object(benchmark.subprocess, "run", side_effect=exc):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                benchmark.run_fixture_step(
+                    ["pact.py", "check"], cwd=benchmark.ROOT,
+                    stage="check-timeout", progress=progress
+                )
+        receipt = progress["fixture_process_receipts"][-1]
+        self.assertTrue(receipt["timed_out"])
+        self.assertIn("partial output", receipt["stdout"])
+        self.assertIn("timeout stderr", receipt["stderr"])
+
+    def test_malformed_context_list_cannot_erase_completed_envelope(self):
+        cards, _, _ = self.inputs()
+        success = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "elapsed_ms": 1, "stderr": "", "data": {"results": []}
+        }
+        malformed = {
+            "command": ["pact.py", "context"], "returncode": 0,
+            "elapsed_ms": 1, "stderr": "",
+            "data": {
+                "artifacts": [], "decisions": [], "applicable_rules": [],
+                "code_artifacts": 7, "known_unknowns": 3,
+                "context_budget": {"selected_estimated_tokens": 0},
+                "status": "candidate",
+            },
+        }
+        progress = {}
+        with mock.patch.object(m0, "run_json", side_effect=[success, malformed]):
+            outcome = benchmark.context_probe(
+                pathlib.Path("/tmp/pact-no-files"), cards["cases"][0],
+                cards["settings"], progress
+            )
+        self.assertEqual(outcome["context"]["code_files"], 0)
+        self.assertEqual(outcome["context"]["known_unknown_count"], 0)
+        self.assertTrue(outcome["context"]["schema_errors"])
+        self.assertEqual(progress["context"]["schema_errors"],
+                         outcome["context"]["schema_errors"])
+
     def test_completed_discover_receipt_survives_context_timeout(self):
         cards, _, _ = self.inputs()
         discovery = {
@@ -155,6 +226,8 @@ class ColdStartM1Tests(unittest.TestCase):
                     cards["settings"], partial,
                 )
         self.assertEqual(partial["discovery_before_context"], discovery)
+        self.assertTrue(partial["context_failure"]["timed_out"])
+        self.assertIn("context", partial["context_failure"]["command"])
 
     def test_malformed_unclaimed_context_artifact_is_not_safe(self):
         self.assertFalse(benchmark.valid_context_artifact({}))
