@@ -281,6 +281,53 @@ def valid_context_artifact(record: object) -> bool:
     return False
 
 
+def projected_decision_paths(cards: dict) -> dict[str, str]:
+    return {
+        doc["id"]: (
+            ".agents/decisions/" +
+            ("superseded" if doc["status"] == "superseded" else "implemented") +
+            "/" + doc["id"].lower() + ".md"
+        )
+        for doc in cards["upstream_docs"]
+    }
+
+
+def verify_installed_probe_sources(
+    target: pathlib.Path, cards: dict, hits: list, selected: list,
+) -> list[str]:
+    """All returned sources must exist; typed IDs must refer to exact projections."""
+    failures = []
+    by_id = projected_decision_paths(cards)
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        path, ident = hit.get("path"), hit.get("id")
+        if ident is not None and by_id.get(ident) != path:
+            failures.append(f"Discover has forged decision ID/source: {ident!r} {path!r}")
+        if isinstance(path, str):
+            try:
+                source = m0.safe_file(target, path)
+                if not source.is_file():
+                    raise ValueError("missing source")
+            except (OSError, ValueError) as exc:
+                failures.append(f"Discover hit has missing source: {path!r}: {exc}")
+    for item in selected:
+        if not isinstance(item, dict):
+            continue
+        path, ident = item.get("path"), item.get("id")
+        if ident is not None and by_id.get(ident) != path:
+            failures.append(f"Context has forged Decision ID/source: {ident!r} {path!r}")
+        if isinstance(path, str):
+            try:
+                source = m0.safe_file(target, path)
+                if (not source.is_file() or
+                        m0.digest_file(source) != item.get("sha256")):
+                    raise ValueError("source SHA mismatch")
+            except (OSError, ValueError) as exc:
+                failures.append(f"Context source invalid: {path!r}: {exc}")
+    return failures
+
+
 def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -> list[dict]:
     settings = cards["settings"]
     if result is None:
@@ -327,6 +374,17 @@ def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -
         if any(not valid_context_artifact(v) for v in selected):
             context_schema_errors.append("Context artifacts have malformed source/path/type/digest")
             selected = [v for v in selected if isinstance(v, dict)]
+        source_errors = verify_installed_probe_sources(
+            target, cards,
+            disc.get("results", []) if isinstance(disc.get("results"), list) else [],
+            selected,
+        )
+        discovery_schema_errors.extend(
+            x for x in source_errors if x.startswith("Discover ")
+        )
+        context_schema_errors.extend(
+            x for x in source_errors if x.startswith("Context ")
+        )
         result.append({
             "id": case["id"], "task": task, "kind": case["kind"],
             "discovery": {
@@ -334,10 +392,11 @@ def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -
                 "returncode": discovery["returncode"],
                 "elapsed_ms": discovery["elapsed_ms"],
                 "stderr": discovery["stderr"],
+                "stdout_excerpt": discovery.get("stdout_excerpt", ""),
                 "schema_errors": discovery_schema_errors,
                 "hits": [
                     {"id": x.get("id"), "status": x.get("status"),
-                     "type": x.get("artifact_type")}
+                     "type": x.get("artifact_type"), "path": x.get("path")}
                     for x in disc.get("results", []) if isinstance(x, dict)
                 ],
             },
@@ -346,6 +405,7 @@ def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -
                 "returncode": context["returncode"],
                 "elapsed_ms": context["elapsed_ms"],
                 "stderr": context["stderr"],
+                "stdout_excerpt": context.get("stdout_excerpt", ""),
                 "schema_errors": context_schema_errors,
                 "status": envelope.get("status"),
                 "selected_ids": [x.get("id") for x in selected if isinstance(x, dict)],
@@ -513,6 +573,7 @@ def evaluate(target: pathlib.Path, cards: dict, progress: dict | None = None) ->
     projected = project_adrs(target, cards)
     progress["projected_paths"] = projected
     snapshot = source_snapshot(target)
+    progress["stage"] = "installed-project-check"
     check = subprocess.run(
         [sys.executable, str(target / "pact.py"), "check"],
         cwd=target, capture_output=True, text=True, timeout=120, check=False,
@@ -562,11 +623,25 @@ def main() -> int:
         oracle = json.loads(ORACLE.read_text(encoding="utf-8"))
         report = score(evidence, cards, oracle)
     except Exception as exc:
+        interrupted = None
+        if isinstance(exc, subprocess.TimeoutExpired):
+            def decode_buffer(value):
+                if isinstance(value, bytes):
+                    return value.decode("utf-8", errors="replace")[:2000]
+                return str(value or "")[:2000]
+            interrupted = {
+                "command": exc.cmd if isinstance(exc.cmd, (str, list, tuple))
+                else str(exc.cmd),
+                "timeout_seconds": exc.timeout,
+                "stdout_excerpt": decode_buffer(exc.stdout),
+                "stderr_excerpt": decode_buffer(exc.stderr),
+            }
         report = {
             "version": 1,
             "kind": "real GitHub clone installed PACT engineering probe",
             "engineering_safety_gate": "FAIL",
             "safety_gate_failures": [f"{type(exc).__name__}: {exc}"],
+            "interrupted_subprocess": interrupted,
             "raw_probes": evidence if evidence is not None else (progress or None),
             "completed_probes_preserved": bool(evidence is not None or progress.get("A_plain_legacy") or progress.get("B_adapted")),
             "partial_collection_failed": evidence is None,
