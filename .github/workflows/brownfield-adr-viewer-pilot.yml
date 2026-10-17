@@ -50,18 +50,6 @@ jobs:
           test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
           echo "READ-ONLY public upstream at pinned SHA; no Git push credentials."
 
-      - name: Verify upstream's actual Python tests in isolated clone
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check \
-            "click==8.1.7" "mistune==3.0.2" "beautifulsoup4==4.12.3" \
-            "Jinja2==3.1.4" "pytest==8.3.2" "bottle==0.12.25"
-          cd "$PACT_PILOT_TARGET"
-          python -m pytest -q adr_viewer \
-            2>&1 | tee "$RUNNER_TEMP/adr-viewer-upstream-pytest.txt"
-
       - name: Execute real-clone installed PACT trial and retain full JSON
         shell: bash
         run: |
@@ -95,13 +83,58 @@ jobs:
           print("This is NOT an independent Agent/Owner outcome.")
           PY
 
-      - name: Preserve original tests and PACT raw evaluation receipts
+      - name: Preserve PACT evaluator receipts only
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pinned-adr-viewer-pact-brownfield-receipts
           path: |
             ${{ runner.temp }}/adr-viewer-pact-pilot.json
-            ${{ runner.temp }}/adr-viewer-upstream-pytest.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  upstream-tests-untrusted:
+    # Execute third-party code in a *separate job and fresh VM*. There is
+    # no PACT checkout, evaluator, frozen oracle, shared workspace or
+    # receipt path for the untrusted tests to modify.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python for isolated upstream tests
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone and pin third-party source in test-only VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/adr-viewer-tests-only"
+          echo "UPSTREAM_TEST_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/mrwilson/adr-viewer.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet \
+            a25f1c71e031bdaa63fe3175f969f197139f2044
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "a25f1c71e031bdaa63fe3175f969f197139f2044"
+
+      - name: Run original upstream Python tests (no PACT scorer present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            "click==8.1.7" "mistune==3.0.2" "beautifulsoup4==4.12.3" \
+            "Jinja2==3.1.4" "pytest==8.3.2" "bottle==0.12.25"
+          cd "$UPSTREAM_TEST_TARGET"
+          python -m pytest -q adr_viewer \
+            2>&1 | tee "$RUNNER_TEMP/adr-viewer-upstream-pytest.txt"
+
+      - name: Preserve isolated upstream test receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pinned-adr-viewer-upstream-only-test-receipts
+          path: ${{ runner.temp }}/adr-viewer-upstream-pytest.txt
           if-no-files-found: warn
           retention-days: 14
