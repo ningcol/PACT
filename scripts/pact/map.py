@@ -158,7 +158,9 @@ def valid_project_index(index: dict, *, expected_paths: set[str]) -> bool:
         # A complete current-generation index must not silently erase the
         # relation back to an earlier Decision or its replacement. Values
         # derive from source Markdown; the cache is never authority.
-        replacement_id = doc.get("superseded_by")
+        if "superseded_by" not in doc:
+            return False
+        replacement_id = doc["superseded_by"]
         if replacement_id is not None and (
             not isinstance(replacement_id, str) or not replacement_id
         ):
