@@ -229,6 +229,18 @@ def run_fixture_step(
         raise
 
 
+def normalized_installed_source_hashes(
+    target: pathlib.Path, relative_paths: list[str],
+) -> dict[str, str]:
+    """Compare canonical text, unaffected by Windows write_text CRLF conversion."""
+    return dict(sorted(
+        (name, hashlib.sha256(
+            m0.safe_file(target, name).read_bytes().replace(b"\\r\\n", b"\\n")
+        ).hexdigest())
+        for name in relative_paths
+    ))
+
+
 def fixture_expected_source_hashes(corpus: dict) -> dict[str, str]:
     """Expected bytes come from the frozen corpus, not a post-check snapshot."""
     expected = {
@@ -273,8 +285,11 @@ def install_fixture_with_receipts(
     expected = fixture_expected_source_hashes(corpus)
     progress["frozen_expected_knowledge_sha256"] = expected
     progress["before_check_knowledge_sha256"] = before
-    if before != expected:
-        raise ValueError("installed fixture bytes differ from frozen corpus BEFORE check")
+    canonical_before = normalized_installed_source_hashes(
+        target, list(expected),
+    )
+    if canonical_before != expected:
+        raise ValueError("installed fixture canonical text differs from frozen corpus BEFORE check")
     progress["stage"] = "installed-pact-check"
     checked = run_fixture_step(
         [sys.executable, str(target / "pact.py"), "check"],
@@ -287,8 +302,7 @@ def install_fixture_with_receipts(
     expected_code = {row["path"]: hashlib.sha256(
         row["text"].encode("utf-8")
     ).hexdigest() for row in corpus["code_files"]}
-    code_after = {name: m0.digest_file(m0.safe_file(target, name))
-                  for name in expected_code}
+    code_after = normalized_installed_source_hashes(target, list(expected_code))
     if expected_code != code_after:
         raise ValueError("installed PACT check modified frozen source code")
     if checked.returncode != 0:
