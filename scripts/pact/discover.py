@@ -137,13 +137,20 @@ def document_term_matches(term: str, field: str) -> bool:
         return False
     if has_unspaced_script(term):
         return len(term) >= 2 and term in norm(field)
-    if len(term) < 3:
-        return False
-    # Hyphen/underscore and camel-case code names are useful separators.
-    # Do not treat an unrelated suffix inside a longer prose word as a hit.
+    # Query and document must use the SAME token boundaries. Hyphenated
+    # owner terms (`sign-in`) and underscored code labels (`login_retry`)
+    # should match contiguous document tokens, never arbitrary substrings.
+    # Reject single-character/suffix noise such as `s` or `py`.
     value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", field)
-    tokens = re.findall(r"[^\W_]+", norm(value), re.UNICODE)
-    return term in tokens
+    doc_tokens = re.findall(r"[^\W_]+", norm(value), re.UNICODE)
+    query_tokens = re.findall(r"[^\W_]+", norm(term), re.UNICODE)
+    if not query_tokens or len("".join(query_tokens)) < 3:
+        return False
+    window = len(query_tokens)
+    return any(
+        doc_tokens[pos:pos + window] == query_tokens
+        for pos in range(len(doc_tokens) - window + 1)
+    )
 
 
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
