@@ -603,6 +603,22 @@ def main() -> int:
             print(f"PACT context: cannot verify Domain source map: {exc}", file=sys.stderr)
             return 2
 
+        # Bind metadata-only authority hints to the original immutable source
+        # digest so downstream Convergence can demand actual dispositions.
+        for item in scope_route["candidates"]:
+            digest = artifact_sha256(item["path"])
+            if digest is None:
+                print(
+                    "PACT context: routed authority source is missing: "
+                    + repr(item["path"]), file=sys.stderr,
+                )
+                return 2
+            item["sha256"] = digest
+
+        # The full source-linked ID/path set must not be truncated by the
+        # 12-item *presentation* cap; it never enters Context JSON.
+        all_candidate_paths = set(scope_route.pop("_all_candidate_paths"))
+
         # This is an EXPLICITLY OPT-IN materialization policy, never an
         # automatic claim of semantic Rule/Decision applicability.
         # Ambiguous/unmapped and high-risk/history requests retain baseline
@@ -611,11 +627,12 @@ def main() -> int:
             scope_route["status"] == "unique"
             and args.risk != "high"
             and args.intent not in {"decision", "history"}
+            and scope_route["truncated_candidates"] == 0
         )
         scope_route["restricted_selection"] = can_restrict
         if can_restrict:
             home = scope_route["domains"][0]
-            known_paths = {v["path"] for v in scope_route["candidates"]}
+            known_paths = all_candidate_paths
             # Explicit, metadata-backed title/alias/ID hits stay selectable;
             # merely sharing a Domain is NOT sufficient to assert a rule.
             grounded = [
@@ -741,8 +758,9 @@ def main() -> int:
         if scope_route["truncated_candidates"]:
             unknowns.append(
                 f"{scope_route['truncated_candidates']} Domain-associated authority "
-                "candidates exceeded the metadata cap; review the Domain source "
-                "and its references before claiming context sufficiency."
+                "candidates exceeded the metadata cap; selection was NOT narrowed. "
+                "Review the complete Domain source and cross-domain references "
+                "before claiming context sufficiency."
             )
     mixed_candidates = sorted({
         str(result.get("path"))
