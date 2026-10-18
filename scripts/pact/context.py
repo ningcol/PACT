@@ -691,6 +691,26 @@ def main() -> int:
                     "mixed_authority": False, "verification": [],
                 })
             candidate_results = grounded
+        elif scope_route["status"] == "unique":
+            # High-risk, history and overflow keep EVERY normal lexical
+            # candidate, but must still carry the confirmed Domain that made
+            # this a unique route. Prefer its existing lexical result if any.
+            home = scope_route["domains"][0]
+            existing = next(
+                (item for item in candidate_results
+                 if item.get("path") == home["path"]), None,
+            )
+            domain = existing or {
+                "path": home["path"], "id": home["id"],
+                "artifact_type": "domain", "title": home["title"],
+                "status": "confirmed", "domains": [],
+                "score": 2000, "reasons": ["explicit Domain routing"],
+                "mixed_authority": False, "verification": [],
+            }
+            candidate_results = [domain] + [
+                item for item in candidate_results
+                if item.get("path") != home["path"]
+            ]
 
     results, code_results, budget = select_context_candidates(
         candidate_results,
@@ -699,7 +719,7 @@ def main() -> int:
         knowledge_limit=knowledge_limit,
         code_limit=code_limit,
     )
-    if scope_route is not None and scope_route["restricted_selection"]:
+    if scope_route is not None and scope_route["status"] == "unique":
         domain_path = scope_route["domains"][0]["path"]
         if not any(item.get("path") == domain_path for item in results):
             print(
