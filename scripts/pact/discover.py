@@ -127,6 +127,20 @@ def document_phrase_matches(phrase: str, field: str) -> bool:
     ))
 
 
+def document_tokens(value: str) -> list[str]:
+    """Unicode-aware boundaries for camel/acronym, space, hyphen and '_'."""
+    rendered: list[str] = []
+    for i, ch in enumerate(value):
+        if i and (
+            ((value[i - 1].islower() or value[i - 1].isdigit()) and ch.isupper())
+            or (value[i - 1].isupper() and ch.isupper()
+                and i + 1 < len(value) and value[i + 1].islower())
+        ):
+            rendered.append(" ")
+        rendered.append(ch)
+    return re.findall(r"[^\W_]+", norm("".join(rendered)), re.UNICODE)
+
+
 def document_term_matches(term: str, field: str) -> bool:
     """Token-aware evidence; never match `.py` against `Python`.
 
@@ -141,13 +155,8 @@ def document_term_matches(term: str, field: str) -> bool:
     # owner terms (`sign-in`) and underscored code labels (`login_retry`)
     # should match contiguous document tokens, never arbitrary substrings.
     # Reject single-character/suffix noise such as `s` or `py`.
-    def tokens(raw: str) -> list[str]:
-        value = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", raw)
-        value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
-        return re.findall(r"[^\W_]+", norm(value), re.UNICODE)
-
-    doc_tokens = tokens(field)
-    query_tokens = tokens(term)
+    doc_tokens = document_tokens(field)
+    query_tokens = document_tokens(term)
     if not query_tokens or len("".join(query_tokens)) < 3:
         return False
     window = len(query_tokens)
@@ -182,6 +191,12 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q == title:
         score += 140
         reasons.append("exact title")
+    elif (len(document_tokens(raw_title)) >= 2
+          and document_term_matches(raw_title, query)):
+        # Distinctive multi-token names cited verbatim inside a longer task
+        # are explicit references, not weak shared body keywords.
+        score += 90
+        reasons.append("embedded exact title")
     elif document_phrase_matches(q, title):
         score += 90
         reasons.append("title contains query")
@@ -189,6 +204,11 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q in aliases:
         score += 130
         reasons.append("exact alias")
+    elif any(len(document_tokens(alias)) >= 2
+             and document_term_matches(alias, query)
+             for alias in raw_aliases):
+        score += 80
+        reasons.append("embedded exact alias")
     elif any(document_phrase_matches(q, alias) for alias in aliases):
         score += 80
         reasons.append("alias contains query")
@@ -476,9 +496,9 @@ def exact_match_priority(reasons: list[str]) -> int:
 
     if matches("exact stable id"):
         return 3
-    if matches("exact title"):
+    if matches("exact title") or matches("embedded exact title"):
         return 2
-    if matches("exact alias"):
+    if matches("exact alias") or matches("embedded exact alias"):
         return 1
     return 0
 
