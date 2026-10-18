@@ -575,5 +575,29 @@ paths = ["src/auth/**"]
                                 in issue for issue in errors), errors)
 
 
+    def test_camel_case_lookup_recovers_spaced_and_camel_owner_queries(self):
+        decision = {
+            "id": "DEC-CAMEL-001", "title": "LoginRetry",
+            "aliases": ["HTTPServer"], "domains": ["DomainAuth"],
+            "status": "implemented", "artifact_type": "decision",
+            "text": "PerformLoginFlow preserves the approved behavior.",
+        }
+        for query in (
+            "change login retry", "change LoginRetry",
+            "review http server", "review HTTPServer",
+            "review domain auth", "review perform login flow",
+            "review PerformLoginFlow",
+        ):
+            with self.subTest(query=query):
+                score, _ = score_document(decision, query)
+                self.assertGreater(score, 0, query)
+        self.assertTrue(document_term_matches("login retry", "LoginRetry"))
+        self.assertTrue(document_term_matches("LoginRetry", "Login Retry"))
+        self.assertTrue(document_term_matches("HTTPServer", "HTTP Server"))
+        self.assertTrue(document_term_matches("http server", "HTTPServer"))
+        self.assertFalse(document_term_matches("py", "Python"))
+        self.assertFalse(document_term_matches("unit", "opportunity"))
+
+
 if __name__ == "__main__":
     unittest.main()
