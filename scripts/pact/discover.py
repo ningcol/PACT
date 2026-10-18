@@ -141,9 +141,13 @@ def document_term_matches(term: str, field: str) -> bool:
     # owner terms (`sign-in`) and underscored code labels (`login_retry`)
     # should match contiguous document tokens, never arbitrary substrings.
     # Reject single-character/suffix noise such as `s` or `py`.
-    value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", field)
-    doc_tokens = re.findall(r"[^\W_]+", norm(value), re.UNICODE)
-    query_tokens = re.findall(r"[^\W_]+", norm(term), re.UNICODE)
+    def tokens(raw: str) -> list[str]:
+        value = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", raw)
+        value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+        return re.findall(r"[^\W_]+", norm(value), re.UNICODE)
+
+    doc_tokens = tokens(field)
+    query_tokens = tokens(term)
     if not query_tokens or len("".join(query_tokens)) < 3:
         return False
     window = len(query_tokens)
@@ -155,15 +159,21 @@ def document_term_matches(term: str, field: str) -> bool:
 
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
-    ts = [term for term in terms(query) if term not in DOCUMENT_STOPWORDS]
+    ts = [term for term in re.findall(r"[\w\-]+", query, flags=re.UNICODE)
+          if norm(term) not in DOCUMENT_STOPWORDS]
+    normalized_terms = {norm(term) for term in ts}
     score = 0
     reasons: list[str] = []
 
     ident = norm(str(doc.get("id") or ""))
-    title = norm(str(doc.get("title") or ""))
-    aliases = [norm(str(x)) for x in doc.get("aliases", [])]
-    domains = [norm(str(x)) for x in doc.get("domains", [])]
-    body = norm(str(doc.get("text") or ""))
+    raw_title = str(doc.get("title") or "")
+    raw_aliases = [str(x) for x in doc.get("aliases", [])]
+    raw_domains = [str(x) for x in doc.get("domains", [])]
+    raw_body = str(doc.get("text") or "")
+    title = norm(raw_title)
+    aliases = [norm(x) for x in raw_aliases]
+    domains = [norm(x) for x in raw_domains]
+    body = norm(raw_body)
 
     if ident and q == ident:
         score += 200
@@ -194,19 +204,19 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     matched_terms = 0
     for term in ts:
         term_score = 0
-        if ident and term == ident:
+        if ident and norm(term) == ident:
             term_score = max(term_score, 80)
             # A stable ID embedded in normal task wording is still explicit.
             # The scoped selector uses this evidence, not a text substring.
             if "exact stable id" not in reasons:
                 reasons.append("exact stable id")
-        if document_term_matches(term, title):
+        if document_term_matches(term, raw_title):
             term_score = max(term_score, 30)
-        if any(document_term_matches(term, alias) for alias in aliases):
+        if any(document_term_matches(term, alias) for alias in raw_aliases):
             term_score = max(term_score, 35)
-        if any(document_term_matches(term, domain) for domain in domains):
+        if any(document_term_matches(term, domain) for domain in raw_domains):
             term_score = max(term_score, 30)
-        if document_term_matches(term, body):
+        if document_term_matches(term, raw_body):
             term_score = max(term_score, 8)
         if term_score:
             matched_terms += 1
@@ -227,7 +237,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         and doc.get("status") in {"archived", "superseded"}
         and q not in {ident, title}
         and q not in aliases
-        and ident not in ts
+        and ident not in normalized_terms
     ):
         score = max(score // 2, 1)
         reasons.append("historical decision (not current guidance)")
