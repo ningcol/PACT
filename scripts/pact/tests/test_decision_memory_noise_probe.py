@@ -58,6 +58,73 @@ class PinnedBrownfieldNoiseTests(unittest.TestCase):
             cases["external_sha"], probe.pilot.EXPECTED_UPSTREAM_SHA
         )
 
+    def test_safety_gate_requires_decision_source_and_empty_raw_adr_authority(self):
+        cases = self.cases()
+        oracle = probe.load_frozen_oracle(cases)
+        source = json.loads(probe.pilot.CARDS.read_text(encoding="utf-8"))
+        paths = probe.pilot.projected_decision_paths(source)
+        digests = {path: ("e" * 64) for path in paths.values()}
+
+        def context_record(case_id, ids):
+            selected = [
+                {"id": ident, "path": paths[ident],
+                 "artifact_type": "decision", "sha256": digests[paths[ident]]}
+                for ident in ids
+            ]
+            return {
+                "id": case_id,
+                "discovery": {"returncode": 0, "schema_errors": [], "hits": []},
+                "context": {
+                    "returncode": 0, "schema_errors": [],
+                    "status": "candidate", "code_context_selected": 0,
+                    "current_decision_ids": list(ids),
+                    "selected_artifacts": selected,
+                    "selected_knowledge_files": len(selected),
+                    "estimated_selected_tokens": 150,
+                },
+            }
+
+        a = [context_record(t["id"], []) for t in cases["cases"]]
+        b = [
+            context_record(t["id"], oracle["expected_current"][t["id"]])
+            for t in cases["cases"]
+        ]
+        evidence = {
+            "A": a, "B": b,
+            "A_scored": [{"id": x["id"], "hits": []} for x in a],
+            "B_scored": [{"id": x["id"], "hits": []} for x in b],
+            "knowledge_expected": digests, "knowledge_after": dict(digests),
+            "original_adrs_unmodified": True,
+            "pact_check": {"returncode": 0},
+            "install": {
+                "installed_source_match": True,
+                "source_checkout_git_sha": probe.FROZEN_PACT_BASELINE,
+                "installed_archive_sha256": "a" * 64,
+            },
+        }
+        clean = probe.score(evidence, cases, oracle)
+        self.assertEqual(clean["engineering_gate"], "PASS", clean["gate_failures"])
+        self.assertEqual(clean["positive_target_hits"], 4)
+        self.assertEqual(clean["routine_cases_with_extra_current_decisions"], 0)
+        self.assertFalse(clean["real_agent_executed"])
+
+        # Forge an expected current ID without actually selecting its source.
+        first = next(i for i, t in enumerate(cases["cases"])
+                     if oracle["expected_current"][t["id"]])
+        removed = evidence["B"][first]["context"]["selected_artifacts"].pop()
+        corrupted = probe.score(evidence, cases, oracle)
+        self.assertEqual(corrupted["engineering_gate"], "FAIL")
+        self.assertTrue(any("no matching selected source/digest" in issue
+                            for issue in corrupted["gate_failures"]))
+        evidence["B"][first]["context"]["selected_artifacts"].append(removed)
+
+        # Raw upstream ADRs must never be assigned PACT Decision authority.
+        evidence["A"][0]["context"]["current_decision_ids"] = ["DEC-ADR-0001"]
+        wrong = probe.score(evidence, cases, oracle)
+        self.assertEqual(wrong["engineering_gate"], "FAIL")
+        self.assertTrue(any("unadapted original ADRs promoted" in issue
+                            for issue in wrong["gate_failures"]))
+
     def test_score_marks_fabricated_routine_decision_as_quality_hold(self):
         cases = self.cases()
         oracle = probe.load_frozen_oracle(cases)
