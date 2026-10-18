@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "kind": "developer-labeled-noise-diagnostic-not-withheld",
+  "note": "Judgements are coarse task-relevance proxies, not independent semantic evaluations. Negative tasks specify behavior preservation. Historical ADRs not equivalent to authenticated Owner Decisions.",
+  "expected_current": {
+    "format-server-imports": [],
+    "blankline-parser-tests": [],
+    "readmes-possessive": [],
+    "run-unit-tests": [],
+    "python-typing": [],
+    "requirements-sort": [],
+    "local-rename-parser": [],
+    "pytest-docstrings": [],
+    "cli-to-browser": [
+      "DEC-ADR-0002"
+    ],
+    "uniform-status-headers": [
+      "DEC-ADR-0004"
+    ],
+    "amendment-as-supersession": [
+      "DEC-ADR-0005"
+    ],
+    "remove-screen-reader": [
+      "DEC-ADR-0006"
+    ]
+  },
+  "history_for_review": {
+    "uniform-status-headers": [
+      "DEC-ADR-0003"
+    ],
+    "amendment-as-supersession": [
+      "DEC-ADR-0003"
+    ]
+  },
+  "first_evaluation_unobserved": true
+}
