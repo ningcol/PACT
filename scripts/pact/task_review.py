@@ -140,11 +140,53 @@ def _diagnose(
 ) -> dict:
     """Explain mechanically missing evidence; no product inference."""
     criteria = contract["acceptance_criteria"]
+    scope = context.get("scope_route")
+    unique_scope = isinstance(scope, dict) and scope.get("status") == "unique"
+    materialized = {
+        item["path"] for item in context.get("artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    routed_domain_paths = [
+        item["path"] for item in (scope.get("domains", []) if unique_scope else [])
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    ]
+    missing_scoped_domain_artifacts = sorted(
+        set(routed_domain_paths) - materialized
+    )
+    scope_integrity_gaps = [
+        f"Domain-first routed Domain absent from prepared Context: {path!r}; "
+        "reprepare with the Domain materialized"
+        for path in missing_scoped_domain_artifacts
+    ]
+    if unique_scope and not routed_domain_paths:
+        scope_integrity_gaps.append(
+            "Domain-first unique route has no recorded Domain; reprepare task"
+        )
+    if unique_scope:
+        candidates = scope.get("candidates")
+        total = scope.get("total_candidates")
+        truncated = scope.get("truncated_candidates")
+        # Match the hard Convergence gate, not just the 12 visible hints.
+        # A truncated or inconsistent list cannot justify a completion-ready
+        # draft even when every listed candidate has Convergence coverage.
+        if (
+            not isinstance(candidates, list)
+            or type(total) is not int
+            or type(truncated) is not int
+            or truncated != 0
+            or total != len(candidates)
+        ):
+            scope_integrity_gaps.append(
+                "Domain-first route has unlisted or inconsistent authority "
+                "candidates; review the complete Domain sources and reprepare "
+                "without --scope-first before task assist can draft acceptance"
+            )
+    effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
     passing_claims = [
         claim for claim in evidence["claims"]
         if claim.get("required") and claim.get("status") == "pass"
     ]
-    eligible = not provenance_errors and not policy_gaps
+    eligible = not provenance_errors and not effective_policy_gaps
     required_nonpass_by_criterion = {
         item["id"]: [
             claim["id"] for claim in evidence["claims"]
@@ -216,9 +258,31 @@ def _diagnose(
         item.get("path") for item in (convergence or {}).get("coverage", [])
         if isinstance(item, dict)
     }
-    missed_knowledge = [
+    # Match the exact completion gate's Domain-first metadata-only authority
+    # coverage, rather than making task assist claim no missing Context while
+    # task finish correctly rejects unreviewed linked Rules/Decisions.
+    review_paths = [
         item["path"] for item in context.get("artifacts", [])
-        if item.get("path") not in covered_context
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    ]
+    seen_paths = set(review_paths)
+    if unique_scope:
+        # Show omitted Domain pages even in legacy Context packets. Candidate
+        # coverage by itself must not masquerade as a complete scope review.
+        for path in routed_domain_paths:
+            if path not in seen_paths:
+                seen_paths.add(path)
+                review_paths.append(path)
+        for item in scope.get("candidates", []):
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            if isinstance(path, str) and path not in seen_paths:
+                seen_paths.add(path)
+                review_paths.append(path)
+    # Preserve legacy Context artifact ordering when the opt-in route is absent.
+    missed_knowledge = [
+        path for path in review_paths if path not in covered_context
     ]
     changed = task_change.get("changed_files", [])
     change_covered = {
@@ -297,6 +361,7 @@ def _diagnose(
             if claim["status"] == "fail"
         }),
         "missing_context_coverage": missed_knowledge,
+        "missing_scoped_domain_artifacts": missing_scoped_domain_artifacts,
         "missing_change_coverage": missed_changes,
         "change_attribution_supported": bool(task_change.get("supported")),
         "change_attribution_unknown": task_change.get("reason")
@@ -309,7 +374,7 @@ def _diagnose(
             ) if obj is None
         ],
         "provenance_errors": provenance_errors,
-        "policy_gaps": policy_gaps,
+        "policy_gaps": effective_policy_gaps,
         "safe_mechanical_verification": verification_draft,
         "safe_mechanical_acceptance": acceptance_draft,
         "claim_provenance_for_review": provenance_for_review,

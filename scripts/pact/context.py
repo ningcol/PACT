@@ -15,6 +15,8 @@ from repository_files import DEFAULT_PRUNE_DIRS
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
+from scope_routing import route_only
+from discover import exact_match_priority
 from runtime_exec import runtime_command
 
 
@@ -486,6 +488,10 @@ def main() -> int:
     )
     parser.set_defaults(code=None)
     parser.add_argument("--intent", choices=["work", "decision", "history"], help="optional retrieval priority; default unchanged")
+    parser.add_argument(
+        "--scope-first", action="store_true",
+        help="opt-in: route by project-declared Domain name/path before materializing weak Decision matches",
+    )
     parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -588,6 +594,124 @@ def main() -> int:
         discovery.get("code_results", []),
         wider_discovery.get("code_results", []),
     )
+
+    scope_route = None
+    scope_source_hashes: dict[str, str] = {}
+    if args.scope_first:
+        try:
+            scope_route = route_only(args.task, ROOT)
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: cannot verify Domain source map: {exc}", file=sys.stderr)
+            return 2
+
+        # Pin BOTH the routed Domain landing page and displayed authority
+        # candidates to the same verified Markdown generation. The capped
+        # hidden candidate set is not materialized and cannot authorize a
+        # successful scoped finish when it overflows.
+        source_paths = {
+            item["path"] for item in scope_route["candidates"]
+        } | {item["path"] for item in scope_route["domains"]}
+        for relative in sorted(source_paths):
+            digest = artifact_sha256(relative)
+            if digest is None:
+                print(
+                    "PACT context: routed Domain/authority source is missing: "
+                    + repr(relative), file=sys.stderr,
+                )
+                return 2
+            scope_source_hashes[relative] = digest
+        for item in scope_route["candidates"]:
+            item["sha256"] = scope_source_hashes[item["path"]]
+
+        # Do not mix cached/source metadata from generation N with a source
+        # digest from generation N+1 if a concurrent writer intervened between
+        # route resolution and hashing. Reverify every authority source and
+        # mapping against the current source fingerprint, then confirm the
+        # digests we just attached still identify those same bytes.
+        try:
+            fresh = route_only(args.task, ROOT)
+            original_metadata = {
+                key: value for key, value in scope_route.items()
+                if key != "candidates"
+            }
+            fresh_metadata = {
+                key: value for key, value in fresh.items()
+                if key != "candidates"
+            }
+            recorded = [
+                {key: val for key, val in row.items() if key != "sha256"}
+                for row in scope_route["candidates"]
+            ]
+            if original_metadata != fresh_metadata or recorded != fresh["candidates"]:
+                raise ValueError("Domain scope changed while source digests were captured")
+            if any(
+                artifact_sha256(relative) != digest
+                for relative, digest in scope_source_hashes.items()
+            ):
+                raise ValueError("Domain scope source bytes changed while being verified")
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: inconsistent Domain source snapshot: {exc}",
+                  file=sys.stderr)
+            return 2
+
+        # The full source-linked ID/path set must not be truncated by the
+        # 12-item *presentation* cap; it never enters Context JSON.
+        all_candidate_paths = set(scope_route.pop("_all_candidate_paths"))
+
+        # This is an EXPLICITLY OPT-IN materialization policy, never an
+        # automatic claim of semantic Rule/Decision applicability.
+        # Ambiguous/unmapped and high-risk/history requests retain baseline
+        # Context and expose a review-needed marker, preventing silent misses.
+        can_restrict = (
+            scope_route["status"] == "unique"
+            and args.risk != "high"
+            and args.intent not in {"decision", "history"}
+            and scope_route["truncated_candidates"] == 0
+        )
+        scope_route["restricted_selection"] = can_restrict
+        if can_restrict:
+            home = scope_route["domains"][0]
+            known_paths = all_candidate_paths
+            # Explicit, metadata-backed title/alias/ID hits stay selectable;
+            # merely sharing a Domain is NOT sufficient to assert a rule.
+            grounded = [
+                item for item in candidate_results
+                if item.get("path") == home["path"] or (
+                    (item.get("path") in known_paths
+                     or item.get("id") in required_rules)
+                    and exact_match_priority(item.get("reasons", [])) > 0
+                )
+            ]
+            if not any(x.get("path") == home["path"] for x in grounded):
+                grounded.insert(0, {
+                    "path": home["path"], "id": home["id"],
+                    "artifact_type": "domain", "title": home["title"],
+                    "status": "confirmed", "domains": [],
+                    "score": 2000, "reasons": ["explicit Domain routing"],
+                    "mixed_authority": False, "verification": [],
+                })
+            candidate_results = grounded
+        elif scope_route["status"] == "unique":
+            # High-risk, history and overflow keep EVERY normal lexical
+            # candidate, but must still carry the confirmed Domain that made
+            # this a unique route. Prefer its existing lexical result if any.
+            home = scope_route["domains"][0]
+            existing = next(
+                (item for item in candidate_results
+                 if item.get("path") == home["path"]), None,
+            )
+            domain = existing or {
+                "path": home["path"], "id": home["id"],
+                "artifact_type": "domain", "title": home["title"],
+                "status": "confirmed", "domains": [],
+                "score": 2000, "reasons": ["explicit Domain routing"],
+                "mixed_authority": False, "verification": [],
+            }
+            candidate_results = [domain] + [
+                item for item in candidate_results
+                if item.get("path") != home["path"]
+            ]
+
     results, code_results, budget = select_context_candidates(
         candidate_results,
         candidate_code_results,
@@ -595,6 +719,16 @@ def main() -> int:
         knowledge_limit=knowledge_limit,
         code_limit=code_limit,
     )
+    if scope_route is not None and scope_route["status"] == "unique":
+        domain_path = scope_route["domains"][0]["path"]
+        if not any(item.get("path") == domain_path for item in results):
+            print(
+                "PACT context: scoped Domain landing page was not materialized "
+                "under the knowledge count/token budget; increase --limit or "
+                "--token-budget, or rerun without --scope-first",
+                file=sys.stderr,
+            )
+            return 2
     code_candidate_hints = (
         build_code_candidate_hints(candidate_code_results, code_results)
         if preserve_primary
@@ -670,6 +804,33 @@ def main() -> int:
 
     unknowns: list[str] = governance_path_hints()
     unknowns.extend(nearby_readme_hints(code_results))
+    if scope_route is not None:
+        if scope_route["status"] != "unique":
+            unknowns.append(
+                "Domain routing was not unique; baseline lexical Context was retained. "
+                "Do not assume candidate Decisions are applicable without verifying "
+                "the business behavior and explicit authority."
+            )
+        elif scope_route["restricted_selection"]:
+            unknowns.append(
+                "Domain-first Context holds only explicitly scoped/ID-title-alias "
+                "knowledge. Linked Rules and Decisions are candidate hints, NOT "
+                "confirmed applicable authority; inspect them before changing "
+                "related behavior. For cross-domain or uncertain work, rerun "
+                "without --scope-first or with --risk high."
+            )
+        else:
+            unknowns.append(
+                "Domain metadata was found but high-risk/history Context remains "
+                "unrestricted: verify cross-domain current rules and decisions."
+            )
+        if scope_route["truncated_candidates"]:
+            unknowns.append(
+                f"{scope_route['truncated_candidates']} Domain-associated authority "
+                "candidates exceeded the metadata cap; selection was NOT narrowed. "
+                "Review the complete Domain source and cross-domain references "
+                "before claiming context sufficiency."
+            )
     mixed_candidates = sorted({
         str(result.get("path"))
         for result in candidate_results
@@ -802,6 +963,35 @@ def main() -> int:
 
     if code_candidate_hints:
         envelope["code_candidate_hints"] = code_candidate_hints
+    if scope_route is not None:
+        envelope["scope_route"] = scope_route
+        # Final post-materialization check: do not publish a packet combining
+        # old Domain routing metadata with a newer Domain artifact digest.
+        # This also catches edits after the earlier source verification.
+        try:
+            final_route = route_only(args.task, ROOT)
+            final_metadata = {
+                key: value for key, value in final_route.items()
+                if key != "candidates"
+            }
+            if (final_metadata != original_metadata
+                    or final_route["candidates"] != recorded):
+                raise ValueError("Domain routing changed before Context publication")
+            if any(
+                artifact_sha256(relative) != digest
+                for relative, digest in scope_source_hashes.items()
+            ):
+                raise ValueError("Domain/authority sources changed before Context publication")
+            if any(
+                item["sha256"] != scope_source_hashes[item["path"]]
+                for item in envelope["artifacts"]
+                if item["path"] in scope_source_hashes
+            ):
+                raise ValueError("Context mixes Domain/authority source generations")
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: inconsistent Domain source snapshot: {exc}",
+                  file=sys.stderr)
+            return 2
 
     errors = validate(envelope)
     if errors:

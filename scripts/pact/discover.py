@@ -96,20 +96,93 @@ DOCUMENT_STOPWORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "be", "been", "being", "by",
     "for", "from", "in", "into", "is", "it", "of", "on", "or",
     "the", "to", "was", "were", "with",
+    # English possessive suffix and implementation-only fixture boilerplate
+    # are too weak to establish a business Decision match.
+    "s", "unchanged",
 })
+
+
+def has_unspaced_script(value: str) -> bool:
+    """Han, Japanese kana and Korean hangul can occur without word spaces."""
+    return any(
+        ("\u3400" <= ch <= "\u9fff")  # Han
+        or ("\u3040" <= ch <= "\u30ff")  # Japanese hiragana/katakana
+        or ("\u31f0" <= ch <= "\u31ff")  # Katakana phonetic extensions
+        or ("\u1100" <= ch <= "\u11ff")  # Hangul jamo
+        or ("\u3130" <= ch <= "\u318f")  # Hangul compatibility
+        or ("\uac00" <= ch <= "\ud7af")  # Hangul syllables
+        for ch in value
+    )
+
+
+def document_phrase_matches(phrase: str, field: str) -> bool:
+    """Preserve semantic whole phrases, without matching within a longer word."""
+    phrase = norm(phrase)
+    if not phrase:
+        return False
+    if has_unspaced_script(phrase):
+        return len(phrase) >= 2 and phrase in norm(field)
+    return bool(re.search(
+        r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", norm(field),
+    ))
+
+
+def document_tokens(value: str) -> list[str]:
+    """Unicode-aware boundaries for camel/acronym, space, hyphen and '_'."""
+    rendered: list[str] = []
+    for i, ch in enumerate(value):
+        if i and (
+            ((value[i - 1].islower() or value[i - 1].isdigit()) and ch.isupper())
+            or (value[i - 1].isupper() and ch.isupper()
+                and i + 1 < len(value) and value[i + 1].islower())
+        ):
+            rendered.append(" ")
+        rendered.append(ch)
+    return re.findall(r"[^\W_]+", norm("".join(rendered)), re.UNICODE)
+
+
+def document_term_matches(term: str, field: str) -> bool:
+    """Token-aware evidence; never match `.py` against `Python`.
+
+    Preserve unspaced Han/kana/hangul phrases, including pathless Decisions.
+    Explicit stable ID/title/alias matching is handled by score_document.
+    """
+    if not term:
+        return False
+    if has_unspaced_script(term):
+        return len(term) >= 2 and term in norm(field)
+    # Query and document must use the SAME token boundaries. Hyphenated
+    # owner terms (`sign-in`) and underscored code labels (`login_retry`)
+    # should match contiguous document tokens, never arbitrary substrings.
+    # Reject single-character/suffix noise such as `s` or `py`.
+    doc_tokens = document_tokens(field)
+    query_tokens = document_tokens(term)
+    if not query_tokens or len("".join(query_tokens)) < 3:
+        return False
+    window = len(query_tokens)
+    return any(
+        doc_tokens[pos:pos + window] == query_tokens
+        for pos in range(len(doc_tokens) - window + 1)
+    )
 
 
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
-    ts = [term for term in terms(query) if term not in DOCUMENT_STOPWORDS]
+    ts = [term for term in re.findall(r"[\w\-]+", query, flags=re.UNICODE)
+          if norm(term) not in DOCUMENT_STOPWORDS]
+    normalized_terms = {norm(term) for term in ts}
     score = 0
     reasons: list[str] = []
 
     ident = norm(str(doc.get("id") or ""))
-    title = norm(str(doc.get("title") or ""))
-    aliases = [norm(str(x)) for x in doc.get("aliases", [])]
-    domains = [norm(str(x)) for x in doc.get("domains", [])]
-    body = norm(str(doc.get("text") or ""))
+    raw_title = str(doc.get("title") or "")
+    raw_aliases = [str(x) for x in doc.get("aliases", [])]
+    raw_domains = [str(x) for x in doc.get("domains", [])]
+    raw_body = str(doc.get("text") or "")
+    title = norm(raw_title)
+    aliases = [norm(x) for x in raw_aliases]
+    domains = [norm(x) for x in raw_domains]
+    body = norm(raw_body)
 
     if ident and q == ident:
         score += 200
@@ -118,14 +191,25 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q == title:
         score += 140
         reasons.append("exact title")
-    elif q and q in title:
+    elif (len(document_tokens(raw_title)) >= 2
+          and document_term_matches(raw_title, query)):
+        # Distinctive multi-token names cited verbatim inside a longer task
+        # are explicit references, not weak shared body keywords.
+        score += 90
+        reasons.append("embedded exact title")
+    elif document_phrase_matches(q, title):
         score += 90
         reasons.append("title contains query")
 
     if q and q in aliases:
         score += 130
         reasons.append("exact alias")
-    elif q and any(q in alias for alias in aliases):
+    elif any(len(document_tokens(alias)) >= 2
+             and document_term_matches(alias, query)
+             for alias in raw_aliases):
+        score += 80
+        reasons.append("embedded exact alias")
+    elif any(document_phrase_matches(q, alias) for alias in aliases):
         score += 80
         reasons.append("alias contains query")
 
@@ -133,22 +217,26 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         score += 90
         reasons.append("exact domain")
 
-    if q and q in body:
+    if document_phrase_matches(q, body):
         score += 45
         reasons.append("body contains query")
 
     matched_terms = 0
     for term in ts:
         term_score = 0
-        if term == ident:
+        if ident and norm(term) == ident:
             term_score = max(term_score, 80)
-        if term in title:
+            # A stable ID embedded in normal task wording is still explicit.
+            # The scoped selector uses this evidence, not a text substring.
+            if "exact stable id" not in reasons:
+                reasons.append("exact stable id")
+        if document_term_matches(term, raw_title):
             term_score = max(term_score, 30)
-        if any(term in alias for alias in aliases):
+        if any(document_term_matches(term, alias) for alias in raw_aliases):
             term_score = max(term_score, 35)
-        if any(term in domain for domain in domains):
+        if any(document_term_matches(term, domain) for domain in raw_domains):
             term_score = max(term_score, 30)
-        if term in body:
+        if document_term_matches(term, raw_body):
             term_score = max(term_score, 8)
         if term_score:
             matched_terms += 1
@@ -169,6 +257,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         and doc.get("status") in {"archived", "superseded"}
         and q not in {ident, title}
         and q not in aliases
+        and ident not in normalized_terms
     ):
         score = max(score // 2, 1)
         reasons.append("historical decision (not current guidance)")
@@ -407,9 +496,9 @@ def exact_match_priority(reasons: list[str]) -> int:
 
     if matches("exact stable id"):
         return 3
-    if matches("exact title"):
+    if matches("exact title") or matches("embedded exact title"):
         return 2
-    if matches("exact alias"):
+    if matches("exact alias") or matches("embedded exact alias"):
         return 1
     return 0
 

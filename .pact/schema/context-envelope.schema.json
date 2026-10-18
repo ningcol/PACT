@@ -218,6 +218,50 @@
         }
       }
     },
+    "scope_route": {
+      "type": "object",
+      "required": ["status", "domains", "candidates", "total_candidates", "truncated_candidates", "applicability_verified", "restricted_selection"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["unique", "ambiguous", "unmapped"]
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "title", "evidence"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "path": {"type": "string", "minLength": 1},
+              "title": {"type": "string", "minLength": 1},
+              "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "artifact_type", "status", "via", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "path": {"type": "string", "minLength": 1},
+              "artifact_type": {"enum": ["rule", "decision"]},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "status": {"type": "string", "minLength": 1},
+              "via": {"type": "array", "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        },
+        "total_candidates": {"type": "integer", "minimum": 0},
+        "truncated_candidates": {"type": "integer", "minimum": 0},
+        "applicability_verified": {"const": false},
+        "restricted_selection": {"type": "boolean"}
+      }
+    },
     "risk_policy": {
       "type": "object",
       "required": [

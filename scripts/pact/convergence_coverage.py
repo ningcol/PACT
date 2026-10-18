@@ -59,6 +59,68 @@ def review(
             continue
         required_by_path[path] = item
 
+    # Domain-first metadata is intentionally NOT promoted to applicable
+    # authority during retrieval. But a task also must not silently finish
+    # without considering the linked Rule/Decision sources. Require an
+    # explicit Convergence disposition for each source-bound candidate.
+    # Ordinary Context without scope_route retains its original behavior.
+    routed_authority_paths: set[str] = set()
+    routed_domain_paths: set[str] = set()
+    scope = context.get("scope_route")
+    if isinstance(scope, dict) and scope.get("status") == "unique":
+        routed_domain_paths = {
+            item["path"] for item in scope.get("domains", [])
+            if isinstance(item, dict) and isinstance(item.get("path"), str)
+        }
+        # A unique routed Domain is the source of its authority links. Older
+        # or hand-edited Context packets that omitted it cannot complete even
+        # if each metadata-only Rule/Decision hint has a disposition.
+        for domain_path in sorted(routed_domain_paths):
+            if domain_path not in required_by_path:
+                errors.append(
+                    f"Domain-first routed Domain missing from Task Context: {domain_path!r}; "
+                    "reprepare the task with the confirmed Domain materialized"
+                )
+        candidates = scope.get("candidates")
+        if not isinstance(candidates, list):
+            errors.append("Domain-first candidate set is malformed")
+        else:
+            truncated = scope.get("truncated_candidates")
+            if truncated or scope.get("total_candidates") != len(candidates):
+                errors.append(
+                    "Domain-first route has unlisted authority candidates; "
+                    "review complete Domain sources and reprepare without "
+                    "--scope-first before finishing"
+                )
+            for item in candidates:
+                if not isinstance(item, dict):
+                    errors.append("Domain-first candidate is malformed")
+                    continue
+                path = item.get("path")
+                digest = item.get("sha256")
+                if (not isinstance(path, str) or not path
+                        or not isinstance(digest, str)
+                        or len(digest) != 64
+                        or any(ch not in "0123456789abcdef" for ch in digest)
+                        or item.get("artifact_type") not in {"rule", "decision"}
+                        or not isinstance(item.get("id"), str)):
+                    errors.append("Domain-first candidate lacks valid source/authority binding")
+                    continue
+                if path in routed_authority_paths:
+                    errors.append(f"duplicate Domain-first authority source {path!r}")
+                    continue
+                routed_authority_paths.add(path)
+                if path in required_by_path:
+                    existing = required_by_path[path]
+                    if (existing.get("sha256") != digest
+                            or existing.get("id") != item.get("id")
+                            or existing.get("artifact_type") != item.get("artifact_type")):
+                        errors.append(
+                            f"Domain-first authority conflicts with selected Context source: {path!r}"
+                        )
+                else:
+                    required_by_path[path] = item
+
     coverage_by_path: dict[str, dict] = {}
     duplicate_paths: list[str] = []
     unknown_paths: list[str] = []
@@ -106,6 +168,26 @@ def review(
             )
             continue
         current_exists = current_path.is_file()
+
+        # Routed (not materialized) authority is pinned to the exact source
+        # bytes at prepare time. A later source edit cannot be silently
+        # reported as aligned or not-applicable.
+        if (path in routed_authority_paths
+                and disposition in {"aligned", "not-applicable", "stale"}
+                and current_exists
+                and sha256_file(current_path) != prepared_sha256):
+            errors.append(
+                f"Routed Decision/Rule changed since Task preparation: {path!r}; "
+                "review the change and choose an evidence-backed disposition"
+            )
+        if (path in routed_domain_paths
+                and disposition in {"aligned", "not-applicable", "stale"}
+                and current_exists
+                and sha256_file(current_path) != prepared_sha256):
+            errors.append(
+                f"Routed Domain changed since Task preparation: {path!r}; "
+                "review the Domain source and its authority links"
+            )
 
         if disposition == "updated":
             if not current_exists:
@@ -162,6 +244,7 @@ def review(
     stats = {
         "context_sha256": current_context_sha256,
         "required_artifacts": len(required_by_path),
+        "routed_authority_paths": sorted(routed_authority_paths),
         "covered_artifacts": len(
             set(required_by_path).intersection(coverage_by_path)
         ),
