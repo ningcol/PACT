@@ -8,7 +8,11 @@ on:
       - "scripts/pact/tests/test_decision_memory_noise_probe.py"
       - "benchmarks/decision-memory/noise-*.json"
       - "docs/evaluation/decision-memory-noise-*.md"
-      - "scripts/pact/discover.py"
+      - "scripts/pact/**"
+      - ".pact/schema/**"
+      - "bootstrap.py"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+      - "scripts/benchmark/decision_memory_m0.py"
   workflow_dispatch:
 
 permissions:
