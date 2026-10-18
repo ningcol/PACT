@@ -866,6 +866,24 @@ domains = ["DOMAIN-LOGIN"]
                 route = scope_routing.resolve(phrase, index)
                 self.assertEqual(route["status"], "unique")
                 self.assertIn("declared Domain alias", route["domains"][0]["evidence"])
+        for near_miss in (
+            "更新認証20設定",
+            "ユーザー認証200の設定を変更",
+            "설정로그인30변경",
+            "로그인300",
+        ):
+            with self.subTest(near_miss=near_miss):
+                self.assertEqual(
+                    scope_routing.resolve(near_miss, index)["status"],
+                    "unmapped",
+                    "numeric prefix matching must not manufacture a unique Domain",
+                )
+        self.assertTrue(scope_routing._mentions(
+            "設定2認証の状態", "2認証", compound=True,
+        ))
+        self.assertFalse(scope_routing._mentions(
+            "設定12認証の状態", "2認証", compound=True,
+        ))
         self.assertEqual(
             scope_routing.resolve("format unrelated comments", index)["status"],
             "unmapped",
