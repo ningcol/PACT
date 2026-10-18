@@ -335,23 +335,39 @@ def verify_installed_probe_sources(
     return failures
 
 
-def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -> list[dict]:
+def probe(
+    target: pathlib.Path, cards: dict, result: list[dict] | None = None,
+    *, in_flight: dict | None = None,
+) -> list[dict]:
+    """Collect installed CLI evidence; optional sink preserves an interrupted case."""
     settings = cards["settings"]
     if result is None:
         result = []
     for case in cards["tasks"]:
         task = case["task"]
-        discovery = m0.run_json(target, [
+        d_args = [
             "discover", task, "--intent", settings["intent"], "--json",
             "--limit", str(settings["knowledge_limit"]),
-        ])
-        context = m0.run_json(target, [
+        ]
+        if in_flight is not None:
+            in_flight.clear()
+            in_flight.update({"id": case["id"], "stage": "discover",
+                              "command": ["pact.py", *d_args]})
+        discovery = m0.run_json(target, d_args)
+        if in_flight is not None:
+            in_flight.update({"stage": "context", "discovery": discovery})
+        c_args = [
             "context", task,
             "--success", "Preserve documented project decisions when applicable",
             "--intent", settings["intent"], "--risk", settings["risk"],
             "--no-code", "--limit", str(settings["knowledge_limit"]),
             "--token-budget", str(settings["estimated_token_budget"]),
-        ])
+        ]
+        if in_flight is not None:
+            in_flight["command"] = ["pact.py", *c_args]
+        context = m0.run_json(target, c_args)
+        if in_flight is not None:
+            in_flight.update({"stage": "normalize", "context": context})
         disc = discovery["data"] if isinstance(discovery["data"], dict) else {}
         envelope = context["data"] if isinstance(context["data"], dict) else {}
         discovery_schema_errors = []
@@ -430,6 +446,8 @@ def probe(target: pathlib.Path, cards: dict, result: list[dict] | None = None) -
                 "known_unknowns": envelope.get("known_unknowns") or [],
             },
         })
+        if in_flight is not None:
+            in_flight.clear()
     return result
 
 
