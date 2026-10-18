@@ -107,5 +107,83 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
                       pilot.target_path({"id":"DEC-PF-0013","status":"implemented"}))
 
 
+
+    def test_malformed_successful_discover_is_an_integrity_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            target=pathlib.Path(td)
+            cards={"settings":{
+                "risk":"low","intent":"work","knowledge_limit":6,
+                "estimated_token_budget":4096,"code_context":False,
+            },"source_docs":[],"tasks":[{
+                "id":"noise-negative","kind":"routine-negative",
+                "task":"Correct a comment in a test",
+            }]}
+            def receipt(data,command):
+                return {"returncode":0,"data":data,"command":["pact.py",command],
+                        "stderr":"","elapsed_ms":1}
+            with mock.patch.object(pilot.m0,"run_json",side_effect=[
+                receipt({"results":{}},"discover"),
+                receipt({"artifacts":[],"decisions":[]},"context"),
+            ]):
+                results=pilot.run_arm(target,cards,"B")
+        self.assertEqual(len(results),1)
+        self.assertTrue(any("missing/non-array results" in msg
+                            for msg in results[0]["schema_and_source_errors"]))
+        self.assertEqual(results[0]["source_verified_decisions"], [])
+
+    def test_claimed_id_without_selected_source_is_not_scored_as_recall(self):
+        with tempfile.TemporaryDirectory() as td:
+            target=pathlib.Path(td)
+            cards={"settings":{
+                "risk":"low","intent":"work","knowledge_limit":6,
+                "estimated_token_budget":4096,"code_context":False,
+            },"source_docs":[{
+                "id":"DEC-PF-0008","status":"implemented",
+                "source":"docs/adr/0008-sample.md",
+            }],"tasks":[{
+                "id":"os-principal","kind":"conflict",
+                "task":"Change the account model",
+            }]}
+            def receipt(data,command):
+                return {"returncode":0,"data":data,"command":["pact.py",command],
+                        "stderr":"","elapsed_ms":1}
+            with mock.patch.object(pilot.m0,"run_json",side_effect=[
+                receipt({"results":[]},"discover"),
+                receipt({"artifacts":[],"decisions":["DEC-PF-0008"]},"context"),
+            ]):
+                results=pilot.run_arm(target,cards,"B")
+        errors=results[0]["schema_and_source_errors"]
+        self.assertTrue(any("lacks a matching selected" in msg for msg in errors),
+                        errors)
+        self.assertEqual(results[0]["source_verified_decisions"], [])
+        self.assertEqual(results[0]["decisions"], ["DEC-PF-0008"])
+
+    def test_developer_recall_counts_only_source_verified_ids(self):
+        cards=json.loads(pilot.CASES.read_text(encoding="utf-8"))
+        oracle=json.loads(pilot.ORACLE.read_text(encoding="utf-8"))
+        a=[];b=[]
+        for case in cards["tasks"]:
+            common={
+                "id":case["id"],"kind":case["kind"],"selected":[],
+                "budget":{"selected_estimated_tokens":1},
+                "context_ms":1,"decisions":[],
+                "source_verified_decisions":[],
+            }
+            a.append(dict(common))
+            row=dict(common)
+            # Fabricated Context claims MUST NOT count as success.
+            row["decisions"]=list(oracle["expected_current"][case["id"]])
+            b.append(row)
+        score=pilot.score({"arms":{
+            "A_unadapted":a,"B_source_projection":b,
+        }},cards)
+        self.assertEqual(score["developer_target_count"],10)
+        self.assertEqual(score["B_current_decision_target_hits"],0)
+        self.assertEqual(score["B_extra_current_decision_slots"],0)
+        self.assertTrue(all(
+            case["target_hit"] is False for case in score["per_case"]
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()
