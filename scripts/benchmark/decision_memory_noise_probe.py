@@ -67,16 +67,39 @@ def load_frozen_oracle(cases: dict) -> dict:
     return oracle
 
 
-def extract_scored_discover(target: pathlib.Path, cases: dict) -> list[dict]:
+def extract_scored_discover(target: pathlib.Path, cases: dict, records: list[dict] | None = None) -> list[dict]:
     """Record the *installed PACT CLI* numeric scores and reasons before oracle."""
-    records = []
+    if records is None:
+        records = []
     setup = cases["settings"]
     for card in cases["cases"]:
         args = [
             "discover", card["task"], "--intent", setup["intent"],
             "--json", "--limit", str(setup["knowledge_limit"]),
         ]
-        response = m0.run_json(target, args)
+        try:
+            response = m0.run_json(target, args)
+        except subprocess.TimeoutExpired as exc:
+            records.append({
+                "id": card["id"], "command": ["pact.py", *args],
+                "timed_out": True, "timeout_seconds": exc.timeout,
+                "stdout_excerpt": str(exc.stdout or "")[:1200],
+                "stderr": str(exc.stderr or "")[:1200],
+                "hits": [],
+            })
+            raise
+        # Save the raw CLI result BEFORE attempting to normalize/validate it.
+        receipt = {
+            "id": card["id"],
+            "command": response.get("command", ["pact.py", *args]),
+            "returncode": response.get("returncode"),
+            "elapsed_ms": response.get("elapsed_ms"),
+            "stdout_excerpt": response.get("stdout_excerpt", ""),
+            "stderr": response.get("stderr", ""),
+            "raw_cli_payload": response.get("data"),
+            "hits": [],
+        }
+        records.append(receipt)
         if response["returncode"] != 0:
             raise RuntimeError("diagnostic discover returned nonzero; " +
                                str(response.get("stdout_excerpt", ""))[:500])
@@ -86,19 +109,14 @@ def extract_scored_discover(target: pathlib.Path, cases: dict) -> list[dict]:
         hits = body["results"]
         if any(not pilot.valid_discovery_result(x) for x in hits):
             raise ValueError("diagnostic discover returned malformed nested hits")
-        records.append({
-            "id": card["id"],
-            "command": response["command"],
-            "elapsed_ms": response["elapsed_ms"],
-            "hits": [
-                {
-                    "id": x.get("id"), "path": x.get("path"),
-                    "status": x.get("status"), "type": x.get("artifact_type"),
-                    "score": x.get("score"), "reasons": x.get("reasons"),
-                }
-                for x in hits
-            ],
-        })
+        receipt["hits"] = [
+            {
+                "id": x.get("id"), "path": x.get("path"),
+                "status": x.get("status"), "type": x.get("artifact_type"),
+                "score": x.get("score"), "reasons": x.get("reasons"),
+            }
+            for x in hits
+        ]
     return records
 
 
@@ -123,7 +141,8 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
     progress["stage"] = "A-legacy-no-PACT-decisions"
     progress["A"] = []
     pilot.probe(target, cards, progress["A"])
-    progress["A_scored"] = extract_scored_discover(target, cases)
+    progress["A_scored"] = []
+    extract_scored_discover(target, cases, progress["A_scored"])
 
     progress["stage"] = "B-project-original-source-ADRs"
     progress["projected_paths"] = pilot.project_adrs(target, source)
@@ -142,7 +161,8 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
     progress["stage"] = "B-projected-ADRs"
     progress["B"] = []
     pilot.probe(target, cards, progress["B"])
-    progress["B_scored"] = extract_scored_discover(target, cases)
+    progress["B_scored"] = []
+    extract_scored_discover(target, cases, progress["B_scored"])
     progress["stage"] = "verify-no-unintended-knowledge-changes"
     progress["knowledge_after"] = pilot.source_snapshot(target)
     progress["original_adr_blobs_after"] = {
@@ -167,6 +187,7 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
             or [r["id"] for r in progress["B"]] != expected_ids):
         raise ValueError("case IDs reordered or missing")
     known = {x["id"]: x["status"] for x in original["upstream_docs"]}
+    canonical_paths = pilot.projected_decision_paths(original)
     failure = []
     if not progress["original_adrs_unmodified"]:
         failure.append("original public GitHub source changed during diagnostic")
@@ -190,6 +211,16 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
         a = progress["A"][i]
         b = progress["B"][i]
         b_scored = progress["B_scored"][i]
+        a_scored = progress["A_scored"][i]
+        if (a_scored["id"] != aid or b_scored["id"] != aid):
+            raise ValueError("misordered scored discovery receipt")
+        for phase, record, scored in (
+            ("A", a, a_scored), ("B", b, b_scored),
+        ):
+            pairs = [(h.get("id"), h.get("path")) for h in record["discovery"]["hits"]]
+            scored_pairs = [(h.get("id"), h.get("path")) for h in scored["hits"]]
+            if pairs != scored_pairs:
+                failure.append(f"{aid}/{phase}: scored Discover disagreed with original installed CLI")
         expected = set(oracle["expected_current"][aid])
         current = set(b["context"]["current_decision_ids"])
         hit = expected & current
@@ -201,6 +232,20 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
         if not expected:
             no_target_count += 1
             no_target_with_noise += bool(extra)
+        if a["context"]["current_decision_ids"]:
+            failure.append(f"{aid}: unadapted original ADRs promoted to PACT Decisions")
+        for ident in current:
+            expected_path = canonical_paths.get(ident)
+            source_digest = progress["knowledge_expected"].get(expected_path)
+            if not isinstance(source_digest, str) or not any(
+                item.get("id") == ident
+                and item.get("artifact_type") == "decision"
+                and item.get("path") == expected_path
+                and item.get("sha256") == source_digest
+                for item in b["context"].get("selected_artifacts", [])
+                if isinstance(item, dict)
+            ):
+                failure.append(f"{aid}: current Decision {ident!r} has no matching selected source/digest")
         for phase, v in (("A", a), ("B", b)):
             d, c = v["discovery"], v["context"]
             if d["returncode"] or c["returncode"] or d["schema_errors"] or c["schema_errors"]:
