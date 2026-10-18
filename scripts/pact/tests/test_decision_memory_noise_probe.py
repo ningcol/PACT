@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -88,6 +90,54 @@ class PinnedBrownfieldNoiseTests(unittest.TestCase):
             self.assertTrue(py[0]["shorter_than_3"])
             self.assertTrue(py[0]["matches"][0]["substring_only"])
             self.assertFalse(py[0]["matches"][0]["whole_token"])
+
+    def test_interrupted_context_keeps_the_exact_discovery_receipt(self):
+        source = json.loads(probe.pilot.CARDS.read_text(encoding="utf-8"))
+        selected = {**source, "tasks": [source["tasks"][0]]}
+        discover = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "data": {"results": []}, "elapsed_ms": 1, "stderr": "",
+        }
+        error = subprocess.TimeoutExpired(
+            ["pact.py", "context"], 3, output=b"partial", stderr=b"timed out"
+        )
+        in_flight = {}
+        results = []
+        with mock.patch.object(probe.pilot.m0, "run_json",
+                               side_effect=[discover, error]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                probe.pilot.probe(
+                    pathlib.Path("/tmp/unopened"), selected,
+                    results, in_flight=in_flight
+                )
+        self.assertEqual(results, [])
+        self.assertEqual(in_flight["stage"], "context")
+        self.assertEqual(in_flight["discovery"], discover)
+        self.assertEqual(in_flight["id"], source["tasks"][0]["id"])
+        self.assertIn("context", in_flight["command"])
+
+    def test_malformed_discover_score_retains_raw_failing_evidence(self):
+        cards = self.cases()
+        first = {**cards, "cases": cards["cases"][:1]}
+        invalid = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "elapsed_ms": 1, "stderr": "", "data": {
+                "results": [{
+                    "path": "docs/README.md", "artifact_type": "document",
+                    "status": None, "id": None, "score": "not-a-number",
+                    "reasons": [],
+                }],
+            },
+        }
+        collected = []
+        with mock.patch.object(probe.m0, "run_json", return_value=invalid):
+            with self.assertRaisesRegex(ValueError, "malformed score/reason"):
+                probe.extract_scored_discover(
+                    pathlib.Path("/tmp/unopened"), first, collected
+                )
+        self.assertEqual(len(collected), 1)
+        self.assertEqual(collected[0]["raw_cli_payload"], invalid["data"])
+        self.assertEqual(collected[0]["returncode"], 0)
 
     def test_safety_gate_requires_decision_source_and_empty_raw_adr_authority(self):
         cases = self.cases()
