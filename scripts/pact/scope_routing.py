@@ -71,8 +71,8 @@ def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
         if len(name) < 2:
             return False
         normalized_name, normalized_text = name.casefold(), text.casefold()
-        left_boundary = r"(?<!\\d)" if name[0].isdecimal() else ""
-        right_boundary = r"(?!\\d)" if name[-1].isdecimal() else ""
+        left_boundary = r"(?<!\d)" if name[0].isdecimal() else ""
+        right_boundary = r"(?!\d)" if name[-1].isdecimal() else ""
         return bool(re.search(
             left_boundary + re.escape(normalized_name) + right_boundary,
             normalized_text,
