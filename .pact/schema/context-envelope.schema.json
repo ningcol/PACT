@@ -244,12 +244,13 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "path", "artifact_type", "status", "via"],
+            "required": ["id", "path", "artifact_type", "status", "via", "sha256"],
             "additionalProperties": false,
             "properties": {
               "id": {"type": "string", "minLength": 1},
               "path": {"type": "string", "minLength": 1},
               "artifact_type": {"enum": ["rule", "decision"]},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
               "status": {"type": "string", "minLength": 1},
               "via": {"type": "array", "items": {"type": "string", "minLength": 1}}
             }
