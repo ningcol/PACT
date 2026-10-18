@@ -20,9 +20,13 @@ identity and current authority.
 - `src/` and tests: actual current implementation; optional nearby README
   may link to its Domain, but no mandatory source-file Markdown duplicate.
 
-The disposable `.pact/cache/project-map.json` is generated and integrity
-checked from these source records. It never overrides them. Adding a Domain
-does **not** automatically confirm every linked Rule or Decision.
+The disposable `.pact/cache/project-map.json` is generated from repository
+Markdown. Domain/Rule/Decision **routing fields are freshly reparsed from
+the authoritative source files** on every scoped lookup; a matching cache
+fingerprint or syntactically valid index is not enough to trust aliases,
+paths or Owner authority. A tampered/stale authority cache causes a hard
+failure, not a silent new Domain. Adding a Domain does **not** automatically
+confirm every linked Rule or Decision.
 
 ## Opt-in route (without changing default retrieval)
 
@@ -44,9 +48,13 @@ a random body-text substring.
 - Exactly one Domain: Domain router is materialized. Its linked Rules and
   Decisions become **metadata-only candidate hints**, NOT automatically
   `decisions` or `applicable_rules`; only an explicitly requested stable
-  Rule or exact ID/title/alias from this Domain is still selectable. The Agent
-  must read the authentic Rule/Decision and judge actual task applicability
-  before editing behavior.
+  Rule or exact ID/title/alias from this Domain is still selectable. Each
+  linked candidate is pinned to the source file SHA256 and **must receive an
+  explicit, reasoned Convergence coverage disposition** before Task Finish
+  can pass, even when the candidate was only metadata and not materialized.
+  Agents should inspect the cited source before declaring it `not-applicable`.
+  The convergence check can verify presence, status, source hashes and coverage,
+  but cannot mechanically prove that a semantic rationale is true.
 - No Domain or multiple Domains: original lexical Context remains intact,
   with an explicit `scope_route.status` and a warning that none of those
   lexical hits is a semantically verified constraint.
@@ -54,10 +62,15 @@ a random body-text substring.
   to avoid silently omitting cross-domain safety constraints.
 - Caller-declared `--require-rule` remains authoritative: it must be
   materialized and confirmed even if its Domain differs from the task's.
-- Capped route hints (12 maximum) always disclose a dropped-hint count and
-  unknown-applicability status. A short list is **not** proof that everything
-  applicable has been found. When cross-domain or renamed code is plausible,
-  manually check additional Domains/Git history or rerun without the option.
+- Metadata hints are capped at 12, but this display limit never truncates the
+  internal linked source-path set. A Domain with **more than 12** linked
+  authorities keeps **unrestricted** lexical Context instead of hiding the
+  thirteenth exact ID; it warns that the hint list is incomplete. Its scoped
+  Task Finish is deliberately blocked until the full Domain is inspected and
+  the task is reprepared **without** `--scope-first` (or a smaller, approved
+  scope is documented). Similarly, missing/ambiguous Domains and any
+  pathless/cross-domain authority require targeted broad follow-up. A short
+  list can never certify semantic completeness.
 
 ## Verification and deployment gate
 
