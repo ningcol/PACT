@@ -596,6 +596,7 @@ def main() -> int:
     )
 
     scope_route = None
+    scope_source_hashes: dict[str, str] = {}
     if args.scope_first:
         try:
             scope_route = route_only(args.task, ROOT)
@@ -603,17 +604,24 @@ def main() -> int:
             print(f"PACT context: cannot verify Domain source map: {exc}", file=sys.stderr)
             return 2
 
-        # Bind metadata-only authority hints to the original immutable source
-        # digest so downstream Convergence can demand actual dispositions.
-        for item in scope_route["candidates"]:
-            digest = artifact_sha256(item["path"])
+        # Pin BOTH the routed Domain landing page and displayed authority
+        # candidates to the same verified Markdown generation. The capped
+        # hidden candidate set is not materialized and cannot authorize a
+        # successful scoped finish when it overflows.
+        source_paths = {
+            item["path"] for item in scope_route["candidates"]
+        } | {item["path"] for item in scope_route["domains"]}
+        for relative in sorted(source_paths):
+            digest = artifact_sha256(relative)
             if digest is None:
                 print(
-                    "PACT context: routed authority source is missing: "
-                    + repr(item["path"]), file=sys.stderr,
+                    "PACT context: routed Domain/authority source is missing: "
+                    + repr(relative), file=sys.stderr,
                 )
                 return 2
-            item["sha256"] = digest
+            scope_source_hashes[relative] = digest
+        for item in scope_route["candidates"]:
+            item["sha256"] = scope_source_hashes[item["path"]]
 
         # Do not mix cached/source metadata from generation N with a source
         # digest from generation N+1 if a concurrent writer intervened between
@@ -637,8 +645,8 @@ def main() -> int:
             if original_metadata != fresh_metadata or recorded != fresh["candidates"]:
                 raise ValueError("Domain scope changed while source digests were captured")
             if any(
-                artifact_sha256(row["path"]) != row["sha256"]
-                for row in scope_route["candidates"]
+                artifact_sha256(relative) != digest
+                for relative, digest in scope_source_hashes.items()
             ):
                 raise ValueError("Domain scope source bytes changed while being verified")
         except (ValueError, OSError, RuntimeError) as exc:
@@ -691,6 +699,16 @@ def main() -> int:
         knowledge_limit=knowledge_limit,
         code_limit=code_limit,
     )
+    if scope_route is not None and scope_route["restricted_selection"]:
+        domain_path = scope_route["domains"][0]["path"]
+        if not any(item.get("path") == domain_path for item in results):
+            print(
+                "PACT context: scoped Domain landing page was not materialized "
+                "under the knowledge count/token budget; increase --limit or "
+                "--token-budget, or rerun without --scope-first",
+                file=sys.stderr,
+            )
+            return 2
     code_candidate_hints = (
         build_code_candidate_hints(candidate_code_results, code_results)
         if preserve_primary
@@ -927,6 +945,33 @@ def main() -> int:
         envelope["code_candidate_hints"] = code_candidate_hints
     if scope_route is not None:
         envelope["scope_route"] = scope_route
+        # Final post-materialization check: do not publish a packet combining
+        # old Domain routing metadata with a newer Domain artifact digest.
+        # This also catches edits after the earlier source verification.
+        try:
+            final_route = route_only(args.task, ROOT)
+            final_metadata = {
+                key: value for key, value in final_route.items()
+                if key != "candidates"
+            }
+            if (final_metadata != original_metadata
+                    or final_route["candidates"] != recorded):
+                raise ValueError("Domain routing changed before Context publication")
+            if any(
+                artifact_sha256(relative) != digest
+                for relative, digest in scope_source_hashes.items()
+            ):
+                raise ValueError("Domain/authority sources changed before Context publication")
+            if any(
+                item["sha256"] != scope_source_hashes[item["path"]]
+                for item in envelope["artifacts"]
+                if item["path"] in scope_source_hashes
+            ):
+                raise ValueError("Context mixes Domain/authority source generations")
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: inconsistent Domain source snapshot: {exc}",
+                  file=sys.stderr)
+            return 2
 
     errors = validate(envelope)
     if errors:

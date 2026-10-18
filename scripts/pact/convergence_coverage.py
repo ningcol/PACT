@@ -65,8 +65,13 @@ def review(
     # explicit Convergence disposition for each source-bound candidate.
     # Ordinary Context without scope_route retains its original behavior.
     routed_authority_paths: set[str] = set()
+    routed_domain_paths: set[str] = set()
     scope = context.get("scope_route")
     if isinstance(scope, dict) and scope.get("status") == "unique":
+        routed_domain_paths = {
+            item["path"] for item in scope.get("domains", [])
+            if isinstance(item, dict) and isinstance(item.get("path"), str)
+        }
         candidates = scope.get("candidates")
         if not isinstance(candidates, list):
             errors.append("Domain-first candidate set is malformed")
@@ -165,6 +170,14 @@ def review(
             errors.append(
                 f"Routed Decision/Rule changed since Task preparation: {path!r}; "
                 "review the change and choose an evidence-backed disposition"
+            )
+        if (path in routed_domain_paths
+                and disposition in {"aligned", "not-applicable", "stale"}
+                and current_exists
+                and sha256_file(current_path) != prepared_sha256):
+            errors.append(
+                f"Routed Domain changed since Task preparation: {path!r}; "
+                "review the Domain source and its authority links"
             )
 
         if disposition == "updated":

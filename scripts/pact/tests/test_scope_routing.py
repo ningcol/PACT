@@ -455,5 +455,125 @@ paths = ["src/auth/**"]
         self.assertGreater(score_document(decision, "sign in")[0], 100)
 
 
+    def test_duplicate_cached_id_cannot_shadow_verified_domain(self):
+        self.write("docs/reference.md", "# Ordinary reference\n")
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+        idx = self.root / ".pact/cache/project-map.json"
+        forged = json.loads(idx.read_text(encoding="utf-8"))
+        ordinary = next(doc for doc in forged["documents"]
+                        if doc["path"] == "docs/reference.md")
+        self.assertEqual(ordinary["artifact_type"], "document")
+        ordinary["id"] = "DOMAIN-LOGIN"
+        forged["id_to_path"]["DOMAIN-LOGIN"] = "docs/reference.md"
+        idx.write_text(json.dumps(forged), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate stable ID"):
+            scope_routing.load_index(self.root)
+
+    def test_embedded_stable_id_survives_scoped_materialization(self):
+        task = "Update DEC-LOGIN-001 in src/auth/login.py"
+        original = next(item for item in self.index["documents"]
+                        if item.get("id") == "DEC-LOGIN-001")
+        score, reasons = score_document(original, task)
+        self.assertGreater(score, 0)
+        self.assertIn("exact stable id", reasons)
+        candidate = self.hit(
+            "DEC-LOGIN-001", "decision", "implemented",
+            original["path"], original["title"], score, reasons,
+        )
+        packet = self.packet(task, hits=[candidate])
+        self.assertTrue(packet["scope_route"]["restricted_selection"])
+        self.assertIn("DEC-LOGIN-001", packet["decisions"])
+        self.assertIn("DOMAIN-LOGIN", [row["id"] for row in packet["artifacts"]])
+
+    def test_scoped_route_refuses_to_drop_domain_due_to_tiny_budget(self):
+        task = "Reformat src/auth/login.py"
+        argv = [
+            "context", task, "--success", "Preserve behavior", "--risk",
+            "low", "--no-code", "--scope-first", "--limit", "1",
+            "--token-budget", "1",
+        ]
+        with mock.patch.object(context, "ROOT", self.root), \
+             mock.patch.object(context, "run_discovery", return_value={
+                 "queries": [task], "results": [], "code_results": [],
+             }), \
+             mock.patch.object(sys, "argv", argv):
+            err, out = io.StringIO(), io.StringIO()
+            with redirect_stderr(err), redirect_stdout(out):
+                code = context.main()
+        self.assertEqual(code, 2, out.getvalue() + err.getvalue())
+        self.assertIn("Domain landing page was not materialized", err.getvalue())
+        self.assertNotIn('"scope_route"', out.getvalue())
+
+    def test_late_domain_edit_cannot_mix_context_routing_generations(self):
+        task = "Reformat src/auth/login.py imports"
+        true_digest = context.artifact_sha256
+        domain_path = "docs/product/domains/login.md"
+        calls = {"domain": 0}
+
+        def race(relative):
+            if relative == domain_path:
+                calls["domain"] += 1
+                if calls["domain"] == 3:
+                    source = self.root / relative
+                    source.write_text(
+                        source.read_text(encoding="utf-8")
+                        + "\n## Newly reviewed scope\n",
+                        encoding="utf-8",
+                    )
+            return true_digest(relative)
+
+        argv = [
+            "context", task, "--success", "Preserve behavior", "--risk",
+            "low", "--no-code", "--scope-first", "--limit", "4",
+        ]
+        with mock.patch.object(context, "ROOT", self.root), \
+             mock.patch.object(context, "artifact_sha256", side_effect=race), \
+             mock.patch.object(context, "run_discovery", return_value={
+                 "queries": [task], "results": [], "code_results": [],
+             }), \
+             mock.patch.object(sys, "argv", argv):
+            err, out = io.StringIO(), io.StringIO()
+            with redirect_stderr(err), redirect_stdout(out):
+                code = context.main()
+        self.assertGreaterEqual(calls["domain"], 3)
+        self.assertEqual(code, 2, out.getvalue() + err.getvalue())
+        self.assertIn("inconsistent Domain source snapshot", err.getvalue())
+        self.assertNotIn('"scope_route"', out.getvalue())
+
+    def test_post_prepare_domain_edit_rejects_aligned_coverage(self):
+        packet = self.packet("Reformat src/auth/login.py imports")
+        with tempfile.TemporaryDirectory(prefix="pact-domain-sha-") as td:
+            path = pathlib.Path(td) / "task-context.json"
+            path.write_text(json.dumps(packet), encoding="utf-8")
+            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+            covered = [{
+                "path": item["path"], "disposition": "aligned",
+                "rationale": "Domain scoped in the prepared Context.",
+            } for item in packet["artifacts"]]
+            covered.extend({
+                "path": item["path"], "disposition": "not-applicable",
+                "rationale": "Inspected; formatting-only changes do not apply.",
+            } for item in packet["scope_route"]["candidates"])
+            source = self.root / "docs/product/domains/login.md"
+            source.write_text(
+                source.read_text(encoding="utf-8")
+                + "\n# Changed scope after prepare\n", encoding="utf-8",
+            )
+            errors, _ = convergence_coverage.review(
+                packet, {
+                    "context_sha256": checksum, "coverage": covered,
+                    "findings": [],
+                }, root=self.root, context_path=path,
+                expected_context_sha256=checksum,
+            )
+            self.assertTrue(any("Routed Domain changed since Task preparation"
+                                in issue for issue in errors), errors)
+
+
 if __name__ == "__main__":
     unittest.main()

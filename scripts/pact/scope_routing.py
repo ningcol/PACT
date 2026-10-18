@@ -61,6 +61,16 @@ def load_index(root: pathlib.Path) -> dict:
             or data.get("source_fingerprint") != fingerprint_files(root, paths)
             or not valid_project_index(data, expected_paths=expected)):
         raise ValueError("Domain scope Project Map stale or malformed")
+    # The global map validator checks path uniqueness but historically permits
+    # duplicate stable IDs. An ordinary cached document must never shadow a
+    # verified Domain when its ID is reused, even if id_to_path was also forged.
+    seen_ids: set[str] = set()
+    for document in data["documents"]:
+        ident = document.get("id")
+        if ident:
+            if ident in seen_ids:
+                raise ValueError(f"Domain scope duplicate stable ID: {ident!r}")
+            seen_ids.add(ident)
     # Index freshness and structure cannot authenticate metadata: a cache writer
     # could forge aliases/paths while retaining the original source fingerprint.
     # Reparse EVERY potential authority home (and any claimed authority artifact)
@@ -89,9 +99,13 @@ def resolve(task: str, index: dict) -> dict:
     documents = index.get("documents")
     if not isinstance(documents, list):
         raise ValueError("scope index documents must be a list")
+    # Resolve Domain links only from Domain-home records, not from an unrelated
+    # document with a colliding cached ID.
     by_id = {
         item["id"]: item for item in documents
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
+        if isinstance(item, dict) and item.get("artifact_type") == "domain"
+        and str(item.get("path", "")).startswith("docs/product/domains/")
+        and isinstance(item.get("id"), str)
     }
     matching = []
     named_paths = _mentioned_paths(task)

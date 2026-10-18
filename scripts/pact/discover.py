@@ -194,8 +194,12 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     matched_terms = 0
     for term in ts:
         term_score = 0
-        if term == ident:
+        if ident and term == ident:
             term_score = max(term_score, 80)
+            # A stable ID embedded in normal task wording is still explicit.
+            # The scoped selector uses this evidence, not a text substring.
+            if "exact stable id" not in reasons:
+                reasons.append("exact stable id")
         if document_term_matches(term, title):
             term_score = max(term_score, 30)
         if any(document_term_matches(term, alias) for alias in aliases):
@@ -223,6 +227,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         and doc.get("status") in {"archived", "superseded"}
         and q not in {ident, title}
         and q not in aliases
+        and ident not in ts
     ):
         score = max(score // 2, 1)
         reasons.append("historical decision (not current guidance)")
