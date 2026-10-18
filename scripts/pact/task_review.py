@@ -162,6 +162,25 @@ def _diagnose(
         scope_integrity_gaps.append(
             "Domain-first unique route has no recorded Domain; reprepare task"
         )
+    if unique_scope:
+        candidates = scope.get("candidates")
+        total = scope.get("total_candidates")
+        truncated = scope.get("truncated_candidates")
+        # Match the hard Convergence gate, not just the 12 visible hints.
+        # A truncated or inconsistent list cannot justify a completion-ready
+        # draft even when every listed candidate has Convergence coverage.
+        if (
+            not isinstance(candidates, list)
+            or type(total) is not int
+            or type(truncated) is not int
+            or truncated != 0
+            or total != len(candidates)
+        ):
+            scope_integrity_gaps.append(
+                "Domain-first route has unlisted or inconsistent authority "
+                "candidates; review the complete Domain sources and reprepare "
+                "without --scope-first before task assist can draft acceptance"
+            )
     effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
     passing_claims = [
         claim for claim in evidence["claims"]
