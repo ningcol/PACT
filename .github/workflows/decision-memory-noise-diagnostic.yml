@@ -11,6 +11,7 @@ on:
       - "scripts/pact/**"
       - ".pact/schema/**"
       - "bootstrap.py"
+      - "pact.py"
       - "scripts/benchmark/brownfield_adr_viewer.py"
       - "scripts/benchmark/decision_memory_m0.py"
   workflow_dispatch:
