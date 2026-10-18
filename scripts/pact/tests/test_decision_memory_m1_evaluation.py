@@ -6,6 +6,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
@@ -29,6 +30,10 @@ class ColdStartM1Tests(unittest.TestCase):
         cards, corpus, oracle = self.inputs()
         benchmark.validate_cards(cards, corpus)
         benchmark.validate_oracle(oracle, cards, corpus)
+        self.assertEqual(
+            benchmark.blob_sha(benchmark.ROOT / "scripts" / "benchmark" / "decision_memory_m0.py"),
+            benchmark.M0_ORIGINAL_CARD_PROVENANCE_FIELD,
+        )
         self.assertEqual(cards["baseline_main_sha"],
                          "b96a64485e1c855c5caeedb2a2addcd766f6398b")
         self.assertEqual(len(cards["cases"]), 8)
@@ -95,6 +100,366 @@ class ColdStartM1Tests(unittest.TestCase):
         )
         self.assertEqual(small["omitted_candidates"], 2)
 
+    def test_no_unknown_discover_id_or_forged_unclaimed_document(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="pact-m1-tamper-") as td:
+            project = pathlib.Path(td)
+            real_doc = project / "docs" / "project.md"
+            real_doc.parent.mkdir()
+            real_doc.write_text("# Real doc\n", encoding="utf-8")
+            genuine = benchmark.m0.digest_file(real_doc)
+            index = {"documents": [{
+                "path": "docs/project.md", "id": None,
+                "artifact_type": "document", "status": None
+            }]}
+            item = {
+                "A": {
+                    "discovery": {
+                        "hits": [{"path": "docs/project.md",
+                                  "id": "DEC-NOT-IN-FIXTURE",
+                                  "type": "decision", "status": "implemented"}],
+                        "schema_errors": [],
+                    },
+                    "context": {
+                        "selected_artifacts": [
+                            {"path": "docs/project.md", "id": None,
+                             "artifact_type": "document", "sha256": "a" * 64}
+                        ],
+                        "schema_errors": [],
+                    },
+                }
+            }
+            benchmark.verify_probe_source_evidence(project, item, index)
+            self.assertTrue(item["A"]["discovery"]["schema_errors"])
+            self.assertTrue(item["A"]["context"]["schema_errors"])
+            item["A"]["discovery"]["hits"] = [{
+                "path": "docs/project.md", "id": None,
+                "type": "document", "status": None
+            }]
+            item["A"]["context"]["selected_artifacts"][0]["sha256"] = genuine
+            item["A"]["discovery"]["schema_errors"] = []
+            item["A"]["context"]["schema_errors"] = []
+            benchmark.verify_probe_source_evidence(project, item, index)
+            self.assertEqual(item["A"]["discovery"]["schema_errors"], [])
+            self.assertEqual(item["A"]["context"]["schema_errors"], [])
+
+    def test_mutated_frozen_source_is_detected_by_independent_expected_bytes(self):
+        cards, corpus, _ = self.inputs()
+        expected = benchmark.fixture_expected_source_hashes(corpus)
+        self.assertEqual(len(expected), 9)
+        with tempfile.TemporaryDirectory(prefix="pact-m1-frozen-") as td:
+            root = pathlib.Path(td)
+            for entry in corpus["documents"]:
+                path = root / entry["path"]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(m0._doc_text(entry), encoding="utf-8")
+            self.assertEqual(benchmark.normalized_installed_source_hashes(root, list(expected)), expected)
+            first = root / corpus["documents"][0]["path"]
+            first.write_text(first.read_text(encoding="utf-8") + "altered\n",
+                             encoding="utf-8")
+            self.assertNotEqual(benchmark.normalized_installed_source_hashes(root, list(expected)), expected)
+
+    def test_installer_nonzero_and_timeout_receipts_are_not_erased(self):
+        import types
+        progress = {}
+        failed = types.SimpleNamespace(returncode=19, stdout="invalid fixture",
+                                       stderr="authorities conflict")
+        with mock.patch.object(benchmark.subprocess, "run", return_value=failed):
+            outcome = benchmark.run_fixture_step(
+                [sys.executable, "pact.py", "check"], cwd=benchmark.ROOT,
+                stage="check", progress=progress
+            )
+        self.assertEqual(outcome.returncode, 19)
+        self.assertEqual(progress["fixture_process_receipts"][0]["returncode"], 19)
+        self.assertIn("authorities", progress["fixture_process_receipts"][0]["stderr"])
+        exc = subprocess.TimeoutExpired(
+            ["pact.py", "check"], 3, output=b"partial output", stderr=b"timeout stderr"
+        )
+        with mock.patch.object(benchmark.subprocess, "run", side_effect=exc):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                benchmark.run_fixture_step(
+                    ["pact.py", "check"], cwd=benchmark.ROOT,
+                    stage="check-timeout", progress=progress
+                )
+        receipt = progress["fixture_process_receipts"][-1]
+        self.assertTrue(receipt["timed_out"])
+        self.assertIn("partial output", receipt["stdout"])
+        self.assertIn("timeout stderr", receipt["stderr"])
+
+    def test_malformed_context_list_cannot_erase_completed_envelope(self):
+        cards, _, _ = self.inputs()
+        success = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "elapsed_ms": 1, "stderr": "", "data": {"results": []}
+        }
+        malformed = {
+            "command": ["pact.py", "context"], "returncode": 0,
+            "elapsed_ms": 1, "stderr": "",
+            "data": {
+                "artifacts": [], "decisions": [], "applicable_rules": [],
+                "code_artifacts": 7, "known_unknowns": 3,
+                "context_budget": {"selected_estimated_tokens": 0},
+                "status": "candidate",
+            },
+        }
+        progress = {}
+        with mock.patch.object(m0, "run_json", side_effect=[success, malformed]):
+            outcome = benchmark.context_probe(
+                pathlib.Path("/tmp/pact-no-files"), cards["cases"][0],
+                cards["settings"], progress
+            )
+        self.assertEqual(outcome["context"]["code_files"], 0)
+        self.assertEqual(outcome["context"]["known_unknown_count"], 0)
+        self.assertTrue(outcome["context"]["schema_errors"])
+        self.assertIn("context_before_normalization", progress)
+        self.assertEqual(progress["context_before_normalization"], malformed)
+        self.assertEqual(progress["context"]["schema_errors"],
+                         outcome["context"]["schema_errors"])
+
+    def test_completed_discover_receipt_survives_context_timeout(self):
+        cards, _, _ = self.inputs()
+        discovery = {
+            "command": ["pact.py", "discover"], "returncode": 0,
+            "elapsed_ms": 2, "stderr": "", "data": {"results": []},
+        }
+        partial = {}
+        with mock.patch.object(
+            m0, "run_json",
+            side_effect=[discovery, subprocess.TimeoutExpired(["context"], 2)],
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                benchmark.context_probe(
+                    pathlib.Path("/tmp/fake-m1"), cards["cases"][0],
+                    cards["settings"], partial,
+                )
+        self.assertEqual(partial["discovery_before_context"], discovery)
+        self.assertTrue(partial["context_failure"]["timed_out"])
+        self.assertIn("context", partial["context_failure"]["command"])
+
+    def test_malformed_unclaimed_context_artifact_is_not_safe(self):
+        self.assertFalse(benchmark.valid_context_artifact({}))
+        self.assertFalse(benchmark.valid_context_artifact({
+            "id": None, "artifact_type": "document", "path": "README.md",
+            "sha256": "not-a-digest",
+        }))
+        self.assertTrue(benchmark.valid_context_artifact({
+            "id": None, "artifact_type": "document", "path": "README.md",
+            "sha256": "a" * 64,
+        }))
+        cards, corpus, oracle = self.inputs()
+        predictions = []
+        for card in cards["cases"]:
+            discovery = {
+                "command": ["pact.py", "discover", card["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {"results": []},
+            }
+            packet = {
+                "command": ["pact.py", "context", card["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {
+                    "status": "candidate", "artifacts": [{}],
+                    "decisions": [], "applicable_rules": [],
+                    "code_artifacts": [], "known_unknowns": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                },
+            }
+            with mock.patch.object(m0, "run_json", side_effect=[discovery, packet]):
+                a = benchmark.context_probe(pathlib.Path("/tmp/unused"), card,
+                                            cards["settings"])
+            self.assertTrue(a["context"]["schema_errors"])
+            predictions.append({
+                "id": card["id"], "task": card["task"],
+                "type": card["type"], "changed_paths": card["changed_paths"],
+                "A": a,
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False,
+                    "retrieval_treatment": False,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        scored = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(scored["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("malformed discovery/context" in issue
+                            for issue in scored["gate_failures"]))
+
+    def test_main_preserves_completed_a_probes_on_map_failure(self):
+        import subprocess
+        previous = {"id": "pre-failure", "A": {"context": {"returncode": 0}},
+                    "B_path_navigation_only": None}
+        def interrupted(progress):
+            progress["stage"] = "collect-predictions"
+            progress["predictions"] = [previous]
+            raise ValueError("installed Project Map malformed")
+        output = io.StringIO()
+        with mock.patch.object(benchmark, "evaluate", side_effect=interrupted):
+            with mock.patch.object(sys, "argv", ["decision_memory_m1.py"]):
+                with redirect_stdout(output):
+                    result = benchmark.main()
+        self.assertEqual(result, 1)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(report["completed_probes_preserved"])
+        self.assertEqual(report["partial_probe_evidence"]["predictions"], [previous])
+        self.assertIn("Project Map malformed", report["gate_failures"][0])
+        self.assertEqual(report["release_gate"], "HOLD")
+
+    def test_malformed_discovery_record_is_not_a_valid_empty_hit(self):
+        self.assertFalse(benchmark.valid_discovery_hit({}))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "decision", "id": None,
+            "status": "implemented", "path": ".agents/decisions/a.md",
+        }))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "decision", "id": "DEC-TEST",
+            "status": "implemented", "path": "../escape.md",
+        }))
+        self.assertTrue(benchmark.valid_discovery_hit({
+            "artifact_type": "document", "id": None,
+            "status": None, "path": "docs/readme.md",
+            "title": "Readme", "score": 5, "reasons": ["body contains query"],
+            "mixed_authority": False, "domains": [], "related": [],
+            "verification": [],
+        }))
+        self.assertFalse(benchmark.valid_discovery_hit({
+            "artifact_type": "document", "id": None,
+            "status": None, "path": "docs/readme.md",
+            "title": "Readme", "score": "invalid", "reasons": [],
+            "mixed_authority": False, "domains": [], "related": [],
+            "verification": [],
+        }))
+
+    def test_invalid_project_map_cannot_hide_frozen_decisions(self):
+        cards, corpus, _ = self.inputs()
+        docs = [
+            {"id": row["id"], "path": row["path"],
+             "artifact_type": row["type"], "status": row["status"],
+             "paths": row.get("paths", [])}
+            for row in corpus["documents"]
+        ]
+        lookup = {x["id"]: x["path"] for x in corpus["documents"]}
+        index = {
+            "repository_root": ".", "documents": docs, "id_to_path": lookup,
+        }
+        benchmark.validate_installed_project_map(index, corpus)
+        with self.assertRaisesRegex(ValueError, "omits"):
+            benchmark.validate_installed_project_map(
+                {**index, "documents": docs[:-1],
+                 "id_to_path": dict(list(lookup.items())[:-1])}, corpus
+            )
+        with self.assertRaisesRegex(ValueError, "malformed document"):
+            benchmark.validate_installed_project_map(
+                {**index, "documents": docs[:-1] + [{}]}, corpus
+            )
+        with self.assertRaisesRegex(ValueError, "top-level"):
+            benchmark.validate_installed_project_map(
+                {"repository_root": ".", "id_to_path": {}, "documents": "corrupt"}, corpus
+            )
+
+    def test_claimed_current_decision_needs_real_path_type_and_digest(self):
+        cards, corpus, oracle = self.inputs()
+        doc = next(x for x in corpus["documents"]
+                   if x["id"] == "DEC-CACHE-OWNERSHIP")
+        digest = "d" * 64
+        predictions = []
+        for case in cards["cases"]:
+            current = ["DEC-CACHE-OWNERSHIP"] if case["id"] == "cache-owner-conflict" else []
+            predictions.append({
+                "id": case["id"], "task": case["task"],
+                "type": case["type"], "changed_paths": case["changed_paths"],
+                "A": {
+                    "discovery": {"returncode": 0, "schema_errors": []},
+                    "context": {
+                        "returncode": 0, "status": "candidate",
+                        "current_decision_ids": current,
+                        "applicable_rule_ids": [],
+                        "selected_ids": current,
+                        "selected_artifacts": (
+                            [{"id": current[0]}] if current else []
+                        ),
+                        "schema_errors": [],
+                        "selected_knowledge_files": len(current),
+                        "estimated_selected_tokens": 100,
+                        "code_files": 0,
+                    },
+                },
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False, "retrieval_treatment": False,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_source_sha256": {doc["path"]: digest},
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        rejected = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(rejected["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("missing valid materialized source record" in x
+                            for x in rejected["gate_failures"]))
+        predictions[0]["A"]["context"]["selected_artifacts"][0].update({
+            "path": doc["path"], "artifact_type": "decision", "sha256": digest,
+        })
+        accepted = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(accepted["synthetic_safety_gate"], "PASS")
+        self.assertEqual(accepted["cold_start_effectiveness"], "HOLD")
+
+    def test_successful_malformed_discover_is_not_silently_treated_as_no_hits(self):
+        cards, corpus, oracle = self.inputs()
+        predictions = []
+        for case in cards["cases"]:
+            discovery = {
+                "command": ["pact.py", "discover", case["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {"results": "unexpected-object-not-array"},
+            }
+            context = {
+                "command": ["pact.py", "context", case["task"]],
+                "returncode": 0, "elapsed_ms": 1, "stderr": "",
+                "data": {
+                    "status": "candidate", "artifacts": [],
+                    "decisions": [], "applicable_rules": [],
+                    "context_budget": {"selected_estimated_tokens": 0},
+                    "code_artifacts": [], "known_unknowns": [],
+                },
+            }
+            with mock.patch.object(m0, "run_json", side_effect=[discovery, context]):
+                probed = benchmark.context_probe(
+                    pathlib.Path("/tmp/synthetic-no-cli"), case, cards["settings"]
+                )
+            self.assertTrue(probed["discovery"]["schema_errors"])
+            predictions.append({
+                "id": case["id"], "task": case["task"],
+                "type": case["type"], "changed_paths": case["changed_paths"],
+                "A": probed,
+                "B_path_navigation_only": {
+                    "current_candidates": [], "historical_candidates": [],
+                    "injected_into_context": False, "retrieval_treatment": False,
+                    "total_raw_matches": 0, "omitted_candidates": 0,
+                },
+            })
+        evidence = {
+            "predictions": predictions,
+            "installation": {"compact_archive_present": True},
+            "knowledge_source_mutations": [],
+            "knowledge_files_before": 9, "knowledge_files_after": 9,
+            "stale_declared_code_anchors": [],
+        }
+        result = benchmark.score(evidence, oracle, cards, corpus)
+        self.assertEqual(result["synthetic_safety_gate"], "FAIL")
+        self.assertTrue(any("malformed discovery/context" in x
+                            for x in result["gate_failures"]))
+
     def test_installed_commands_never_receive_scoring_oracle_or_decision_id(self):
         cards, _, _ = self.inputs()
         calls = []
@@ -134,7 +499,7 @@ class ColdStartM1Tests(unittest.TestCase):
                     "returncode": 0, "status": "candidate",
                     "current_decision_ids": selected,
                     "selected_ids": [] if cid == "broker-local-counter" else selected,
-                    "applicable_rule_ids": [],
+                    "applicable_rule_ids": ["RULE-CACHE-RETENTION"] if cid == "cache-owner-conflict" else [],
                     "selected_knowledge_files": 1, "estimated_selected_tokens": 10,
                     "code_files": 0},
                     "discovery": {"returncode": 0}},
@@ -155,6 +520,7 @@ class ColdStartM1Tests(unittest.TestCase):
         self.assertTrue(any("promoted" in failure for failure in report["gate_failures"]))
         self.assertTrue(any("unrelated" in failure for failure in report["gate_failures"]))
         self.assertTrue(any("not materialized" in failure for failure in report["gate_failures"]))
+        self.assertTrue(any("applicable Rule not materialized" in failure for failure in report["gate_failures"]))
         self.assertEqual(report["target_decision_count"], 7)
         self.assertFalse(report["agent_obedience_verified"])
         self.assertEqual(report["release_gate"], "HOLD")
@@ -178,6 +544,8 @@ class ColdStartM1Tests(unittest.TestCase):
         result = benchmark.evaluate()
         self.assertEqual(result["case_count"], 8)
         self.assertEqual(result["target_decision_count"], 7)
+        self.assertRegex(result["evaluated_installed_compact_runtime_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(result["evaluated_source_checkout_git_sha"], r"^[0-9a-f]{40}$")
         self.assertGreaterEqual(result["A_oracle_extraneous_current_candidates"], 0)
         self.assertGreaterEqual(result["A_total_current_decision_candidates"],
                                 result["A_matched_decisions"])
