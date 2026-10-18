@@ -72,6 +72,15 @@ def review(
             item["path"] for item in scope.get("domains", [])
             if isinstance(item, dict) and isinstance(item.get("path"), str)
         }
+        # A unique routed Domain is the source of its authority links. Older
+        # or hand-edited Context packets that omitted it cannot complete even
+        # if each metadata-only Rule/Decision hint has a disposition.
+        for domain_path in sorted(routed_domain_paths):
+            if domain_path not in required_by_path:
+                errors.append(
+                    f"Domain-first routed Domain missing from Task Context: {domain_path!r}; "
+                    "reprepare the task with the confirmed Domain materialized"
+                )
         candidates = scope.get("candidates")
         if not isinstance(candidates, list):
             errors.append("Domain-first candidate set is malformed")
