@@ -292,6 +292,8 @@ def prepare(args) -> int:
             context_cmd.extend(["--goal", args.goal])
         if args.intent:
             context_cmd.extend(["--intent", args.intent])
+        if args.scope_first:
+            context_cmd.append("--scope-first")
         for required_rule in args.required_rules:
             context_cmd.extend(["--require-rule", required_rule])
         # High-level task preparation always preserves the owner's task wording
@@ -922,6 +924,7 @@ def main() -> int:
         help="override soft estimated materialization token budget",
     )
     prep.add_argument("--intent", choices=["work", "decision", "history"], help="explicit optional retrieval intent")
+    prep.add_argument("--scope-first", action="store_true", help="opt-in Domain-first Context: linked authority is a candidate until applicability is checked")
     prep.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="required confirmed Rule stable ID; repeatable")
     prep.add_argument("--task-id")
     prep.add_argument("--files", nargs="+")
