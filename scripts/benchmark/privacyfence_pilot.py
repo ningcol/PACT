@@ -189,11 +189,21 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
         d = discover.get("data") if isinstance(discover.get("data"), dict) else {}
         e = context.get("data") if isinstance(context.get("data"), dict) else {}
         items = e.get("artifacts", []) if isinstance(e.get("artifacts"), list) else []
-        hits = d.get("results", []) if isinstance(d.get("results"), list) else []
+        raw_hits = d.get("results")
+        hits = raw_hits if isinstance(raw_hits, list) else []
         errs = []
         if discover["returncode"] != 0 or context["returncode"] != 0:
             errs.append("installed CLI failed")
+        if discover["returncode"] == 0:
+            if not isinstance(discover.get("data"), dict):
+                errs.append("successful Discover returned a non-object packet")
+            if not isinstance(raw_hits, list):
+                errs.append("successful Discover returned missing/non-array results")
+            elif any(not pilot.valid_discovery_result(item) for item in raw_hits):
+                errs.append("successful Discover returned malformed/unknown source hits")
         if context["returncode"] == 0:
+            if not isinstance(context.get("data"), dict):
+                errs.append("successful Context returned a non-object packet")
             errs.extend(validate_instance(e, SCHEMA))
         by_id = {x["id"]: x for x in cards["source_docs"]}
         for x in [*hits, *items]:
@@ -224,6 +234,37 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
              "estimated_tokens":x.get("estimated_tokens")}
             for x in items if isinstance(x, dict)
         ]
+        trusted_current_ids: set[str] = set()
+        for item in selected:
+            ident, relative = item.get("id"), item.get("path")
+            source = by_id.get(ident)
+            if (not isinstance(ident, str) or source is None
+                    or source["status"] != "implemented"
+                    or item.get("status") != "implemented"
+                    or item.get("artifact_type") != "decision"
+                    or target_path(source) != relative):
+                continue
+            try:
+                if item.get("sha256") == m0.digest_file(safe_source(target, relative)):
+                    trusted_current_ids.add(ident)
+            except (ValueError, OSError):
+                pass
+        claimed = e.get("decisions")
+        if context["returncode"] == 0 and (
+            not isinstance(claimed, list)
+            or any(not isinstance(x, str) for x in claimed)
+        ):
+            errs.append("successful Context returned malformed decisions")
+        claimed_ids = claimed if isinstance(claimed, list) else []
+        for ident in claimed_ids:
+            if ident not in trusted_current_ids:
+                errs.append(
+                    f"Decision ID lacks a matching selected, source-verified "
+                    f"implemented artifact: {ident!r}"
+                )
+        verified_decisions = [
+            ident for ident in claimed_ids if ident in trusted_current_ids
+        ]
         output.append({
             "id":case["id"], "kind":case["kind"], "task":task, "arm":label,
             "discover_command": discover["command"],
@@ -239,6 +280,7 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
             "context_stderr":context["stderr"], "context_ms":context["elapsed_ms"],
             "selected":selected,
             "decisions":e.get("decisions", []),
+            "source_verified_decisions":verified_decisions,
             "applicable_rules":e.get("applicable_rules", []),
             "budget":e.get("context_budget", {}),
             "schema_and_source_errors":errs,
@@ -271,7 +313,7 @@ def score(report: dict, cases: dict) -> dict:
     a_raw_target_hits = 0
     for x,y in zip(a,b):
         wanted = set(expected[y["id"]])
-        got = set(y.get("decisions", []))
+        got = set(y.get("source_verified_decisions", []))
         hits += len(wanted & got)
         extra += len(got - wanted)
         if y["kind"] == "routine-negative" and got:
@@ -297,9 +339,10 @@ def score(report: dict, cases: dict) -> dict:
             {"id":y["id"], "developer_expected":expected[y["id"]],
              "A_original_doc_paths":[x["path"] for x in a[i]["selected"]
                                      if x["path"].startswith("docs/adr/")],
-             "B_current_decisions":y["decisions"],
-             "target_hit":bool(set(expected[y["id"]]) & set(y["decisions"])),
-             "B_extraneous":[id for id in y["decisions"]
+             "B_claimed_decisions":y["decisions"],
+             "B_source_verified_decisions":y["source_verified_decisions"],
+             "target_hit":bool(set(expected[y["id"]]) & set(y["source_verified_decisions"])),
+             "B_extraneous":[id for id in y["source_verified_decisions"]
                               if id not in expected[y["id"]]]}
             for i,y in enumerate(b)
         ],
