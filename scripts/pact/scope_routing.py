@@ -65,8 +65,18 @@ def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
             for pos in range(len(observed) - width + 1)
         )
     if has_cjk:
-        # Preserve unspaced Han, kana and hangul aliases unchanged.
-        return len(name) >= 2 and name.casefold() in text.casefold()
+        # Retain unspaced Han, kana and hangul phrase recall, including names
+        # with numeric versions. A numeric suffix must match as a whole:
+        # 認証2 is not 認証20, where a false unique route could hide authority.
+        if len(name) < 2:
+            return False
+        normalized_name, normalized_text = name.casefold(), text.casefold()
+        left_boundary = r"(?<!\\d)" if name[0].isdecimal() else ""
+        right_boundary = r"(?!\\d)" if name[-1].isdecimal() else ""
+        return bool(re.search(
+            left_boundary + re.escape(normalized_name) + right_boundary,
+            normalized_text,
+        ))
     if re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])",
                  text, re.IGNORECASE):
         return True
