@@ -216,10 +216,20 @@ def _diagnose(
         item.get("path") for item in (convergence or {}).get("coverage", [])
         if isinstance(item, dict)
     }
-    missed_knowledge = [
+    # Match the exact completion gate's Domain-first metadata-only authority
+    # coverage, rather than making task assist claim no missing Context while
+    # task finish correctly rejects unreviewed linked Rules/Decisions.
+    review_paths = {
         item["path"] for item in context.get("artifacts", [])
-        if item.get("path") not in covered_context
-    ]
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    scope = context.get("scope_route")
+    if isinstance(scope, dict) and scope.get("status") == "unique":
+        review_paths.update(
+            item["path"] for item in scope.get("candidates", [])
+            if isinstance(item, dict) and isinstance(item.get("path"), str)
+        )
+    missed_knowledge = sorted(review_paths - covered_context)
     changed = task_change.get("changed_files", [])
     change_covered = {
         item.get("path")
