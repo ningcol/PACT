@@ -219,17 +219,24 @@ def _diagnose(
     # Match the exact completion gate's Domain-first metadata-only authority
     # coverage, rather than making task assist claim no missing Context while
     # task finish correctly rejects unreviewed linked Rules/Decisions.
-    review_paths = {
+    review_paths = [
         item["path"] for item in context.get("artifacts", [])
         if isinstance(item, dict) and isinstance(item.get("path"), str)
-    }
+    ]
+    seen_paths = set(review_paths)
     scope = context.get("scope_route")
     if isinstance(scope, dict) and scope.get("status") == "unique":
-        review_paths.update(
-            item["path"] for item in scope.get("candidates", [])
-            if isinstance(item, dict) and isinstance(item.get("path"), str)
-        )
-    missed_knowledge = sorted(review_paths - covered_context)
+        for item in scope.get("candidates", []):
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            if isinstance(path, str) and path not in seen_paths:
+                seen_paths.add(path)
+                review_paths.append(path)
+    # Preserve legacy Context artifact ordering when the opt-in route is absent.
+    missed_knowledge = [
+        path for path in review_paths if path not in covered_context
+    ]
     changed = task_change.get("changed_files", [])
     change_covered = {
         item.get("path")
