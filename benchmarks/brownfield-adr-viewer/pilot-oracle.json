@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "developer-authored-source-ADR-oracle-NOT-independent",
+  "notice": "Oracle retained only in the PACT test checkout, never in installed upstream copy or Agent prompts. Derived by implementer from original public ADRs; cannot claim independent blindness.",
+  "expected_current": {
+    "cli-browser-only": [
+      "DEC-ADR-0002"
+    ],
+    "superseded-color": [
+      "DEC-ADR-0004"
+    ],
+    "amended-display": [
+      "DEC-ADR-0005"
+    ],
+    "a11y-color-only": [
+      "DEC-ADR-0006"
+    ],
+    "routine-doc": [],
+    "routine-typing": []
+  },
+  "history_for_review": {
+    "cli-browser-only": [],
+    "superseded-color": [
+      "DEC-ADR-0003"
+    ],
+    "amended-display": [
+      "DEC-ADR-0003"
+    ],
+    "a11y-color-only": [],
+    "routine-doc": [],
+    "routine-typing": []
+  },
+  "decision_obedience_unverified": true
+}

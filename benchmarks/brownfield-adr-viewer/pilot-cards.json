@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "kind": "PACT-brownfield-adr-viewer-cold-start-developer-authored-cards",
+  "scope": "public GitHub read-only mrwilson/adr-viewer copied into disposable GitHub Actions runner; never push external",
+  "pact_parent_sha": "4c7416f2c24375fa61929e80b135a66036cf1320",
+  "upstream": "mrwilson/adr-viewer",
+  "upstream_commit": "a25f1c71e031bdaa63fe3175f969f197139f2044",
+  "upstream_docs": [
+    {
+      "source": "doc/adr/0001-record-architecture-decisions.md",
+      "git_blob": "dc22ea5571476210154f594d2739c4345ccfa2ce",
+      "id": "DEC-ADR-0001",
+      "status": "implemented"
+    },
+    {
+      "source": "doc/adr/0002-expose-command-line-interface.md",
+      "git_blob": "9b723f171c58870c73a994eb74d0292f3e870f88",
+      "id": "DEC-ADR-0002",
+      "status": "implemented"
+    },
+    {
+      "source": "doc/adr/0003-use-same-colour-for-all-headers.md",
+      "git_blob": "56b95f723b76176e0caa985146af1180ab52bcfd",
+      "id": "DEC-ADR-0003",
+      "status": "superseded",
+      "superseded_by": "DEC-ADR-0004"
+    },
+    {
+      "source": "doc/adr/0004-distinguish-superseded-records-with-colour.md",
+      "git_blob": "4d6b07ca8edb1f4a5256e02ef6741fbad2c1e3fd",
+      "id": "DEC-ADR-0004",
+      "status": "implemented",
+      "supersedes": [
+        "DEC-ADR-0003"
+      ]
+    },
+    {
+      "source": "doc/adr/0005-distinguish-amendments-to-records-with-colour.md",
+      "git_blob": "6bfacd9d6bc419cdf7434f171f7fdd4bb0dc1f34",
+      "id": "DEC-ADR-0005",
+      "status": "implemented"
+    },
+    {
+      "source": "doc/adr/0006-accessibility-as-a-first-class-concern.md",
+      "git_blob": "b5b587c2f78ef43bbd918d05982214d29480f6f9",
+      "id": "DEC-ADR-0006",
+      "status": "implemented"
+    }
+  ],
+  "settings": {
+    "intent": "work",
+    "knowledge_limit": 4,
+    "estimated_token_budget": 2048,
+    "risk": "low",
+    "code_context": false
+  },
+  "tasks": [
+    {
+      "id": "cli-browser-only",
+      "task": "Remove the adr-viewer command-line entry point and require browser-only use",
+      "kind": "decision-conflict"
+    },
+    {
+      "id": "superseded-color",
+      "task": "Give accepted and superseded architecture records the same header styling",
+      "kind": "historical-decision-conflict"
+    },
+    {
+      "id": "amended-display",
+      "task": "Render amended records exactly like superseded ones; drop their visual distinction",
+      "kind": "amendment-conflict"
+    },
+    {
+      "id": "a11y-color-only",
+      "task": "Replace record status labels and screen-reader cues with colors alone",
+      "kind": "accessibility-conflict"
+    },
+    {
+      "id": "routine-doc",
+      "task": "Correct a spelling mistake in the README installation heading",
+      "kind": "routine-no-decision"
+    },
+    {
+      "id": "routine-typing",
+      "task": "Reformat Python import ordering in parse.py without changing behavior",
+      "kind": "routine-no-decision"
+    }
+  ]
+}
