@@ -58,8 +58,12 @@ a random body-text substring.
 - No Domain or multiple Domains: original lexical Context remains intact,
   with an explicit `scope_route.status` and a warning that none of those
   lexical hits is a semantically verified constraint.
-- High-risk or explicit history/decision lookup: retain unrestricted Context
-  to avoid silently omitting cross-domain safety constraints.
+- High-risk or explicit history/decision lookup: retain unrestricted lexical
+  candidates to avoid silently omitting cross-domain safety constraints, but
+  still include the verified unique Domain landing page. If the count/token
+  budget prevents that page from being materialized, Context fails closed and
+  requires a wider budget or a retry without scoped routing; Convergence also
+  rejects older unique-route packets missing their Domain page.
 - Caller-declared `--require-rule` remains authoritative: it must be
   materialized and confirmed even if its Domain differs from the task's.
 - Metadata hints are capped at 12, but this display limit never truncates the
