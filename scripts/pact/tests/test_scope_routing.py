@@ -599,5 +599,145 @@ paths = ["src/auth/**"]
         self.assertFalse(document_term_matches("unit", "opportunity"))
 
 
+    def test_routed_domain_present_when_selection_is_unrestricted(self):
+        packet = self.packet(
+            "Change src/auth/login.py permissions",
+            args=["--risk", "high", "--limit", "4"],
+        )
+        self.assertEqual(packet["scope_route"]["status"], "unique")
+        self.assertFalse(packet["scope_route"]["restricted_selection"])
+        self.assertIn("DOMAIN-LOGIN", [row["id"] for row in packet["artifacts"]])
+        self.assertIn("DEC-PAY-001", packet["decisions"])
+
+    def test_unrestricted_scoped_budget_cannot_drop_domain_silently(self):
+        task = "Change src/auth/login.py permissions"
+        argv = [
+            "context", task, "--success", "Keep policies",
+            "--risk", "high", "--no-code", "--scope-first", "--limit", "1",
+        ]
+        with mock.patch.object(context, "ROOT", self.root), \
+             mock.patch.object(context, "run_discovery", return_value={
+                 "queries": [task], "results": self.lexical(),
+                 "code_results": [],
+             }), mock.patch.object(sys, "argv", argv):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                status = context.main()
+        self.assertEqual(status, 2, out.getvalue() + err.getvalue())
+        self.assertIn("Domain landing page was not materialized", err.getvalue())
+        self.assertNotIn('"scope_route"', out.getvalue())
+
+    def test_completion_rejects_old_unique_packet_without_domain(self):
+        packet = self.packet("Reformat src/auth/login.py imports")
+        packet["artifacts"] = []
+        with tempfile.TemporaryDirectory(prefix="pact-domain-coverage-") as td:
+            location = pathlib.Path(td) / "context.json"
+            location.write_text(json.dumps(packet), encoding="utf-8")
+            digest = hashlib.sha256(location.read_bytes()).hexdigest()
+            convergence = {
+                "context_sha256": digest,
+                "coverage": [{
+                    "path": candidate["path"],
+                    "disposition": "not-applicable",
+                    "rationale": "Reviewed prior business rules; formatting only.",
+                } for candidate in packet["scope_route"]["candidates"]],
+                "findings": [],
+            }
+            errors, _ = convergence_coverage.review(
+                packet, convergence, root=self.root,
+                context_path=location, expected_context_sha256=digest,
+            )
+            self.assertTrue(any("routed Domain missing" in e for e in errors),
+                            errors)
+
+    def test_compound_domain_route_matches_spaced_and_camel_names(self):
+        source = self.root / "docs/product/domains/login.md"
+        raw = source.read_text(encoding="utf-8")
+        raw = raw.replace('aliases = ["login", "sign in", "登录"]',
+                          'aliases = ["login", "sign in", "登录", "HTTPServer"]')
+        raw = raw.replace("# User authentication", "# LoginRetry")
+        source.write_text(raw, encoding="utf-8")
+        generated = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+        index = scope_routing.load_index(self.root)
+        for prompt in ("change login retry", "change LoginRetry",
+                       "adjust http server", "adjust HTTPServer"):
+            with self.subTest(prompt=prompt):
+                result = scope_routing.resolve(prompt, index)
+                self.assertEqual(result["status"], "unique")
+                self.assertEqual(result["domains"][0]["id"], "DOMAIN-LOGIN")
+        # No partial single-word route in an unrelated compound name.
+        self.assertEqual(
+            scope_routing.resolve("change Logins2Retry", index)["status"],
+            "unmapped",
+        )
+
+    def test_embedded_compound_title_or_alias_is_explicit_authority(self):
+        doc = {
+            "id": "DEC-LOGIN-001", "title": "LoginRetry",
+            "aliases": ["HTTPServer"], "domains": ["DOMAIN-LOGIN"],
+            "artifact_type": "decision", "status": "implemented",
+            "text": "Approved login policy.",
+        }
+        for prompt in ("change login retry", "change LoginRetry",
+                       "adjust http server", "adjust HTTPServer"):
+            with self.subTest(prompt=prompt):
+                score, reasons = score_document(doc, prompt)
+                self.assertGreater(score, 0)
+                self.assertTrue(
+                    "embedded exact title" in reasons
+                    or "embedded exact alias" in reasons,
+                    reasons,
+                )
+        self.write(".agents/decisions/implemented/login-session.md", '''+++
+[pact]
+type = "decision"
+id = "DEC-LOGIN-001"
+status = "implemented"
+domains = ["DOMAIN-LOGIN"]
++++
+# LoginRetry
+''')
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+        entry = next(x for x in scope_routing.load_index(self.root)["documents"]
+                     if x.get("id") == "DEC-LOGIN-001")
+        prompt = "change LoginRetry in src/auth/login.py"
+        score, reasons = score_document(entry, prompt)
+        candidate = self.hit(
+            "DEC-LOGIN-001", "decision", "implemented",
+            entry["path"], entry["title"], score, reasons,
+        )
+        packet = self.packet(prompt, hits=[candidate])
+        self.assertIn("DEC-LOGIN-001", packet["decisions"])
+
+    def test_unicode_case_transition_keeps_exact_multiword_recall(self):
+        for title, task in (
+            ("LoginÉchec", "change login échec"),
+            ("LoginΔοκιμή", "change login δοκιμή"),
+            ("HTTPÉchec", "update http échec"),
+        ):
+            with self.subTest(title=title):
+                doc = {
+                    "id": "DEC-UNICODE-001", "title": title,
+                    "aliases": [], "domains": [],
+                    "artifact_type": "decision", "status": "implemented",
+                    "text": "An approved project-specific trade-off.",
+                }
+                score, reasons = score_document(doc, task)
+                self.assertGreater(score, 0, (title, task, reasons))
+                self.assertIn("embedded exact title", reasons)
+                self.assertTrue(document_term_matches(title, task))
+        self.assertFalse(document_term_matches("py", "Python application"))
+
+
 if __name__ == "__main__":
     unittest.main()
