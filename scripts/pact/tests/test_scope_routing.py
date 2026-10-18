@@ -840,5 +840,37 @@ domains = ["DOMAIN-LOGIN"]
         self.assertEqual(valid["missing_context_coverage"], [])
 
 
+
+    def test_numeric_cjk_aliases_keep_unspaced_substring_recall(self):
+        source = self.root / "docs/product/domains/login.md"
+        original = source.read_text(encoding="utf-8")
+        original = original.replace(
+            'aliases = ["login", "sign in", "登录"]',
+            'aliases = ["認証2", "로그인3"]',
+        )
+        source.write_text(original, encoding="utf-8")
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr + rebuilt.stdout)
+        index = scope_routing.load_index(self.root)
+        for phrase in (
+            "更新認証2設定",
+            "ユーザー認証2の設定を変更",
+            "설정로그인3변경",
+            "認証2",
+        ):
+            with self.subTest(phrase=phrase):
+                route = scope_routing.resolve(phrase, index)
+                self.assertEqual(route["status"], "unique")
+                self.assertIn("declared Domain alias", route["domains"][0]["evidence"])
+        self.assertEqual(
+            scope_routing.resolve("format unrelated comments", index)["status"],
+            "unmapped",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
