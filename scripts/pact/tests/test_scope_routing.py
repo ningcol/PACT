@@ -1,6 +1,7 @@
 """Opt-in Domain-first route: conservative source maps and no authority promotion."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import pathlib
@@ -15,8 +16,9 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import context
+import convergence_coverage
 import scope_routing
-from discover import document_term_matches, score_document
+from discover import document_term_matches, score_document, document_phrase_matches
 
 
 class ScopeFirstTests(unittest.TestCase):
@@ -227,6 +229,162 @@ domains = ["DOMAIN-PAY"]
         idx.write_text(json.dumps(contents), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "stale or malformed"):
             scope_routing.load_index(self.root)
+
+    def test_cache_tamper_cannot_redirect_domain_alias_or_code_path(self):
+        idx = self.root / ".pact/cache/project-map.json"
+        base = json.loads(idx.read_text(encoding="utf-8"))
+        target = next(d for d in base["documents"] if d.get("id") == "DOMAIN-LOGIN")
+        for field, fake in (
+            ("aliases", ["payments", "refund"]),
+            ("paths", ["src/payments/**"]),
+            ("text", "# Forged business rationale\nDEC-FAKE-001"),
+            ("status", "candidate"),
+        ):
+            with self.subTest(field=field):
+                poisoned = json.loads(json.dumps(base))
+                doc = next(x for x in poisoned["documents"]
+                           if x.get("id") == "DOMAIN-LOGIN")
+                doc[field] = fake
+                idx.write_text(json.dumps(poisoned), encoding="utf-8")
+                # Fingerprint/id_to_path/visible files remain unchanged.
+                with self.assertRaisesRegex(
+                    ValueError, "cached metadata differs from source"
+                ):
+                    scope_routing.load_index(self.root)
+        idx.write_text(json.dumps(base), encoding="utf-8")
+        self.assertEqual(scope_routing.load_index(self.root), base)
+
+    def test_unconfirmed_domain_or_forged_non_domain_cannot_claim_unique_route(self):
+        self.write("docs/product/domains/login.md", '''+++
+[pact]
+type = "domain"
+id = "DOMAIN-LOGIN"
+status = "candidate"
+aliases = ["login", "登录"]
+paths = ["src/auth/**"]
++++
+# User authentication
+''')
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+        restored = scope_routing.load_index(self.root)
+        self.assertEqual(scope_routing.resolve("login", restored)["status"], "unmapped")
+
+    def test_domain_route_requires_convergence_for_unmaterialized_hints(self):
+        packet = self.packet("Reformat src/auth/login.py imports")
+        candidates = packet["scope_route"]["candidates"]
+        self.assertEqual(len(candidates), 2)
+        self.assertTrue(all(
+            isinstance(item["sha256"], str) and len(item["sha256"]) == 64
+            for item in candidates
+        ))
+        with tempfile.TemporaryDirectory(prefix="pact-scope-coverage-") as td:
+            location = pathlib.Path(td) / "task-context.json"
+            location.write_text(json.dumps(packet), encoding="utf-8")
+            checksum = hashlib.sha256(location.read_bytes()).hexdigest()
+            covered_domain = [{
+                "path": packet["artifacts"][0]["path"],
+                "disposition": "aligned",
+                "rationale": "Domain router was inspected.",
+            }]
+            report = {"context_sha256": checksum, "coverage": covered_domain,
+                      "findings": []}
+            errors, stats = convergence_coverage.review(
+                packet, report, root=self.root, context_path=location,
+                expected_context_sha256=checksum,
+            )
+            self.assertEqual(
+                set(stats["missing_artifacts"]),
+                {candidate["path"] for candidate in candidates},
+            )
+            self.assertTrue(any("missing from Convergence" in e for e in errors))
+            self.assertEqual(stats["required_artifacts"], 3)
+
+            report["coverage"].extend({
+                "path": item["path"], "disposition": "not-applicable",
+                "rationale": "Source was read; formatting-only task does not "
+                             "change this business constraint.",
+            } for item in candidates)
+            cleared, summary = convergence_coverage.review(
+                packet, report, root=self.root, context_path=location,
+                expected_context_sha256=checksum,
+            )
+            self.assertEqual(cleared, [])
+            self.assertEqual(summary["covered_artifacts"], 3)
+
+            source = self.root / candidates[0]["path"]
+            source.write_text(source.read_text(encoding="utf-8") + "\nNew rule.\n",
+                              encoding="utf-8")
+            changed, _ = convergence_coverage.review(
+                packet, report, root=self.root, context_path=location,
+                expected_context_sha256=checksum,
+            )
+            self.assertTrue(any("changed since Task preparation" in e
+                                for e in changed), changed)
+
+    def test_more_than_twelve_linked_decisions_never_suppress_exact_id(self):
+        for n in range(2, 16):
+            ident = f"DEC-LOGIN-{n:03d}"
+            self.write(f".agents/decisions/implemented/extra-{n:03d}.md",
+                       f'+++\n[pact]\ntype = "decision"\nid = "{ident}"\n'
+                       'status = "implemented"\ndomains = ["DOMAIN-LOGIN"]\n'
+                       f'+++\n# Decision {ident}\n')
+        built = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+        route = scope_routing.load_index(self.root)
+        chosen = scope_routing.resolve("login", route)
+        self.assertGreater(chosen["truncated_candidates"], 0)
+        self.assertIn(".agents/decisions/implemented/extra-015.md",
+                      chosen["_all_candidate_paths"])
+        explicit = self.hit(
+            "DEC-LOGIN-015", "decision", "implemented",
+            ".agents/decisions/implemented/extra-015.md",
+            "Decision DEC-LOGIN-015", 100, ["exact stable id"],
+        )
+        result = self.packet("Reformat src/auth/login.py", hits=[explicit])
+        self.assertEqual(result["scope_route"]["status"], "unique")
+        self.assertFalse(result["scope_route"]["restricted_selection"])
+        self.assertIn("DEC-LOGIN-015", result["decisions"])
+        self.assertTrue(any(
+            "selection was NOT narrowed" in note
+            for note in result["known_unknowns"]
+        ))
+
+    def test_kana_and_hangul_unspaced_search_preserved(self):
+        self.assertTrue(document_term_matches(
+            "ログイン", "ユーザーログイン認証パラメータ"
+        ))
+        self.assertTrue(document_term_matches(
+            "パラメータ", "ログイン認証パラメータ変更"
+        ))
+        self.assertTrue(document_term_matches(
+            "로그인", "사용자로그인인증"
+        ))
+        self.assertTrue(document_phrase_matches(
+            "로그인", "사용자로그인인증"
+        ))
+        doc = {
+            "id": "DEC-AUTH-001", "title": "Session choice",
+            "aliases": [], "domains": [], "status": "implemented",
+            "artifact_type": "decision",
+            "text": ("ユーザーログイン認証パラメータ変更を防ぐ。"
+                     "사용자로그인인증 세션 변경을 거절한다."),
+        }
+        self.assertGreater(score_document(doc, "ログイン パラメータ 変更")[0], 0)
+        self.assertGreater(score_document(doc, "로그인 세션")[0], 0)
+        self.assertEqual(
+            score_document(doc, "unit")[0], 0,
+            "substring query 'unit' may not match a longer unrelated token",
+        )
+        self.assertFalse(document_term_matches("py", "Python"))
 
     def test_boundary_scoring_preserves_exact_ids_and_cjk(self):
         decision = {
