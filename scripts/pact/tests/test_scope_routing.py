@@ -358,6 +358,57 @@ paths = ["src/auth/**"]
             for note in result["known_unknowns"]
         ))
 
+    def test_hyphen_and_underscore_terms_recover_real_decisions(self):
+        decision = {
+            "id": "DEC-LOGIN-RETRY-001", "title": "Sign-in retry policy",
+            "artifact_type": "decision", "status": "implemented",
+            "aliases": [], "domains": [],
+            "text": "The login retry limit preserves existing access controls.",
+        }
+        self.assertTrue(document_term_matches("sign-in", "Sign-in retry policy"))
+        self.assertTrue(document_term_matches("login_retry", "login retry limit"))
+        self.assertFalse(document_term_matches("py", "Python application"))
+        self.assertFalse(document_term_matches("unit", "opportunity"))
+        self.assertGreater(score_document(decision, "update sign-in")[0], 0)
+        self.assertGreater(score_document(decision, "change login_retry")[0], 0)
+
+    def test_changed_source_between_routing_and_digest_capture_fails_closed(self):
+        task = "Reformat src/auth/login.py imports"
+        true_digest = context.artifact_sha256
+        changed = {"done": False}
+        rule_path = "docs/product/rules/login-security.md"
+
+        def concurrent_write(relative):
+            digest = true_digest(relative)
+            if relative == rule_path and not changed["done"]:
+                changed["done"] = True
+                source = self.root / relative
+                source.write_text(
+                    source.read_text(encoding="utf-8")
+                    + "\n## Changed Owner approval premise\n",
+                    encoding="utf-8",
+                )
+            return digest
+
+        argv = [
+            "context", task, "--success", "Preserve behavior", "--risk",
+            "low", "--no-code", "--scope-first", "--limit", "4",
+        ]
+        with mock.patch.object(context, "ROOT", self.root), \
+             mock.patch.object(context, "artifact_sha256",
+                               side_effect=concurrent_write), \
+             mock.patch.object(context, "run_discovery", return_value={
+                 "queries": [task], "results": self.lexical(), "code_results": [],
+             }), \
+             mock.patch.object(sys, "argv", argv):
+            err, out = io.StringIO(), io.StringIO()
+            with redirect_stderr(err), redirect_stdout(out):
+                code = context.main()
+        self.assertTrue(changed["done"])
+        self.assertEqual(code, 2, out.getvalue() + err.getvalue())
+        self.assertIn("inconsistent Domain source snapshot", err.getvalue())
+        self.assertNotIn('"applicable_rules"', out.getvalue())
+
     def test_kana_and_hangul_unspaced_search_preserved(self):
         self.assertTrue(document_term_matches(
             "ログイン", "ユーザーログイン認証パラメータ"
