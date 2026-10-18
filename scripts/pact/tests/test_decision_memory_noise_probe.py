@@ -58,6 +58,37 @@ class PinnedBrownfieldNoiseTests(unittest.TestCase):
             cases["external_sha"], probe.pilot.EXPECTED_UPSTREAM_SHA
         )
 
+    def test_lexical_trace_distinguishes_py_extension_fragment_from_word(self):
+        import tempfile
+        cases = self.cases()
+        with tempfile.TemporaryDirectory(prefix="pact-noise-trace-") as td:
+            root = pathlib.Path(td)
+            index = root / ".pact" / "cache" / "project-map.json"
+            index.parent.mkdir(parents=True)
+            index.write_text(json.dumps({
+                "documents": [{
+                    "path": ".agents/decisions/example.md",
+                    "title": "Architecture decisions",
+                    "text": "Python is supported.",
+                    "aliases": [], "domains": [],
+                }],
+            }), encoding="utf-8")
+            trace = [{
+                "id": "format-server-imports",
+                "hits": [{
+                    "path": ".agents/decisions/example.md",
+                    "id": "DEC-ADR-0002",
+                    "score": 8, "reasons": [],
+                }],
+            }]
+            probe.annotate_lexical_evidence(root, cases, trace)
+            tokens = trace[0]["hits"][0]["lexical_terms_observed"]
+            py = [t for t in tokens if t["term"] == "py"]
+            self.assertEqual(len(py), 1)
+            self.assertTrue(py[0]["shorter_than_3"])
+            self.assertTrue(py[0]["matches"][0]["substring_only"])
+            self.assertFalse(py[0]["matches"][0]["whole_token"])
+
     def test_safety_gate_requires_decision_source_and_empty_raw_adr_authority(self):
         cases = self.cases()
         oracle = probe.load_frozen_oracle(cases)
