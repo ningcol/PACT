@@ -890,5 +890,133 @@ domains = ["DOMAIN-LOGIN"]
         )
 
 
+
+    def test_unicode_numeric_continuations_do_not_create_false_domain(self):
+        for suffix in ("0", "²", "②", "₀", "Ⅲ", "½", "四"):
+            with self.subTest(suffix=suffix):
+                self.assertFalse(scope_routing._mentions(
+                    "更新認証2" + suffix + "設定", "認証2", compound=True,
+                ))
+                self.assertFalse(scope_routing._mentions(
+                    "設定" + suffix + "2認証", "2認証", compound=True,
+                ))
+        for query in ("更新認証2設定", "設定2認証変更"):
+            with self.subTest(query=query):
+                label = "認証2" if "認証2" in query else "2認証"
+                self.assertTrue(scope_routing._mentions(
+                    query, label, compound=True,
+                ))
+        # A rejected first occurrence must not mask a later exact occurrence.
+        self.assertTrue(scope_routing._mentions(
+            "認証2² is not 認証2設定", "認証2", compound=True,
+        ))
+
+        doc = self.root / "docs/product/domains/login.md"
+        original = doc.read_text(encoding="utf-8")
+        doc.write_text(original.replace(
+            'aliases = ["login", "sign in", "登录"]',
+            'aliases = ["認証2"]',
+        ), encoding="utf-8")
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], text=True, capture_output=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+        index = scope_routing.load_index(self.root)
+        for near_miss in ("更新認証20設定", "更新認証2²設定",
+                          "更新認証2②設定", "更新認証2₀設定"):
+            with self.subTest(task=near_miss):
+                self.assertEqual(
+                    scope_routing.resolve(near_miss, index)["status"], "unmapped",
+                    "Unicode numeric continuations must not route to wrong Domain",
+                )
+        self.assertEqual(
+            scope_routing.resolve("更新認証2設定", index)["status"], "unique",
+        )
+
+    def test_task_assist_blocks_hidden_and_inconsistent_candidate_counts(self):
+        # Baseline: a fully enumerated Domain can expose safe *mechanical*
+        # draft suggestions, without asserting semantic acceptance.
+        def assist_for(packet):
+            covered = sorted({
+                *[item["path"] for item in packet.get("artifacts", [])],
+                *[item["path"] for item in packet["scope_route"]["candidates"]],
+            })
+            return task_review._diagnose(
+                manifest={
+                    "task_id": "TASK-SCOPE-OVERFLOW", "status": "prepared",
+                    "risk_level": "low", "contract_sha256": "contract",
+                    "context_sha256": "context",
+                },
+                contract={"acceptance_criteria": [{
+                    "id": "AC-1", "text": "Behavior remains unchanged",
+                }]},
+                context=packet,
+                evidence={"claims": [{
+                    "id": "CLAIM-1", "required": True, "status": "pass",
+                    "criteria": ["AC-1"], "claim": "A real check passed",
+                    "evidence": [],
+                }]},
+                convergence={"coverage": [{"path": path} for path in covered]},
+                owner=None,
+                task_change={"changed_files": [], "supported": True},
+                provenance_errors=[],
+                policy_gaps=[],
+            )
+
+        small = self.packet("Reformat src/auth/login.py imports", hits=[])
+        ready = assist_for(small)
+        self.assertEqual(ready["policy_gaps"], [])
+        self.assertEqual(ready["missing_context_coverage"], [])
+        self.assertEqual(len(ready["safe_mechanical_acceptance"]), 1)
+
+        # 14 real, source-linked Rules/Decisions but only 12 visible hints.
+        for n in range(2, 14):
+            identifier = f"DEC-LOGIN-{n:03d}"
+            self.write(
+                f".agents/decisions/implemented/overflow-{n:03d}.md",
+                f'+++\n[pact]\ntype = "decision"\nid = "{identifier}"\n'
+                'status = "implemented"\ndomains = ["DOMAIN-LOGIN"]\n'
+                f'+++\n# {identifier}\n',
+            )
+        rebuilt = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+        packet = self.packet("Reformat src/auth/login.py imports", hits=[])
+        scope = packet["scope_route"]
+        self.assertEqual(scope["status"], "unique")
+        self.assertEqual(len(scope["candidates"]), 12)
+        self.assertGreater(scope["truncated_candidates"], 0)
+        self.assertGreater(scope["total_candidates"], len(scope["candidates"]))
+
+        for mode in ("truncated", "count-mismatch"):
+            with self.subTest(mode=mode):
+                scoped = json.loads(json.dumps(packet))
+                if mode == "count-mismatch":
+                    scoped["scope_route"]["truncated_candidates"] = 0
+                blocked = assist_for(scoped)
+                self.assertEqual(blocked["missing_context_coverage"], [])
+                self.assertTrue(any(
+                    "unlisted or inconsistent authority candidates" in gap
+                    for gap in blocked["policy_gaps"]
+                ), blocked)
+                self.assertEqual(blocked["safe_mechanical_acceptance"], [])
+                self.assertEqual(blocked["safe_mechanical_verification"], [])
+                self.assertEqual(blocked["unverified_criteria"], ["AC-1"])
+
+        # An unscoped Context cannot inherit the opt-in overflow policy.
+        unscoped = json.loads(json.dumps(packet))
+        unscoped.pop("scope_route")
+        no_scope = assist_for({
+            **unscoped,
+            "scope_route": {"status": "unmapped", "candidates": []},
+        })
+        self.assertEqual(no_scope["policy_gaps"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
