@@ -12,7 +12,8 @@ import pathlib
 import re
 
 from cache import fingerprint_files
-from map import FORMAT_VERSION, source_paths, valid_project_index
+from discover import has_unspaced_script
+from map import FORMAT_VERSION, parse_document, source_paths, valid_project_index
 
 
 DOMAIN_ID = re.compile(r"^DOMAIN-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
@@ -30,7 +31,7 @@ def _mentions(text: str, name: str) -> bool:
     # Domain aliases are *explicit* project-authored mappings; require a
     # word boundary for English names, not an arbitrary substring in login2.
     # Multi-character Han aliases remain usable without whitespace.
-    if any("\u3400" <= ch <= "\u9fff" for ch in name):
+    if has_unspaced_script(name):
         return len(name) >= 2 and name.casefold() in text.casefold()
     return bool(re.search(
         r"(?<![\w])" + re.escape(name) + r"(?![\w])",
@@ -60,6 +61,26 @@ def load_index(root: pathlib.Path) -> dict:
             or data.get("source_fingerprint") != fingerprint_files(root, paths)
             or not valid_project_index(data, expected_paths=expected)):
         raise ValueError("Domain scope Project Map stale or malformed")
+    # Index freshness and structure cannot authenticate metadata: a cache writer
+    # could forge aliases/paths while retaining the original source fingerprint.
+    # Reparse EVERY potential authority home (and any claimed authority artifact)
+    # from actual Markdown and reject even a single inconsistent cached record.
+    # Other ordinary documents retain their normal lightweight index semantics.
+    checked_paths = {
+        doc["path"]: doc for doc in data["documents"]
+        if doc["path"].startswith((
+            "docs/product/domains/", "docs/product/rules/",
+            ".agents/decisions/",
+        )) or doc["artifact_type"] in {"domain", "rule", "decision"}
+    }
+    for relative, cached in checked_paths.items():
+        physical = root / relative
+        if not physical.is_file() or physical.is_symlink():
+            raise ValueError(f"Domain scope authority source unavailable: {relative!r}")
+        if parse_document(physical, root) != cached:
+            raise ValueError(f"Domain scope cached metadata differs from source: {relative!r}")
+    if fingerprint_files(root, paths) != data["source_fingerprint"]:
+        raise ValueError("Domain scope source changed during authority verification")
     return data
 
 
@@ -77,6 +98,7 @@ def resolve(task: str, index: dict) -> dict:
     for doc in documents:
         if (not isinstance(doc, dict)
                 or doc.get("artifact_type") != "domain"
+                or not str(doc.get("path", "")).startswith("docs/product/domains/")
                 or doc.get("status") != "confirmed"
                 or not isinstance(doc.get("id"), str)
                 or not DOMAIN_ID.fullmatch(doc["id"])):
@@ -144,6 +166,10 @@ def resolve(task: str, index: dict) -> dict:
     return {
         "status": state,
         "domains": matching,
+        # Internal full set: NEVER serialize into Context. Only the visible
+        # candidate list is capped; explicit ID/title hits still have access
+        # to the complete verified Domain-linked path set.
+        "_all_candidate_paths": sorted({item["path"] for item in references}),
         "candidates": references[:MAX_HINTS],
         "total_candidates": len(references),
         "truncated_candidates": max(0, len(references) - MAX_HINTS),
