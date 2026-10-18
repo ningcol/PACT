@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import context
 import convergence_coverage
 import scope_routing
+import task_review
 from discover import document_term_matches, score_document, document_phrase_matches
 
 
@@ -737,6 +738,106 @@ domains = ["DOMAIN-LOGIN"]
                 self.assertIn("embedded exact title", reasons)
                 self.assertTrue(document_term_matches(title, task))
         self.assertFalse(document_term_matches("py", "Python application"))
+
+
+
+    def test_mixed_latin_cjk_domain_aliases_route_without_partial_words(self):
+        source = self.root / "docs/product/domains/login.md"
+        original = source.read_text(encoding="utf-8")
+        original = original.replace(
+            'aliases = ["login", "sign in", "登录"]',
+            'aliases = ["Userログイン", "支付Auth", "한글Login"]',
+        ).replace("# User authentication", "# Login認証")
+        source.write_text(original, encoding="utf-8")
+        generated = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(generated.returncode, 0, generated.stderr + generated.stdout)
+        verified = scope_routing.load_index(self.root)
+        checks = (
+            ("change login 認証", "declared Domain title"),
+            ("change Login認証", "declared Domain title"),
+            ("review user ログイン", "declared Domain alias"),
+            ("review Userログイン", "declared Domain alias"),
+            ("review 支付 auth", "declared Domain alias"),
+            ("review 한글 login", "declared Domain alias"),
+        )
+        for task, reason in checks:
+            with self.subTest(task=task):
+                routed = scope_routing.resolve(task, verified)
+                self.assertEqual(routed["status"], "unique")
+                self.assertIn(reason, routed["domains"][0]["evidence"])
+                self.assertFalse(routed["applicability_verified"])
+        for unrelated in (
+            "change login2 認証",
+            "review baduser ログイン",
+            "review 用户支付 auth",
+            "review unrelated settings",
+        ):
+            with self.subTest(unrelated=unrelated):
+                self.assertEqual(
+                    scope_routing.resolve(unrelated, verified)["status"], "unmapped"
+                )
+        self.assertEqual(
+            self.packet("change login 認証")["scope_route"]["status"], "unique"
+        )
+
+    def test_task_assist_exposes_omitted_routed_domain_even_if_coverage_forged(self):
+        packet = self.packet("Reformat src/auth/login.py imports")
+        domain_path = packet["scope_route"]["domains"][0]["path"]
+        packet["artifacts"] = []
+        fake_coverage = [
+            {"path": item["path"], "disposition": "not-applicable"}
+            for item in packet["scope_route"]["candidates"]
+        ]
+        manifest = {
+            "task_id": "TASK-SCOPE-DIAG", "status": "prepared",
+            "risk_level": "low", "contract_sha256": "contract",
+            "context_sha256": "context",
+        }
+        params = {
+            "manifest": manifest, "contract": {"acceptance_criteria": []},
+            "context": packet, "evidence": {"claims": []},
+            "owner": None,
+            "task_change": {"changed_files": [], "supported": True},
+            "provenance_errors": [], "policy_gaps": [],
+        }
+        diagnostic = task_review._diagnose(
+            **params, convergence={"coverage": fake_coverage},
+        )
+        self.assertIn(domain_path, diagnostic["missing_context_coverage"])
+        self.assertEqual(
+            diagnostic["missing_scoped_domain_artifacts"], [domain_path]
+        )
+        self.assertTrue(any("routed Domain absent" in issue
+                            for issue in diagnostic["policy_gaps"]))
+        self.assertEqual(diagnostic["safe_mechanical_acceptance"], [])
+
+        # A fake coverage row must NOT conceal the missing prepared Domain.
+        forged = task_review._diagnose(
+            **params, convergence={
+                "coverage": [*fake_coverage, {"path": domain_path}],
+            },
+        )
+        self.assertEqual(
+            forged["missing_scoped_domain_artifacts"], [domain_path]
+        )
+        self.assertTrue(forged["policy_gaps"])
+
+        packet["artifacts"] = [{
+            "path": domain_path, "id": "DOMAIN-LOGIN",
+            "artifact_type": "domain", "title": "User authentication",
+        }]
+        valid = task_review._diagnose(
+            **params, convergence={
+                "coverage": [*fake_coverage, {"path": domain_path}],
+            },
+        )
+        self.assertEqual(valid["missing_scoped_domain_artifacts"], [])
+        self.assertEqual(valid["policy_gaps"], [])
+        self.assertEqual(valid["missing_context_coverage"], [])
 
 
 if __name__ == "__main__":
