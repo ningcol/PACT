@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "developer-labelled-oracle-not-independent-or-sealed",
+  "limitations": [
+    "The implementer authored the task wording and labels.",
+    "Decision IDs are evaluation-only, not passed to installed PACT queries.",
+    "An ADR can be amended or only partially implemented; status cannot be inferred from test projection alone.",
+    "Retrieval target != actual agent semantic obedience or Owner authorization."
+  ],
+  "expected_current": {
+    "os-principal": [
+      "DEC-PF-0008"
+    ],
+    "mcp-signin": [
+      "DEC-PF-0013"
+    ],
+    "route-gating": [
+      "DEC-PF-0014"
+    ],
+    "unattended-approval": [
+      "DEC-PF-0015"
+    ],
+    "gmail-signature": [
+      "DEC-PF-0038"
+    ],
+    "legacy-settings": [
+      "DEC-PF-0041"
+    ],
+    "csv-formulas": [
+      "DEC-PF-0180"
+    ],
+    "salesforce-batch": [
+      "DEC-PF-0191"
+    ],
+    "personal-import": [
+      "DEC-PF-0195"
+    ],
+    "signed-serial": [
+      "DEC-PF-0200"
+    ],
+    "docs-whitespace": [],
+    "test-variable": []
+  },
+  "supporting_relation_for_review": {
+    "csv-formulas": [
+      "DEC-PF-0155"
+    ],
+    "signed-serial": [
+      "DEC-PF-0016"
+    ],
+    "legacy-settings": [
+      "DEC-PF-0004"
+    ]
+  },
+  "required_status_safety": {
+    "DEC-PF-0005": "proposed-not-current",
+    "source_adr_0005": "Source explicitly says Proposed; never create an implemented Decision or Owner approval from it."
+  },
+  "no_spurious_durable_decisions_created": true,
+  "independent_agent_sessions": 0,
+  "owner_observed": false
+}
