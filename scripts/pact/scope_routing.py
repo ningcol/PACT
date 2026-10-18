@@ -71,12 +71,27 @@ def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
         if len(name) < 2:
             return False
         normalized_name, normalized_text = name.casefold(), text.casefold()
-        left_boundary = r"(?<!\d)" if name[0].isdecimal() else ""
-        right_boundary = r"(?!\d)" if name[-1].isdecimal() else ""
-        return bool(re.search(
-            left_boundary + re.escape(normalized_name) + right_boundary,
-            normalized_text,
-        ))
+        # Python regex \\d matches decimal characters only; Unicode numeric
+        # continuations also include superscript, circled and subscript digits.
+        # Check the adjacent code points for EACH hit, rather than choosing
+        # the first substring or relying on regex word boundaries.
+        start = normalized_text.find(normalized_name)
+        while start != -1:
+            end = start + len(normalized_name)
+            left_continues = (
+                normalized_name[0].isnumeric()
+                and start > 0
+                and normalized_text[start - 1].isnumeric()
+            )
+            right_continues = (
+                normalized_name[-1].isnumeric()
+                and end < len(normalized_text)
+                and normalized_text[end].isnumeric()
+            )
+            if not left_continues and not right_continues:
+                return True
+            start = normalized_text.find(normalized_name, start + 1)
+        return False
     if re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])",
                  text, re.IGNORECASE):
         return True
