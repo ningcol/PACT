@@ -242,7 +242,6 @@
         },
         "candidates": {
           "type": "array",
-          "maxItems": 12,
           "items": {
             "type": "object",
             "required": ["id", "path", "artifact_type", "status", "via"],
