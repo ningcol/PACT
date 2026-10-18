@@ -24,6 +24,23 @@ PATH_IN_TASK = re.compile(
 MAX_HINTS = 12
 
 
+def _mixed_script_tokens(value: str) -> list[str]:
+    """Split Latin/CJK adjacency before comparing declared compound names.
+
+    Only Domain titles/aliases feed this matcher; code comments and arbitrary
+    body strings are never Domain-routing authority.
+    """
+    separated: list[str] = []
+    previous: str | None = None
+    for ch in value:
+        if (previous is not None and previous.isalnum() and ch.isalnum()
+                and has_unspaced_script(previous) != has_unspaced_script(ch)):
+            separated.append(" ")
+        separated.append(ch)
+        previous = ch
+    return document_tokens("".join(separated))
+
+
 def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
     name = name.strip()
     if not name:
@@ -31,7 +48,22 @@ def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
     # Domain aliases are *explicit* project-authored mappings; require a
     # word boundary for English names, not an arbitrary substring in login2.
     # Multi-character Han aliases remain usable without whitespace.
-    if has_unspaced_script(name):
+    has_cjk = has_unspaced_script(name)
+    has_other_script = any(
+        ch.isalnum() and not has_unspaced_script(ch) for ch in name
+    )
+    if compound and has_cjk and has_other_script:
+        # A declared "Login認証" matches "login 認証", but not "login2 認証".
+        # Compare the entire sequence after Latin/CJK and camel boundaries.
+        required = _mixed_script_tokens(name)
+        observed = _mixed_script_tokens(text)
+        width = len(required)
+        return width >= 2 and any(
+            observed[pos:pos + width] == required
+            for pos in range(len(observed) - width + 1)
+        )
+    if has_cjk:
+        # Preserve unspaced Han, kana and hangul aliases unchanged.
         return len(name) >= 2 and name.casefold() in text.casefold()
     if re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])",
                  text, re.IGNORECASE):
