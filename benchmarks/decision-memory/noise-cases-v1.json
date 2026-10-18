@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "type": "developer-authored-nonblind-brownfield-noise-diagnostic",
+  "notice": "Exploratory new task wording authored by PACT implementer. NOT an independently sealed Agent holdout, not evidence of Owner compliance, must not be treated as preregistered real Agent superiority.",
+  "pact_source_baseline": "8d10a7bfde791a84da12742e2302704f706fd796",
+  "external_source": "mrwilson/adr-viewer",
+  "external_sha": "a25f1c71e031bdaa63fe3175f969f197139f2044",
+  "original_adr_projection": "benchmarks/brownfield-adr-viewer/pilot-cards.json",
+  "settings": {
+    "intent": "work",
+    "knowledge_limit": 4,
+    "estimated_token_budget": 2048,
+    "risk": "low",
+    "code_context": false
+  },
+  "cases": [
+    {
+      "id": "format-server-imports",
+      "type": "routine-negative",
+      "task": "Sort import statements alphabetically in adr_viewer/server.py, keeping behavior unchanged"
+    },
+    {
+      "id": "blankline-parser-tests",
+      "type": "routine-negative",
+      "task": "Fix extra blank lines and trailing spaces in adr_viewer/test_parse.py without changing tests"
+    },
+    {
+      "id": "readmes-possessive",
+      "type": "routine-negative",
+      "task": "Update the README's installation example punctuation without changing commands"
+    },
+    {
+      "id": "run-unit-tests",
+      "type": "routine-negative",
+      "task": "Run the existing unit tests and report their failures without editing behavior"
+    },
+    {
+      "id": "python-typing",
+      "type": "routine-negative",
+      "task": "Apply autoformatting to local Python typing annotations in adr_viewer/render.py"
+    },
+    {
+      "id": "requirements-sort",
+      "type": "routine-negative",
+      "task": "Reorder unchanged dependency lines in requirements.txt without version changes"
+    },
+    {
+      "id": "local-rename-parser",
+      "type": "routine-negative",
+      "task": "Rename an internal loop variable in adr_viewer/parse.py without changing outputs"
+    },
+    {
+      "id": "pytest-docstrings",
+      "type": "routine-negative",
+      "task": "Polish docstrings in adr_viewer/test_render.py for grammar only, keeping tests and behavior unchanged"
+    },
+    {
+      "id": "cli-to-browser",
+      "type": "decision-conflict",
+      "task": "Convert the adr-viewer command-line entry point into a browser-only experience"
+    },
+    {
+      "id": "uniform-status-headers",
+      "type": "decision-conflict",
+      "task": "Make every ADR state header use identical colors instead of visually identifying replaced records"
+    },
+    {
+      "id": "amendment-as-supersession",
+      "type": "decision-conflict",
+      "task": "Treat amendments as supersessions in the record renderer"
+    },
+    {
+      "id": "remove-screen-reader",
+      "type": "decision-conflict",
+      "task": "Remove screen reader accommodations from the rendered Architecture Decision Records"
+    }
+  ]
+}

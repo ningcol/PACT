@@ -1,0 +1,106 @@
+name: PACT Real Brownfield Decision Noise Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/decision-memory-noise-diagnostic.yml"
+      - "scripts/benchmark/decision_memory_noise_probe.py"
+      - "scripts/pact/tests/test_decision_memory_noise_probe.py"
+      - "benchmarks/decision-memory/noise-*.json"
+      - "docs/evaluation/decision-memory-noise-*.md"
+      - "scripts/pact/**"
+      - ".pact/schema/**"
+      - "bootstrap.py"
+      - "pact.py"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+      - "scripts/benchmark/decision_memory_m0.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-real-repo-noise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Pinned PACT exact-head checkout (no persisted credentials)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify PACT source revision
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate frozen case/oracle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_noise_probe.py"
+
+      - name: Clone public upstream read-only in disposable workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/pact-public-adr-noise"
+          echo "PACT_NOISE_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/mrwilson/adr-viewer.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet \
+            a25f1c71e031bdaa63fe3175f969f197139f2044
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "a25f1c71e031bdaa63fe3175f969f197139f2044"
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+
+      - name: Installed PACT diagnostic on newly frozen task cards
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=0
+          python scripts/benchmark/decision_memory_noise_probe.py \
+            --target "$PACT_NOISE_TARGET" \
+            > "$RUNNER_TEMP/pact-brownfield-noise.json" || code=$?
+          cat "$RUNNER_TEMP/pact-brownfield-noise.json"
+          test "$code" -eq 0
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          receipt = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "pact-brownfield-noise.json").read_text(encoding="utf-8")
+          )
+          assert receipt["engineering_gate"] == "PASS", receipt["gate_failures"]
+          assert receipt["case_count"] == 12
+          assert receipt["routine_cases"] == 8
+          assert receipt["positive_target_decisions"] == 4
+          assert receipt["upstream_source_unmodified"]
+          assert receipt["real_agent_executed"] is False
+          assert receipt["independent_holdout"] is False
+          assert receipt["release_gate"] == "HOLD"
+          print("Author-labelled diagnostic, NOT independent semantic Agent A/B")
+          print("Target hits", receipt["positive_target_hits"],
+                "/", receipt["positive_target_decisions"])
+          print("Routine tasks injecting Decisions",
+                receipt["routine_cases_with_extra_current_decisions"], "/8")
+          print("Extra current Decision candidates",
+                receipt["oracle_extraneous_current_candidates"])
+          PY
+
+      - name: Preserve full nonblind diagnostic and failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-adr-noise-diagnostic-json
+          path: ${{ runner.temp }}/pact-brownfield-noise.json
+          if-no-files-found: warn
+          retention-days: 14
