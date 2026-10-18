@@ -621,7 +621,8 @@ def main() -> int:
             grounded = [
                 item for item in candidate_results
                 if item.get("path") == home["path"] or (
-                    item.get("path") in known_paths
+                    (item.get("path") in known_paths
+                     or item.get("id") in required_rules)
                     and exact_match_priority(item.get("reasons", [])) > 0
                 )
             ]
