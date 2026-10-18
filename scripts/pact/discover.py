@@ -102,16 +102,40 @@ DOCUMENT_STOPWORDS = frozenset({
 })
 
 
+def has_unspaced_script(value: str) -> bool:
+    """Han, Japanese kana and Korean hangul can occur without word spaces."""
+    return any(
+        ("\u3400" <= ch <= "\u9fff")  # Han
+        or ("\u3040" <= ch <= "\u30ff")  # Japanese hiragana/katakana
+        or ("\u31f0" <= ch <= "\u31ff")  # Katakana phonetic extensions
+        or ("\u1100" <= ch <= "\u11ff")  # Hangul jamo
+        or ("\u3130" <= ch <= "\u318f")  # Hangul compatibility
+        or ("\uac00" <= ch <= "\ud7af")  # Hangul syllables
+        for ch in value
+    )
+
+
+def document_phrase_matches(phrase: str, field: str) -> bool:
+    """Preserve semantic whole phrases, without matching within a longer word."""
+    phrase = norm(phrase)
+    if not phrase:
+        return False
+    if has_unspaced_script(phrase):
+        return len(phrase) >= 2 and phrase in norm(field)
+    return bool(re.search(
+        r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", norm(field),
+    ))
+
+
 def document_term_matches(term: str, field: str) -> bool:
     """Token-aware evidence; never match `.py` against `Python`.
 
-    CJK query substrings are retained to avoid hiding pathless Chinese Product
-    Truth from scripts without whitespace-delimited word boundaries.
+    Preserve unspaced Han/kana/hangul phrases, including pathless Decisions.
     Explicit stable ID/title/alias matching is handled by score_document.
     """
     if not term:
         return False
-    if any("\u3400" <= ch <= "\u9fff" for ch in term):
+    if has_unspaced_script(term):
         return len(term) >= 2 and term in norm(field)
     if len(term) < 3:
         return False
@@ -141,14 +165,14 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q == title:
         score += 140
         reasons.append("exact title")
-    elif q and q in title:
+    elif document_phrase_matches(q, title):
         score += 90
         reasons.append("title contains query")
 
     if q and q in aliases:
         score += 130
         reasons.append("exact alias")
-    elif q and any(q in alias for alias in aliases):
+    elif any(document_phrase_matches(q, alias) for alias in aliases):
         score += 80
         reasons.append("alias contains query")
 
@@ -156,7 +180,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         score += 90
         reasons.append("exact domain")
 
-    if q and q in body:
+    if document_phrase_matches(q, body):
         score += 45
         reasons.append("body contains query")
 
