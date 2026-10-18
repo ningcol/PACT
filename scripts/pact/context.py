@@ -615,6 +615,37 @@ def main() -> int:
                 return 2
             item["sha256"] = digest
 
+        # Do not mix cached/source metadata from generation N with a source
+        # digest from generation N+1 if a concurrent writer intervened between
+        # route resolution and hashing. Reverify every authority source and
+        # mapping against the current source fingerprint, then confirm the
+        # digests we just attached still identify those same bytes.
+        try:
+            fresh = route_only(args.task, ROOT)
+            original_metadata = {
+                key: value for key, value in scope_route.items()
+                if key != "candidates"
+            }
+            fresh_metadata = {
+                key: value for key, value in fresh.items()
+                if key != "candidates"
+            }
+            recorded = [
+                {key: val for key, val in row.items() if key != "sha256"}
+                for row in scope_route["candidates"]
+            ]
+            if original_metadata != fresh_metadata or recorded != fresh["candidates"]:
+                raise ValueError("Domain scope changed while source digests were captured")
+            if any(
+                artifact_sha256(row["path"]) != row["sha256"]
+                for row in scope_route["candidates"]
+            ):
+                raise ValueError("Domain scope source bytes changed while being verified")
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: inconsistent Domain source snapshot: {exc}",
+                  file=sys.stderr)
+            return 2
+
         # The full source-linked ID/path set must not be truncated by the
         # 12-item *presentation* cap; it never enters Context JSON.
         all_candidate_paths = set(scope_route.pop("_all_candidate_paths"))
