@@ -15,6 +15,8 @@ from repository_files import DEFAULT_PRUNE_DIRS
 
 from risk import profile
 from schema_validate import load_schema, validate_instance
+from scope_routing import route_only
+from discover import exact_match_priority
 from runtime_exec import runtime_command
 
 
@@ -486,6 +488,10 @@ def main() -> int:
     )
     parser.set_defaults(code=None)
     parser.add_argument("--intent", choices=["work", "decision", "history"], help="optional retrieval priority; default unchanged")
+    parser.add_argument(
+        "--scope-first", action="store_true",
+        help="opt-in: route by project-declared Domain name/path before materializing weak Decision matches",
+    )
     parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -588,6 +594,47 @@ def main() -> int:
         discovery.get("code_results", []),
         wider_discovery.get("code_results", []),
     )
+
+    scope_route = None
+    if args.scope_first:
+        try:
+            scope_route = route_only(args.task, ROOT)
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"PACT context: cannot verify Domain source map: {exc}", file=sys.stderr)
+            return 2
+
+        # This is an EXPLICITLY OPT-IN materialization policy, never an
+        # automatic claim of semantic Rule/Decision applicability.
+        # Ambiguous/unmapped and high-risk/history requests retain baseline
+        # Context and expose a review-needed marker, preventing silent misses.
+        can_restrict = (
+            scope_route["status"] == "unique"
+            and args.risk != "high"
+            and args.intent not in {"decision", "history"}
+        )
+        scope_route["restricted_selection"] = can_restrict
+        if can_restrict:
+            home = scope_route["domains"][0]
+            known_paths = {v["path"] for v in scope_route["candidates"]}
+            # Explicit, metadata-backed title/alias/ID hits stay selectable;
+            # merely sharing a Domain is NOT sufficient to assert a rule.
+            grounded = [
+                item for item in candidate_results
+                if item.get("path") == home["path"] or (
+                    item.get("path") in known_paths
+                    and exact_match_priority(item.get("reasons", [])) > 0
+                )
+            ]
+            if not any(x.get("path") == home["path"] for x in grounded):
+                grounded.insert(0, {
+                    "path": home["path"], "id": home["id"],
+                    "artifact_type": "domain", "title": home["title"],
+                    "status": "confirmed", "domains": [],
+                    "score": 2000, "reasons": ["explicit Domain routing"],
+                    "mixed_authority": False, "verification": [],
+                })
+            candidate_results = grounded
+
     results, code_results, budget = select_context_candidates(
         candidate_results,
         candidate_code_results,
@@ -670,6 +717,32 @@ def main() -> int:
 
     unknowns: list[str] = governance_path_hints()
     unknowns.extend(nearby_readme_hints(code_results))
+    if scope_route is not None:
+        if scope_route["status"] != "unique":
+            unknowns.append(
+                "Domain routing was not unique; baseline lexical Context was retained. "
+                "Do not assume candidate Decisions are applicable without verifying "
+                "the business behavior and explicit authority."
+            )
+        elif scope_route["restricted_selection"]:
+            unknowns.append(
+                "Domain-first Context holds only explicitly scoped/ID-title-alias "
+                "knowledge. Linked Rules and Decisions are candidate hints, NOT "
+                "confirmed applicable authority; inspect them before changing "
+                "related behavior. For cross-domain or uncertain work, rerun "
+                "without --scope-first or with --risk high."
+            )
+        else:
+            unknowns.append(
+                "Domain metadata was found but high-risk/history Context remains "
+                "unrestricted: verify cross-domain current rules and decisions."
+            )
+        if scope_route["truncated_candidates"]:
+            unknowns.append(
+                f"{scope_route['truncated_candidates']} Domain-associated authority "
+                "candidates exceeded the metadata cap; review the Domain source "
+                "and its references before claiming context sufficiency."
+            )
     mixed_candidates = sorted({
         str(result.get("path"))
         for result in candidate_results
@@ -802,6 +875,8 @@ def main() -> int:
 
     if code_candidate_hints:
         envelope["code_candidate_hints"] = code_candidate_hints
+    if scope_route is not None:
+        envelope["scope_route"] = scope_route
 
     errors = validate(envelope)
     if errors:
