@@ -50,8 +50,10 @@ def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
     # Multi-character Han aliases remain usable without whitespace.
     has_cjk = has_unspaced_script(name)
     has_other_script = any(
-        ch.isalnum() and not has_unspaced_script(ch) for ch in name
+        ch.isalpha() and not has_unspaced_script(ch) for ch in name
     )
+    # Decimal suffixes are not a language/script transition: 認証2 is a
+    # single unspaced CJK alias, not a Latin+CJK compound.
     if compound and has_cjk and has_other_script:
         # A declared "Login認証" matches "login 認証", but not "login2 認証".
         # Compare the entire sequence after Latin/CJK and camel boundaries.
