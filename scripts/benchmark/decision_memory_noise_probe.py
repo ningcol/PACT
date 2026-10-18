@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -120,6 +121,59 @@ def extract_scored_discover(target: pathlib.Path, cases: dict, records: list[dic
     return records
 
 
+def annotate_lexical_evidence(
+    target: pathlib.Path, cases: dict, scored: list[dict]
+) -> None:
+    """Report WHY hits matched; pure observed-source annotation, not new ranking."""
+    index_path = target / ".pact" / "cache" / "project-map.json"
+    if not index_path.is_file() or index_path.is_symlink():
+        raise ValueError("PACT built no safe Project Map for lexical attribution")
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    documents = index.get("documents")
+    if not isinstance(documents, list) or not all(
+        isinstance(doc, dict) and isinstance(doc.get("path"), str)
+        for doc in documents
+    ):
+        raise ValueError("malformed Project Map for lexical attribution")
+    by_path = {doc["path"]: doc for doc in documents}
+    if len(by_path) != len(documents):
+        raise ValueError("duplicate document paths in Project Map")
+    # Inspect the same lexical term rules as the PACT runtime under test.
+    sys.path.insert(0, str(ROOT / "scripts" / "pact"))
+    from discover import terms, DOCUMENT_STOPWORDS
+
+    by_id = {card["id"]: card for card in cases["cases"]}
+    for receipt in scored:
+        task = by_id[receipt["id"]]["task"]
+        query_terms = [t for t in terms(task) if t not in DOCUMENT_STOPWORDS]
+        for hit in receipt["hits"]:
+            doc = by_path.get(hit["path"])
+            if doc is None:
+                raise ValueError("diagnostic ranked unknown Project Map path")
+            fields = {
+                "title": str(doc.get("title") or ""),
+                "body": str(doc.get("text") or ""),
+                "aliases": " ".join(doc.get("aliases") or []),
+                "domains": " ".join(doc.get("domains") or []),
+            }
+            term_evidence = []
+            for term in query_terms:
+                matches = []
+                for field, text in fields.items():
+                    lowered = text.casefold()
+                    if term in lowered:
+                        matches.append({
+                            "field": field, "whole_token": term in set(terms(text)),
+                            "substring_only": term not in set(terms(text)),
+                        })
+                if matches:
+                    term_evidence.append({
+                        "term": term, "shorter_than_3": len(term) < 3,
+                        "matches": matches,
+                    })
+            hit["lexical_terms_observed"] = term_evidence
+
+
 def evaluate(target: pathlib.Path, progress: dict) -> dict:
     cases = load_frozen_cases()
     source = json.loads(pilot.CARDS.read_text(encoding="utf-8"))
@@ -163,6 +217,7 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
     pilot.probe(target, cards, progress["B"])
     progress["B_scored"] = []
     extract_scored_discover(target, cases, progress["B_scored"])
+    annotate_lexical_evidence(target, cases, progress["B_scored"])
     progress["stage"] = "verify-no-unintended-knowledge-changes"
     progress["knowledge_after"] = pilot.source_snapshot(target)
     progress["original_adr_blobs_after"] = {
