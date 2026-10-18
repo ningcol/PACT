@@ -61,6 +61,7 @@ jobs:
           python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_m1_noise_regression.py"
           python -m unittest discover -s scripts/pact/tests -p "test_brownfield_adr_viewer_pilot.py"
           python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_noise_probe.py"
+          python -m unittest discover -s scripts/pact/tests -p "test_scope_routing.py"
           python -m unittest discover -s scripts/pact/tests -p "test_impact_markdown_links.py"
           python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
           python -m unittest discover -s scripts/pact/tests -p "test_convergence_deletion_semantics.py"
