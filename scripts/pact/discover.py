@@ -96,7 +96,30 @@ DOCUMENT_STOPWORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "be", "been", "being", "by",
     "for", "from", "in", "into", "is", "it", "of", "on", "or",
     "the", "to", "was", "were", "with",
+    # English possessive suffix and implementation-only fixture boilerplate
+    # are too weak to establish a business Decision match.
+    "s", "unchanged",
 })
+
+
+def document_term_matches(term: str, field: str) -> bool:
+    """Token-aware evidence; never match `.py` against `Python`.
+
+    CJK query substrings are retained to avoid hiding pathless Chinese Product
+    Truth from scripts without whitespace-delimited word boundaries.
+    Explicit stable ID/title/alias matching is handled by score_document.
+    """
+    if not term:
+        return False
+    if any("\u3400" <= ch <= "\u9fff" for ch in term):
+        return len(term) >= 2 and term in norm(field)
+    if len(term) < 3:
+        return False
+    # Hyphen/underscore and camel-case code names are useful separators.
+    # Do not treat an unrelated suffix inside a longer prose word as a hit.
+    value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", field)
+    tokens = re.findall(r"[^\W_]+", norm(value), re.UNICODE)
+    return term in tokens
 
 
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
@@ -142,13 +165,13 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         term_score = 0
         if term == ident:
             term_score = max(term_score, 80)
-        if term in title:
+        if document_term_matches(term, title):
             term_score = max(term_score, 30)
-        if any(term in alias for alias in aliases):
+        if any(document_term_matches(term, alias) for alias in aliases):
             term_score = max(term_score, 35)
-        if any(term in domain for domain in domains):
+        if any(document_term_matches(term, domain) for domain in domains):
             term_score = max(term_score, 30)
-        if term in body:
+        if document_term_matches(term, body):
             term_score = max(term_score, 8)
         if term_score:
             matched_terms += 1
