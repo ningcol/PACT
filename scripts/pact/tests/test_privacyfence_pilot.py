@@ -185,5 +185,53 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
         ))
 
 
+
+    def test_real_context_omits_status_but_source_verified_id_counts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            docs=[{"id":"DEC-PF-0008","status":"implemented",
+                   "source":"docs/adr/0008-sample.md"}]
+            source_path=pilot.target_path(docs[0])
+            file=root/source_path
+            file.parent.mkdir(parents=True,exist_ok=True)
+            file.write_text(
+                '+++\n[pact]\ntype = "decision"\nid = "DEC-PF-0008"\n'
+                'status = "implemented"\n+++\n# Source-backed decision\n',
+                encoding="utf-8",
+            )
+            cards={
+                "settings":{"risk":"low","intent":"work","knowledge_limit":6,
+                           "estimated_token_budget":4096,"code_context":False},
+                "source_docs":docs,
+                "tasks":[{"id":"os-principal","kind":"conflict",
+                          "task":"Change the account model"}],
+            }
+            result = {
+                "id":"DEC-PF-0008","artifact_type":"decision",
+                "status":"implemented","path":source_path,
+            }
+            selected = {
+                "id":"DEC-PF-0008","artifact_type":"decision",
+                "path":source_path,"sha256":pilot.m0.digest_file(file),
+                # Context schema intentionally does NOT include 'status'.
+            }
+            def receipt(data,command):
+                return {"returncode":0,"data":data,"command":["pact.py",command],
+                        "stderr":"","elapsed_ms":1}
+            with mock.patch.object(pilot.m0,"run_json",side_effect=[
+                receipt({"results":[result]},"discover"),
+                receipt({"artifacts":[selected],
+                         "decisions":["DEC-PF-0008"],
+                         "applicable_rules":[]},"context"),
+            ]), mock.patch.object(pilot,"validate_instance",return_value=[]):
+                records=pilot.run_arm(root,cards,"B")
+        self.assertEqual(records[0]["schema_and_source_errors"],[])
+        self.assertEqual(records[0]["source_verified_decisions"],
+                         ["DEC-PF-0008"])
+        self.assertIsNone(records[0]["selected"][0]["reported_status"])
+        self.assertEqual(records[0]["selected"][0]["source_expected_status"],
+                         "implemented")
+
+
 if __name__ == "__main__":
     unittest.main()
