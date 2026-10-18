@@ -123,6 +123,55 @@ class TaskSurfaceTests(unittest.TestCase):
             ).exists()
         )
 
+    def test_installed_scope_first_task_prepare_keeps_authority_as_candidates(self) -> None:
+        domain = self.root / "docs/product/domains/auth.md"
+        domain.parent.mkdir(parents=True, exist_ok=True)
+        domain.write_text(
+            '+++\n[pact]\ntype = "domain"\nid = "DOMAIN-AUTH"\n'
+            'status = "confirmed"\naliases = ["password reset"]\n'
+            'paths = ["src/auth/**"]\n+++\n\n# Account recovery\n'
+            '\n## Durable rules\n- RULE-AUTH-001\n',
+            encoding="utf-8",
+        )
+        rule = self.root / "docs/product/rules/auth-recovery.md"
+        rule.parent.mkdir(parents=True, exist_ok=True)
+        rule.write_text(
+            '+++\n[pact]\ntype = "rule"\nid = "RULE-AUTH-001"\n'
+            'status = "confirmed"\ndomains = ["DOMAIN-AUTH"]\n'
+            '+++\n\n# Recovery verification required\n',
+            encoding="utf-8",
+        )
+        name = "Edit password reset formatting without changing behavior"
+        direct = self.pact(
+            "context", name, "--success", "Existing behavior preserved",
+            "--risk", "low", "--no-code", "--scope-first",
+        )
+        self.assertEqual(direct.returncode, 0, direct.stdout + direct.stderr)
+        packet = json.loads(direct.stdout)
+        self.assertEqual(packet["scope_route"]["status"], "unique")
+        self.assertTrue(packet["scope_route"]["restricted_selection"])
+        self.assertEqual(packet["applicable_rules"], [])
+        self.assertEqual(
+            [x["id"] for x in packet["scope_route"]["candidates"]],
+            ["RULE-AUTH-001"],
+        )
+        self.assertEqual(len(packet["scope_route"]["candidates"][0]["sha256"]), 64)
+
+        prepared = self.pact(
+            "task", "prepare", name, "--success", "Existing behavior preserved",
+            "--risk", "low", "--scope-first", "--task-id",
+            "TASK-SCOPE-INSTALLED", "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        observation = json.loads(prepared.stdout)
+        actual_context = json.loads(
+            (self.root / observation["context"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(actual_context["scope_route"]["status"], "unique")
+        self.assertEqual(actual_context["scope_route"]["candidates"][0]["id"],
+                         "RULE-AUTH-001")
+        self.assertEqual(actual_context["applicable_rules"], [])
+
     def test_status_and_inspect_are_high_level_entry_points(self) -> None:
         status = self.pact("status", "--json")
         self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
