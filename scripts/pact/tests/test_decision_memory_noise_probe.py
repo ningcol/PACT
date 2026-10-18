@@ -137,7 +137,7 @@ class PinnedBrownfieldNoiseTests(unittest.TestCase):
         for case in cases["cases"]:
             packet = {
                 "id": case["id"],
-                "discovery": {"returncode": 0, "schema_errors": []},
+                "discovery": {"returncode": 0, "schema_errors": [], "hits": []},
                 "context": {
                     "returncode": 0, "schema_errors": [],
                     "status": "candidate", "code_context_selected": 0,
