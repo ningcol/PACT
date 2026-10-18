@@ -12,7 +12,7 @@ import pathlib
 import re
 
 from cache import fingerprint_files
-from discover import has_unspaced_script
+from discover import has_unspaced_script, document_tokens, document_term_matches
 from map import FORMAT_VERSION, parse_document, source_paths, valid_project_index
 
 
@@ -24,7 +24,7 @@ PATH_IN_TASK = re.compile(
 MAX_HINTS = 12
 
 
-def _mentions(text: str, name: str) -> bool:
+def _mentions(text: str, name: str, *, compound: bool = False) -> bool:
     name = name.strip()
     if not name:
         return False
@@ -33,10 +33,14 @@ def _mentions(text: str, name: str) -> bool:
     # Multi-character Han aliases remain usable without whitespace.
     if has_unspaced_script(name):
         return len(name) >= 2 and name.casefold() in text.casefold()
-    return bool(re.search(
-        r"(?<![\w])" + re.escape(name) + r"(?![\w])",
-        text, re.IGNORECASE
-    ))
+    if re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])",
+                 text, re.IGNORECASE):
+        return True
+    # Only project-declared MULTI-TOKEN title/alias names qualify for
+    # compound matching. A generic one-token alias "login" must not turn
+    # a task mentioning LoginRetry into an unrelated unique Domain route.
+    return bool(compound and len(document_tokens(name)) >= 2
+                and document_term_matches(name, text))
 
 
 def _mentioned_paths(text: str) -> set[str]:
@@ -120,10 +124,10 @@ def resolve(task: str, index: dict) -> dict:
         reasons = []
         if _mentions(task, doc["id"]):
             reasons.append("explicit stable Domain ID")
-        if _mentions(task, str(doc.get("title") or "")):
+        if _mentions(task, str(doc.get("title") or ""), compound=True):
             reasons.append("declared Domain title")
         for alias in doc.get("aliases", []):
-            if isinstance(alias, str) and _mentions(task, alias):
+            if isinstance(alias, str) and _mentions(task, alias, compound=True):
                 reasons.append("declared Domain alias")
                 break
         for pattern in doc.get("paths", []):
