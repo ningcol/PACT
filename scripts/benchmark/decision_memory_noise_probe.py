@@ -110,6 +110,13 @@ def extract_scored_discover(target: pathlib.Path, cases: dict, records: list[dic
         hits = body["results"]
         if any(not pilot.valid_discovery_result(x) for x in hits):
             raise ValueError("diagnostic discover returned malformed nested hits")
+        if any(
+            not isinstance(x.get("score"), int) or isinstance(x.get("score"), bool)
+            or x["score"] <= 0 or not isinstance(x.get("reasons"), list)
+            or any(not isinstance(y, str) for y in x["reasons"])
+            for x in hits
+        ):
+            raise ValueError("diagnostic Discover has malformed score/reason evidence")
         receipt["hits"] = [
             {
                 "id": x.get("id"), "path": x.get("path"),
@@ -194,7 +201,9 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
         raise ValueError("original upstream had unexpected pre-existing PACT notes")
     progress["stage"] = "A-legacy-no-PACT-decisions"
     progress["A"] = []
-    pilot.probe(target, cards, progress["A"])
+    progress["in_flight_probe"] = {}
+    pilot.probe(target, cards, progress["A"],
+                in_flight=progress["in_flight_probe"])
     progress["A_scored"] = []
     extract_scored_discover(target, cases, progress["A_scored"])
 
@@ -214,7 +223,9 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
         raise ValueError("PACT check failed after projection")
     progress["stage"] = "B-projected-ADRs"
     progress["B"] = []
-    pilot.probe(target, cards, progress["B"])
+    progress["in_flight_probe"] = {}
+    pilot.probe(target, cards, progress["B"],
+                in_flight=progress["in_flight_probe"])
     progress["B_scored"] = []
     extract_scored_discover(target, cases, progress["B_scored"])
     annotate_lexical_evidence(target, cases, progress["B_scored"])
@@ -381,6 +392,16 @@ def main() -> int:
         oracle = load_frozen_oracle(cases)
         result = score(progress, cases, oracle)
     except Exception as error:
+        if isinstance(error, subprocess.TimeoutExpired):
+            def short(value):
+                return value.decode("utf-8", "replace")[:2000] if isinstance(value, bytes) else str(value or "")[:2000]
+            progress["interrupted_subprocess"] = {
+                "command": error.cmd if isinstance(error.cmd, (str, list, tuple))
+                else str(error.cmd),
+                "timeout_seconds": error.timeout,
+                "stdout_excerpt": short(error.stdout),
+                "stderr_excerpt": short(error.stderr),
+            }
         result = {
             "kind": "real public source developer-noise diagnostic",
             "engineering_gate": "FAIL",
