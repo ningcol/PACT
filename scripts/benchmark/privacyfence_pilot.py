@@ -206,30 +206,39 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
                 errs.append("successful Context returned a non-object packet")
             errs.extend(validate_instance(e, SCHEMA))
         by_id = {x["id"]: x for x in cards["source_docs"]}
-        for x in [*hits, *items]:
-            if not isinstance(x, dict):
-                errs.append("non-object Discover or Context hit")
-                continue
-            relative = x.get("path")
-            if not isinstance(relative, str):
-                errs.append("missing source path")
-                continue
-            try:
-                file = safe_source(target, relative)
-                if x in items and x.get("sha256") != m0.digest_file(file):
-                    errs.append(f"invalid selected content digest: {relative}")
-            except (ValueError, OSError) as exc:
-                errs.append(f"missing/unsafe file {relative}: {exc}")
-            ident = x.get("id")
-            if ident is not None and (
-                ident not in by_id
-                or target_path(by_id[ident]) != relative
-                or x.get("artifact_type") != "decision"
-                or x.get("status") != by_id[ident]["status"]
-            ):
-                errs.append(f"forged or non-source PACT authority: {ident}")
+        # Discover emits a status for each result. Context deliberately
+        # omits it: source-verify the selected artifact digest and its
+        # original ADR status instead of inventing a missing Context field.
+        for origin, records in (("Discover", hits), ("Context", items)):
+            for x in records:
+                if not isinstance(x, dict):
+                    errs.append(f"non-object {origin} hit")
+                    continue
+                relative = x.get("path")
+                if not isinstance(relative, str):
+                    errs.append(f"{origin} hit lacks source path")
+                    continue
+                try:
+                    file = safe_source(target, relative)
+                    if origin == "Context" and x.get("sha256") != m0.digest_file(file):
+                        errs.append(f"invalid selected content digest: {relative}")
+                except (ValueError, OSError) as exc:
+                    errs.append(f"missing/unsafe {origin} source {relative}: {exc}")
+                ident = x.get("id")
+                if ident is not None and (
+                    ident not in by_id
+                    or target_path(by_id[ident]) != relative
+                    or x.get("artifact_type") != "decision"
+                    or (origin == "Discover"
+                        and x.get("status") != by_id[ident]["status"])
+                ):
+                    errs.append(f"forged or non-source {origin} authority: {ident}")
         selected = [
-            {"id":x.get("id"), "path":x.get("path"), "status":x.get("status"),
+            {"id":x.get("id"), "path":x.get("path"),
+             "reported_status":x.get("status"),
+             "source_expected_status": (
+                 by_id[x["id"]]["status"] if x.get("id") in by_id else None
+             ),
              "artifact_type":x.get("artifact_type"), "sha256":x.get("sha256"),
              "estimated_tokens":x.get("estimated_tokens")}
             for x in items if isinstance(x, dict)
@@ -240,7 +249,6 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
             source = by_id.get(ident)
             if (not isinstance(ident, str) or source is None
                     or source["status"] != "implemented"
-                    or item.get("status") != "implemented"
                     or item.get("artifact_type") != "decision"
                     or target_path(source) != relative):
                 continue
