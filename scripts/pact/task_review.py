@@ -400,9 +400,11 @@ def assist(args) -> int:
         result, bundle, owner = _snapshot(args.task_id)
         result["draft_written"] = False
         if args.write_draft:
-            # Entire re-read under the existing task Evidence lock to prevent
-            # laundering concurrent changes between evaluation and publication.
-            with _exclusive_bundle(bundle):
+            # Finish/verify/draft/checkpoint also take the task primary lock.
+            # Re-read under BOTH locks to prevent a completed task from
+            # receiving new generated Owner data.
+            task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+            with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
                 result, _, owner = _snapshot(args.task_id)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
@@ -515,9 +517,10 @@ def export(args) -> int:
         output_dir = confined_child(run_root, args.task_id, repository_root=ROOT)
         confined_state_root(ROOT, output_dir, field="task run evidence")
 
-        # Hold the same bundle lock as task verify/checkpoint while re-reading
-        # Evidence and the workspace. Do not publish a pre-lock stale snapshot.
-        with _exclusive_bundle(bundle):
+        # Share the task-level lock with finish, then acquire the existing
+        # Evidence-bundle lock in a consistent global order.
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
             manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed during evidence export")
