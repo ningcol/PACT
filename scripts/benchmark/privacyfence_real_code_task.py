@@ -443,6 +443,16 @@ def routine_case(source: pathlib.Path, work: pathlib.Path,
     prepared_json = json.loads(prepared["stdout"])
     if prepared_json.get("task_id") != ROUTINE_ID:
         raise ValueError("prepared task receipt is not bound to known ID")
+    prepared_path = prepared_json.get("context")
+    if not isinstance(prepared_path, str) or not prepared_path.startswith(".pact/tasks/"):
+        raise ValueError("prepared task has invalid PACT Context source")
+    prepared_packet = json.loads((b / prepared_path).read_text(encoding="utf-8"))
+    if (
+        "nonfunctional_decision_hints" not in prepared_packet
+        or prepared_packet.get("decisions") != []
+        or prepared_packet["nonfunctional_decision_hints"].get("truncated_candidates") is None
+    ):
+        raise ValueError("task prepare failed to retain opt-in source-bound Decision hints")
     if isolation.tracked_source(b) != original_manifest:
         raise ValueError("PACT prepare changed original tracked source")
 
@@ -490,18 +500,32 @@ def routine_case(source: pathlib.Path, work: pathlib.Path,
         raise ValueError("cannot stage deliberately incomplete task Evidence")
     finish = run_step(
         [sys.executable, str(b / "pact.py"), "task", "finish",
-         ROUTINE_ID, "--json"], cwd=b, timeout=150,
+         ROUTINE_ID, "--json"], cwd=b, timeout=150, stdout_limit=250000,
     )
-    # A successful task completion without any real Evidence or semantic
-    # Convergence review would be a serious false-done regression.
+    # Inspect actual machine completion JSON. Merely observing nonzero exit
+    # (e.g. broken Python) is NOT proof that Evidence/Convergence blocked done.
     if finish["returncode"] == 0:
         raise ValueError("false done: unreviewed routine task was declared complete")
-    if not (
-        "complet" in (finish["stdout"] + finish["stderr"]).lower()
-        or "converg" in (finish["stdout"] + finish["stderr"]).lower()
-        or "evidence" in (finish["stdout"] + finish["stderr"]).lower()
+    try:
+        checked = json.loads(finish["stdout"])
+    except json.JSONDecodeError as exc:
+        raise ValueError("routine finish produced no machine-verifiable denial") from exc
+    if (checked.get("task_id") != ROUTINE_ID
+            or checked.get("complete") is not False
+            or not isinstance(checked.get("errors"), list)
+            or not checked["errors"]
+            or not any(
+                ("Convergence" in e or "Evidence" in e or "coverage" in e)
+                for e in checked["errors"] if isinstance(e, str)
+            )):
+        raise ValueError("routine completion did not deny missing task Evidence/Convergence")
+    missing = checked.get("convergence_coverage", {}).get("missing_artifacts")
+    if not isinstance(missing, list) or (
+        hints["candidates"] and not any(
+            hint["path"] in missing for hint in hints["candidates"]
+        )
     ):
-        raise ValueError("routine completion failed for unrelated reason: " + str(finish)[:1200])
+        raise ValueError("unreviewed deferred Decisions did not block task finish")
     if isolation.tracked_source(source) != original_manifest:
         raise ValueError("routine replay changed original public source checkout")
 
@@ -521,6 +545,9 @@ def routine_case(source: pathlib.Path, work: pathlib.Path,
             "context_budget", {}
         ).get("selected_estimated_tokens"),
         "PACT_task_finish_rejected_incomplete_draft": True,
+        "PACT_task_finish_errors": checked["errors"][:18],
+        "PACT_task_finish_owner_status": checked.get("owner_status"),
+        "PACT_task_finish_missing_context_paths": missing,
         "PACT_task_finish_rejection": (
             finish["stdout"] + finish["stderr"]
         )[-1600:],
