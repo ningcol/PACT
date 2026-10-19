@@ -1,0 +1,98 @@
+name: PACT Real Agent GitHub Runner Preflight (No Model)
+
+# Pull request runs never access model credentials or call a language model.
+# Live coding-Agent comparison requires a separate authorized run.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/agent-runner-preflight.yml"
+      - "scripts/benchmark/github_actions_agent_preflight.py"
+      - "scripts/pact/tests/test_github_actions_agent_preflight.py"
+      - "docs/evaluation/github-actions-agent-pilot-runner-2026-10-19.md"
+      - "scripts/pact/init.py"
+      - "scripts/pact/runtime_bundle.py"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pact-agent-runner-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-actions-preflight:
+    name: Public real-repo A/B isolated workspace preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact PACT code with no persisted Git credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify pinned PACT checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Run fail-closed agent-runner preflight unit tests (no model)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts/pact/tests \
+            -p "test_github_actions_agent_preflight.py" -v
+
+      - name: Create two isolated pinned source workspaces without any model or secret
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python scripts/benchmark/github_actions_agent_preflight.py \
+            --temp-root "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/pact-agent-runner-preflight.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((
+              Path(os.environ["RUNNER_TEMP"]) / "pact-agent-runner-preflight.json"
+          ).read_text(encoding="utf-8"))
+          assert report["preflight_status"] == "PASS"
+          assert report["A_unmodified_original_source"]
+          assert report["B_unmodified_original_source"]
+          assert report["same_upstream_source_on_both_arms"]
+          assert report["A_has_no_PACT_runtime"]
+          assert report["B_installed_source_identical_PACT"]
+          assert not report["real_agent_executed"]
+          assert not report["independently_blinded"]
+          assert report["provider_billed_tokens"] is None
+          assert report["release_gate"] == "HOLD"
+          print("GitHub runner workspace provisioning:", report["preflight_status"])
+          print("Original tracked source files:", report["original_source_file_count"])
+          print("Pinned upstream:", report["pinned_upstream_sha"])
+          print("A/B cloned source manifest:", report["original_source_tree_sha256"])
+          print("Real coding-Agent sessions have NOT run.")
+          PY
+
+      - name: Preserve sanitized setup receipt even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pact-agent-runner-no-model-preflight
+          path: ${{ runner.temp }}/pact-agent-runner-preflight.json
+          if-no-files-found: warn
+          retention-days: 14
