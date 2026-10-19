@@ -241,6 +241,18 @@ def _diagnose(
                         f"Nonfunctional Decision source no longer matches "
                         f"prepared Context: {path!r}"
                     )
+    if deferred_decision_paths:
+        covered_hints = {
+            item.get("path")
+            for item in (convergence or {}).get("coverage", [])
+            if isinstance(item, dict)
+        }
+        missing_hints = sorted(set(deferred_decision_paths) - covered_hints)
+        if missing_hints:
+            deferred_integrity_gaps.append(
+                "Nonfunctional deferred Decision candidates lack explicit "
+                "Convergence review: " + ", ".join(missing_hints)
+            )
     # Mechanical Owner drafts are still partial, editable work, NOT a
     # completion gate. Keep historical assist diagnostics usable in non-Git
     # projects, while clearly reporting the hard finish blocker separately.
