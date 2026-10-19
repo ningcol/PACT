@@ -138,14 +138,22 @@ class CompactRuntimeTests(unittest.TestCase):
                 self.assertIn("pact.py", archive.namelist())
             self.assertEqual(list(pathlib.Path(td).glob("*.tmp")), [])
 
-    @unittest.skipIf(os.name == "nt", "POSIX chmod mode is the relevant contract")
-    def test_runtime_permissions_preserve_source_read_visibility(self) -> None:
+    @unittest.skipIf(os.name == "nt", "POSIX process umask is the relevant contract")
+    def test_runtime_permissions_never_override_restrictive_umask(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-pyz-mode-") as td:
             output = pathlib.Path(td) / "runtime.pyz"
-            runtime_bundle.build_runtime_bundle(PROJECT_ROOT, output)
-            src = PROJECT_ROOT / "scripts/pact/pact.py"
-            expected = 0o600 | (stat.S_IMODE(src.stat().st_mode) & 0o044)
-            self.assertEqual(stat.S_IMODE(output.stat().st_mode), expected)
+            # Even if the PACT source file is world-readable, the builder
+            # must not widen a private caller's permission boundary.
+            source = PROJECT_ROOT / "scripts/pact/pact.py"
+            self.assertTrue(source.is_file())
+            old_umask = os.umask(0o077)
+            try:
+                runtime_bundle.build_runtime_bundle(PROJECT_ROOT, output)
+            finally:
+                os.umask(old_umask)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("pact.py", archive.namelist())
 
     def test_bundle_normalizes_source_line_endings(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-pyz-newlines-") as tmp:
