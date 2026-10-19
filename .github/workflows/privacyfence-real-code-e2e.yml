@@ -11,9 +11,9 @@ on:
       - "scripts/benchmark/github_actions_agent_preflight.py"
       - "scripts/pact/tests/test_privacyfence_real_code_task.py"
       - "docs/evaluation/privacyfence-real-code-adr180-*.md"
-      - "scripts/pact/**"
-      - "bootstrap.py"
-      - "pact.py"
+      # Routine PACT runtime changes use the normal core pipeline. Run this
+      # heavier public-source replay only when its own protocol/runner changes
+      # or through explicit manual workflow_dispatch.
   workflow_dispatch:
 
 permissions:
