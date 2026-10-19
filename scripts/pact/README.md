@@ -209,6 +209,31 @@ use `--intent work|decision|history` (available on `discover`,
   properties alone do not preserve compatibility with old v1
   `additionalProperties: false` consumers.
 
+### Explicit nonfunctional Context (low-risk only)
+
+For an **already-established no-behavior-change** task (e.g. a variable
+rename, formatting-only change or spelling correction), a caller can use
+`pact context "..." --success "..." --risk low --intent work --nonfunctional`
+or `pact task prepare "..." ... --risk low --nonfunctional`.
+
+This opt-in mode keeps normal documents, confirmed Rules and Decisions
+explicitly cited by source-scored ID/title/alias. Other lexical Decision hits
+are **deferred, not deleted**: up to five source-hashed
+`nonfunctional_decision_hints.candidates` plus total/truncated counters and
+an explicit warning. Deferred bodies are not injected into Context, listed
+as applicable Decisions or treated as completed verification. A task prepared
+with this mode **must explicitly review every visible deferred Decision in
+Convergence** before finish; truncated/unknown candidate sets cannot finish
+and must be re-prepared using normal Context. Mechanical Owner acceptance
+drafts are blocked until those Decision hints are accounted for. The tool does
+**not** infer this mode from task wording.
+
+If behavior, security, trust, policy, or an Owner decision could change,
+rerun **without** `--nonfunctional` and inspect authority sources. Medium/high
+risk, history/decision intent and `--scope-first` combinations fail closed.
+This is a manually selected exploratory alternative, **not** a new default or
+an independent blind Agent/Owner benefit result.
+
 PACT core requires Python 3.11+ and uses only the standard library. No runtime pip dependencies are required.
 
 The stable v1 entry point is:

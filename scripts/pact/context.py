@@ -25,6 +25,7 @@ SCHEMA = ROOT / ".pact" / "schema" / "context-envelope.schema.json"
 SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
+NONFUNCTIONAL_DECISION_HINT_LIMIT = 5
 MODULE_README_HINT_LIMIT = 3
 MODULE_README_CODE_CANDIDATES = 24
 MODULE_README_SIZE_LIMIT = 128 * 1024
@@ -502,6 +503,47 @@ def select_context_candidates(
     return selected_knowledge, selected_code, budget
 
 
+def split_nonfunctional_decisions(
+    knowledge: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Explicit low-risk no-behavior-change Context only.
+
+    Keep Rules, documents and explicitly cited Decisions. Defer other lexical
+    Decision matches as metadata, without claiming they are inapplicable.
+    Never infer this mode from task wording.
+    """
+    materialize, deferred = [], []
+    for item in knowledge:
+        if (item.get("artifact_type") == "decision"
+                and exact_match_priority(item.get("reasons", [])) == 0):
+            deferred.append(item)
+        else:
+            materialize.append(item)
+    return materialize, deferred
+
+
+def nonfunctional_decision_hints(deferred: list[dict]) -> dict:
+    """Return only source-bound, bounded Decision metadata."""
+    candidates = []
+    for item in deferred[:NONFUNCTIONAL_DECISION_HINT_LIMIT]:
+        relative = item["path"]
+        digest = artifact_sha256(relative)
+        if digest is None:
+            raise ValueError(f"deferred Decision source missing: {relative}")
+        ident = item.get("id")
+        if not isinstance(ident, str) or not ident.startswith("DEC-"):
+            raise ValueError(f"deferred Decision lacks stable ID: {relative}")
+        candidates.append({
+            "id": ident, "path": relative, "title": item["title"],
+            "status": item["status"], "sha256": digest,
+        })
+    return {
+        "total_candidates": len(deferred),
+        "truncated_candidates": len(deferred) - len(candidates),
+        "candidates": candidates,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build a candidate PACT task context")
     parser.add_argument("task")
@@ -549,12 +591,25 @@ def main() -> int:
         "--scope-first", action="store_true",
         help="opt-in: route by project-declared Domain name/path before materializing weak Decision matches",
     )
+    parser.add_argument(
+        "--nonfunctional", action="store_true",
+        help="opt-in low-risk no-behavior-change work: defer implicit Decision bodies to source-bound hints",
+    )
     parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
 
     if args.token_budget is not None and args.token_budget < 0:
         parser.error("--token-budget must be >= 0")
+    if args.nonfunctional and (
+        args.risk != "low" or args.intent in {"decision", "history"}
+        or args.scope_first
+    ):
+        parser.error(
+            "--nonfunctional requires --risk low and cannot combine with "
+            "--intent decision/history or --scope-first; use normal Context "
+            "for changes to behavior, policy, authorization or trust"
+        )
 
     required_rules = list(dict.fromkeys(args.required_rules))
     if len(required_rules) > 8 or any(not RULE_ID.fullmatch(x) for x in required_rules):
@@ -777,6 +832,16 @@ def main() -> int:
                 if item.get("path") != home["path"]
             ]
 
+    deferred_decision_hints = None
+    if args.nonfunctional:
+        candidate_results, deferred = split_nonfunctional_decisions(candidate_results)
+        try:
+            deferred_decision_hints = nonfunctional_decision_hints(deferred)
+        except (ValueError, OSError) as exc:
+            print(f"PACT context: cannot verify deferred Decision sources: {exc}",
+                  file=sys.stderr)
+            return 2
+
     results, code_results, budget = select_context_candidates(
         candidate_results,
         candidate_code_results,
@@ -868,6 +933,21 @@ def main() -> int:
     ]
 
     unknowns: list[str] = governance_path_hints()
+    if deferred_decision_hints is not None:
+        unknowns.append(
+            "Explicit --nonfunctional only defers weak lexical Decision bodies "
+            f"({deferred_decision_hints['total_candidates']} candidates) to "
+            "source-bound navigation hints; this does not mean that a Decision "
+            "is inapplicable or satisfied. If behavior, security, trust, policy, "
+            "or an Owner decision could change, rerun WITHOUT --nonfunctional "
+            "and review applicable source Decisions first."
+        )
+        if deferred_decision_hints["truncated_candidates"]:
+            unknowns.append(
+                f"{deferred_decision_hints['truncated_candidates']} deferred "
+                "Decision hints exceeded the metadata cap; rerun normal "
+                "Context to inspect full authority."
+            )
     unknowns.extend(nearby_readme_hints(code_results))
     if scope_route is not None:
         if scope_route.get("restricted_selection") and cross_domain_exact:
@@ -915,7 +995,10 @@ def main() -> int:
             + ". Their file-level status is ambiguous; split confirmed and "
             "candidate rules before treating them as applicable normative truth."
         )
-    if not candidate_results:
+    if not candidate_results and not (
+        deferred_decision_hints is not None
+        and deferred_decision_hints["total_candidates"] > 0
+    ):
         unknowns.append(
             "Project Discovery found no matching knowledge artifact; expand search semantically."
         )
@@ -1035,6 +1118,8 @@ def main() -> int:
 
     if code_candidate_hints:
         envelope["code_candidate_hints"] = code_candidate_hints
+    if deferred_decision_hints is not None:
+        envelope["nonfunctional_decision_hints"] = deferred_decision_hints
     if scope_route is not None:
         envelope["scope_route"] = scope_route
         # Final post-materialization check: do not publish a packet combining
@@ -1063,6 +1148,19 @@ def main() -> int:
         except (ValueError, OSError, RuntimeError) as exc:
             print(f"PACT context: inconsistent Domain source snapshot: {exc}",
                   file=sys.stderr)
+            return 2
+
+    if deferred_decision_hints is not None:
+        # Hints do not confer authority, but a stale source digest would still
+        # mislead navigation. Fail closed on a changed/deleted source.
+        if any(
+            artifact_sha256(hint["path"]) != hint["sha256"]
+            for hint in deferred_decision_hints["candidates"]
+        ):
+            print(
+                "PACT context: deferred Decision source changed before "
+                "Context publication", file=sys.stderr,
+            )
             return 2
 
     errors = validate(envelope)

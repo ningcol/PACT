@@ -181,6 +181,78 @@ def _diagnose(
                 "candidates; review the complete Domain sources and reprepare "
                 "without --scope-first before task assist can draft acceptance"
             )
+    # Do not draft mechanically acceptable Owner outcomes while a caller's
+    # explicit no-behavior-change flag has hidden unreviewed Decision sources.
+    # Convergence requires a disposition for each source-bound hint. Match its
+    # fail-closed policy on missing or truncated candidate metadata.
+    nonfunctional = context.get("nonfunctional_decision_hints")
+    deferred_decision_paths: list[str] = []
+    deferred_integrity_gaps: list[str] = []
+    if nonfunctional is not None:
+        items = (nonfunctional.get("candidates")
+                 if isinstance(nonfunctional, dict) else None)
+        total = (nonfunctional.get("total_candidates")
+                 if isinstance(nonfunctional, dict) else None)
+        truncated = (nonfunctional.get("truncated_candidates")
+                     if isinstance(nonfunctional, dict) else None)
+        if (
+            not isinstance(items, list)
+            or type(total) is not int or type(truncated) is not int
+            or total < 0 or truncated < 0
+            or truncated > 0 or total != len(items) or len(items) > 5
+        ):
+            deferred_integrity_gaps.append(
+                "Nonfunctional Context has unlisted or inconsistent Decision "
+                "candidates; reprepare without --nonfunctional before drafting "
+                "Owner acceptance"
+            )
+        if isinstance(items, list):
+            observed_paths: set[str] = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    deferred_integrity_gaps.append("Nonfunctional Decision hint is malformed")
+                    continue
+                path, sha, ident = (
+                    item.get("path"), item.get("sha256"), item.get("id")
+                )
+                if (
+                    not isinstance(path, str) or not path
+                    or not isinstance(ident, str) or not ident.startswith("DEC-")
+                    or not isinstance(sha, str) or len(sha) != 64
+                    or any(c not in "0123456789abcdef" for c in sha)
+                    or path in observed_paths
+                ):
+                    deferred_integrity_gaps.append(
+                        "Nonfunctional Decision hint has invalid source/identity"
+                    )
+                    continue
+                observed_paths.add(path)
+                deferred_decision_paths.append(path)
+                try:
+                    source = (ROOT / path).resolve()
+                    source.relative_to(ROOT.resolve())
+                    if (
+                        (ROOT / path).is_symlink() or not source.is_file()
+                        or hashlib.sha256(source.read_bytes()).hexdigest() != sha
+                    ):
+                        raise ValueError("source changed")
+                except (ValueError, OSError):
+                    deferred_integrity_gaps.append(
+                        f"Nonfunctional Decision source no longer matches "
+                        f"prepared Context: {path!r}"
+                    )
+    if deferred_decision_paths:
+        covered_hints = {
+            item.get("path")
+            for item in (convergence or {}).get("coverage", [])
+            if isinstance(item, dict)
+        }
+        missing_hints = sorted(set(deferred_decision_paths) - covered_hints)
+        if missing_hints:
+            deferred_integrity_gaps.append(
+                "Nonfunctional deferred Decision candidates lack explicit "
+                "Convergence review: " + ", ".join(missing_hints)
+            )
     # Mechanical Owner drafts are still partial, editable work, NOT a
     # completion gate. Keep historical assist diagnostics usable in non-Git
     # projects, while clearly reporting the hard finish blocker separately.
@@ -188,7 +260,7 @@ def _diagnose(
         not task_change.get("supported")
         and manifest.get("risk_level") in {"medium", "high"}
     )
-    effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
+    effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps, *deferred_integrity_gaps]
     passing_claims = [
         claim for claim in evidence["claims"]
         if claim.get("required") and claim.get("status") == "pass"
@@ -287,6 +359,10 @@ def _diagnose(
             if isinstance(path, str) and path not in seen_paths:
                 seen_paths.add(path)
                 review_paths.append(path)
+    for path in deferred_decision_paths:
+        if path not in seen_paths:
+            seen_paths.add(path)
+            review_paths.append(path)
     # Preserve legacy Context artifact ordering when the opt-in route is absent.
     missed_knowledge = [
         path for path in review_paths if path not in covered_context
