@@ -995,7 +995,10 @@ def main() -> int:
             + ". Their file-level status is ambiguous; split confirmed and "
             "candidate rules before treating them as applicable normative truth."
         )
-    if not candidate_results:
+    if not candidate_results and not (
+        deferred_decision_hints is not None
+        and deferred_decision_hints["total_candidates"] > 0
+    ):
         unknowns.append(
             "Project Discovery found no matching knowledge artifact; expand search semantically."
         )
