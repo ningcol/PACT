@@ -271,6 +271,9 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
                 valid=pilot.inspect_proposed_context(
                     target,{"source_docs":docs},lookup([item]),
                 )
+                empty=pilot.inspect_proposed_context(
+                    target,{"source_docs":docs},lookup([]),
+                )
                 tampered=pilot.inspect_proposed_context(
                     target,{"source_docs":docs},
                     lookup([{**item,"sha256":"0"*64}]),
@@ -286,6 +289,10 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
                      "data":{"decisions":["DEC-PF-0005"],"artifacts":[item]}},
                 )
         self.assertEqual(valid["schema_and_source_errors"], [])
+        self.assertTrue(any(
+            "did not materialize" in e
+            for e in empty["schema_and_source_errors"]
+        ), "a schema-valid but empty Context must not falsely certify Proposed")
         self.assertTrue(any("digest invalid" in e
                             for e in tampered["schema_and_source_errors"]))
         self.assertTrue(forged["schema_and_source_errors"])
