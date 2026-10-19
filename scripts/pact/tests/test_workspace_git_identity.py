@@ -64,6 +64,33 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         self.git("commit", "-qm", "parent initial")
         return child
 
+    def test_special_git_index_flags_never_hide_business_source_changes(self) -> None:
+        business = self.root / "business_rule.py"
+        business.write_text("AUTH_ALLOW = False\n", encoding="utf-8")
+        self.commit_all("approved product logic")
+        baseline = workspace.task_workspace_baseline(self.root)
+
+        for flag, undo in (
+            ("--assume-unchanged", "--no-assume-unchanged"),
+            ("--skip-worktree", "--no-skip-worktree"),
+        ):
+            with self.subTest(flag=flag):
+                self.git("update-index", flag, "business_rule.py")
+                business.write_text("AUTH_ALLOW = True\n", encoding="utf-8")
+                # Ordinary Git diff can be empty with these flags. PACT must
+                # refuse to attest completion instead of trusting that view.
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.workspace_snapshot(self.root)
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.task_workspace_baseline(self.root)
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.task_changed_files(self.root, baseline)
+                self.git("update-index", undo, "business_rule.py")
+                business.write_text("AUTH_ALLOW = False\n", encoding="utf-8")
+        self.assertEqual(workspace.task_changed_files(
+            self.root, baseline,
+        )["changed_files"], [])
+
     def test_content_restored_to_original_head_does_not_count_as_task_change(self) -> None:
         file = self.root / "source.txt"
         file.write_text("original\n", encoding="utf-8")
