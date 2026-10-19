@@ -221,7 +221,11 @@ explicitly cited by source-scored ID/title/alias. Other lexical Decision hits
 are **deferred, not deleted**: up to five source-hashed
 `nonfunctional_decision_hints.candidates` plus total/truncated counters and
 an explicit warning. Deferred bodies are not injected into Context, listed
-as applicable Decisions or treated as completed verification. The tool does
+as applicable Decisions or treated as completed verification. A task prepared
+with this mode **must explicitly review every visible deferred Decision in
+Convergence** before finish; truncated/unknown candidate sets cannot finish
+and must be re-prepared using normal Context. Mechanical Owner acceptance
+drafts are blocked until those Decision hints are accounted for. The tool does
 **not** infer this mode from task wording.
 
 If behavior, security, trust, policy, or an Owner decision could change,
