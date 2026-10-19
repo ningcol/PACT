@@ -8,6 +8,7 @@ import os
 import pathlib
 import stat
 import tempfile
+import time
 import zipfile
 
 
@@ -40,6 +41,34 @@ def _write_entry(
     info.external_attr = 0o100644 << 16
     info.create_system = 3
     archive.writestr(info, content)
+
+
+WINDOWS_RUNTIME_REPLACE_RETRIES = 15
+WINDOWS_RUNTIME_RETRY_BASE_SECONDS = 0.01
+
+
+def _retryable_windows_runtime_replace(error: OSError) -> bool:
+    """Only transient Windows sharing denials merit a bounded retry."""
+    return (
+        os.name == "nt"
+        and isinstance(error, PermissionError)
+        and getattr(error, "winerror", None) in {5, 32}
+    )
+
+
+def _publish_runtime(temporary: pathlib.Path, output: pathlib.Path) -> None:
+    """Atomically replace complete ZIP under short-lived Windows sharing locks."""
+    for attempt in range(WINDOWS_RUNTIME_REPLACE_RETRIES):
+        try:
+            os.replace(temporary, output)
+            return
+        except OSError as exc:
+            if (
+                attempt + 1 >= WINDOWS_RUNTIME_REPLACE_RETRIES
+                or not _retryable_windows_runtime_replace(exc)
+            ):
+                raise
+            time.sleep(WINDOWS_RUNTIME_RETRY_BASE_SECONDS * (attempt + 1))
 
 
 def build_runtime_bundle(
@@ -114,7 +143,7 @@ def build_runtime_bundle(
                 (source_root / RUNTIME_DIR / "pact.py").stat().st_mode
             )
             os.chmod(temporary, 0o600 | (source_mode & 0o044))
-        temporary.replace(output)
+        _publish_runtime(temporary, output)
     finally:
         if temporary.exists():
             temporary.unlink()
