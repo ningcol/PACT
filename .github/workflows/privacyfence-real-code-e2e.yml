@@ -1,0 +1,132 @@
+name: PACT PrivacyFence Real-Source Code Task (No Model, No Upstream Writes)
+
+# Deterministically replay one assistant-authored, ADR-constrained source edit.
+# This is NOT a live coding Agent, independent blind A/B, or Owner validation.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/privacyfence-real-code-e2e.yml"
+      - "scripts/benchmark/privacyfence_real_code_task.py"
+      - "scripts/benchmark/privacyfence_pilot.py"
+      - "scripts/benchmark/github_actions_agent_preflight.py"
+      - "scripts/pact/tests/test_privacyfence_real_code_task.py"
+      - "docs/evaluation/privacyfence-real-code-adr180-*.md"
+      # Routine PACT runtime changes use the normal core pipeline. Run this
+      # heavier public-source replay only when its own protocol/runner changes
+      # or through explicit manual workflow_dispatch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pact-privacyfence-real-code-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actual-disposable-source-edit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact PACT PR source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact-source PACT revision and tracked cleanliness
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Verify replay patch and false-success unit controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts/pact/tests \
+            -p 'test_privacyfence_real_code_task.py' -v
+          python scripts/pact/pact.py schema-lint
+
+      - name: Clone only pinned public PrivacyFence into disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/privacyfence-real-code-original"
+          echo "PRIVACYFENCE_REAL_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/privacyfence/privacyfence.git "$SOURCE"
+          git -C "$SOURCE" checkout --detach --quiet \
+            6a03856a6e1819b2eacd3963154ebc7d02923296
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = \
+            "6a03856a6e1819b2eacd3963154ebc7d02923296"
+          test -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)"
+          test "$(git -C "$SOURCE" hash-object src/privacyfence/export_files.py)" = \
+            "20cf3e73902221f4e308f0586c840ab3122d017c"
+          test "$(git -C "$SOURCE" hash-object docs/adr/0180-jira-and-salesforce-csv-exports-neutralise-formula-cells.md)" = \
+            "cf7c47ff6276905f244c2194348466a4aa1e02e2"
+
+      - name: Install original project declared OFFLINE unit test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            -e "$PRIVACYFENCE_REAL_SOURCE[test]"
+
+      - name: Execute real code edit, pre-RED/post-GREEN, ADR guard and matched source suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXIT_CODE=0
+          PYTHONDONTWRITEBYTECODE=1 python scripts/benchmark/privacyfence_real_code_task.py \
+            --source "$PRIVACYFENCE_REAL_SOURCE" \
+            --temp-root "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/privacyfence-real-code-e2e.json" || EXIT_CODE=$?
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "privacyfence-real-code-e2e.json"
+          data = json.loads(path.read_text(encoding="utf-8"))
+          print("Source:", data["upstream"], data["upstream_sha"])
+          print("Engineering gate:", data["engineering_gate"])
+          print("Stage:", data["stage"])
+          print("Source-only safety failures:", data["safety_failures"])
+          print("PACT target retrieval:", data["retrieval_quality_gate"])
+          print("Actual changed paths:", data.get("modified_application_paths"))
+          print("Diff SHA256:", data.get("application_diff_sha256"))
+          routine = data.get("routine_maintenance")
+          assert isinstance(routine, dict), "actual routine code task missing"
+          assert routine["PACT_high_level_task_prepared"]
+          assert routine["PACT_task_finish_rejected_incomplete_draft"]
+          assert routine["no_added_durable_decisions"]
+          print("Routine actual changed path:", routine["modified_tracked_paths"])
+          print("Routine initial Context tokens:", routine["PACT_initial_context_estimated_tokens"])
+          print("Routine deferred Decision hints:", routine["PACT_nonfunctional_hints_count"])
+          print("Routine false-done blocked:", routine["PACT_task_finish_rejected_incomplete_draft"])
+          print("No LLM Agent sessions:", not data["live_coding_agent_executed"])
+          assert data["live_coding_agent_executed"] is False
+          assert data["independent_blind_holdout"] is False
+          assert data["owner_authenticated_observation"] is False
+          assert data["model_billed_tokens"] is None
+          assert data["release_gate"] == "HOLD"
+          PY
+          test "$EXIT_CODE" -eq 0
+
+      - name: Save actual source test/diff receipts including any failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: privacyfence-real-source-code-task-unblinded
+          path: ${{ runner.temp }}/privacyfence-real-code-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
