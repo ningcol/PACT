@@ -37,6 +37,20 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertIn("release:\n    needs:", text)
         self.assertIn("contents: write", text)
 
+    def test_release_requires_protected_owner_go_on_exact_main_commit(self) -> None:
+        text = RELEASE.read_text(encoding="utf-8")
+        self.assertIn("environment: pact-release-approval", text)
+        self.assertIn('PACT_RELEASE_GO:', text)
+        self.assertIn('PACT_RELEASE_APPROVED_SHA:', text)
+        self.assertIn('PACT_AGENT_OWNER_GATES_APPROVED:', text)
+        self.assertIn('git ls-remote --exit-code origin refs/heads/main', text)
+        self.assertIn('test "$TAG_SHA" = "$MAIN_SHA"', text)
+        self.assertIn('test "${PACT_RELEASE_APPROVED_SHA:-}" = "$TAG_SHA"', text)
+        self.assertIn('test "${PACT_AGENT_OWNER_GATES_APPROVED:-}" = "true"', text)
+        self.assertIn('test "${PACT_RELEASE_GO:-}" = "GO"', text)
+        self.assertLess(text.index("Release HOLD: missing explicit"),
+                        text.index("gh release create"))
+
     def test_release_builds_and_smokes_exact_assets_before_publish(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
 
