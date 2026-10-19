@@ -36,6 +36,49 @@ GOVERNANCE_PATHS = (
 RULE_ID = re.compile(r"^RULE-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
+def _valid_discovery_row(row: object, *, code: bool) -> bool:
+    """Reject malformed successful Discover results before candidate filtering.
+
+    Missing source paths must not become quiet zero-hit Context. Validate
+    fields used by ranking, budgeting and authority classification, not only
+    that each row happens to be a JSON object.
+    """
+    if not isinstance(row, dict):
+        return False
+    if (
+        not isinstance(row.get("path"), str)
+        or not row["path"].strip()
+        or type(row.get("score")) is not int
+        or not isinstance(row.get("reasons"), list)
+        or not all(isinstance(reason, str) for reason in row["reasons"])
+    ):
+        return False
+    if code:
+        return (
+            isinstance(row.get("language"), str)
+            and bool(row["language"])
+            and type(row.get("is_test")) is bool
+            and isinstance(row.get("symbols"), list)
+            and all(isinstance(x, str) for x in row["symbols"])
+        )
+    return (
+        isinstance(row.get("artifact_type"), str)
+        and bool(row["artifact_type"])
+        and isinstance(row.get("title"), str)
+        and bool(row["title"])
+        and "id" in row
+        and (row["id"] is None or isinstance(row["id"], str))
+        and "status" in row
+        and (row["status"] is None or isinstance(row["status"], str))
+        and type(row.get("mixed_authority")) is bool
+        and all(
+            isinstance(row.get(name), list)
+            and all(isinstance(item, str) for item in row[name])
+            for name in ("domains", "related", "verification")
+        )
+    )
+
+
 def run_discovery(
     queries: list[str],
     knowledge_limit: int,
@@ -83,12 +126,14 @@ def run_discovery(
         not isinstance(data, dict)
         or not isinstance(data.get("results"), list)
         or not isinstance(data.get("code_results"), list)
-        or any(not isinstance(row, dict) for row in data["results"])
-        or any(not isinstance(row, dict) for row in data["code_results"])
-        or ("result_count" in data
-            and data["result_count"] != len(data["results"]))
-        or ("code_result_count" in data
-            and data["code_result_count"] != len(data["code_results"]))
+        or any(not _valid_discovery_row(row, code=False)
+               for row in data["results"])
+        or any(not _valid_discovery_row(row, code=True)
+               for row in data["code_results"])
+        or type(data.get("result_count")) is not int
+        or data["result_count"] != len(data["results"])
+        or type(data.get("code_result_count")) is not int
+        or data["code_result_count"] != len(data["code_results"])
     ):
         raise RuntimeError(
             "discover --json returned malformed/inconsistent results; "
