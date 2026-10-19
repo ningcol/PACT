@@ -60,7 +60,10 @@ class GitHubActionsAgentPreflightTests(unittest.TestCase):
             subprocess.run(["git", "init", "--quiet"], cwd=root,
                            check=True, capture_output=True)
             bad = root / "escape"
-            bad.symlink_to("../../private-token-file")
+            try:
+                bad.symlink_to("../../private-token-file")
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlink creation is not supported by this OS")
             subprocess.run(["git", "add", "escape"], cwd=root,
                            check=True, capture_output=True)
             with self.assertRaisesRegex(ValueError, "escapes clone"):
