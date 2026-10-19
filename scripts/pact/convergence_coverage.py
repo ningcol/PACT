@@ -169,25 +169,24 @@ def review(
             continue
         current_exists = current_path.is_file()
 
-        # Routed (not materialized) authority is pinned to the exact source
-        # bytes at prepare time. A later source edit cannot be silently
-        # reported as aligned or not-applicable.
-        if (path in routed_authority_paths
-                and disposition in {"aligned", "not-applicable", "stale"}
-                and current_exists
-                and sha256_file(current_path) != prepared_sha256):
-            errors.append(
-                f"Routed Decision/Rule changed since Task preparation: {path!r}; "
-                "review the change and choose an evidence-backed disposition"
-            )
-        if (path in routed_domain_paths
-                and disposition in {"aligned", "not-applicable", "stale"}
-                and current_exists
-                and sha256_file(current_path) != prepared_sha256):
-            errors.append(
-                f"Routed Domain changed since Task preparation: {path!r}; "
-                "review the Domain source and its authority links"
-            )
+        # Every prepared knowledge artifact is bound to original bytes, not
+        # only opt-in Domain-first hints. An Agent must not edit a Decision and
+        # simultaneously declare it aligned/not-applicable/stale.
+        if disposition in {"aligned", "not-applicable", "stale"} and current_exists:
+            if (
+                not isinstance(prepared_sha256, str)
+                or sha256_file(current_path) != prepared_sha256
+            ):
+                kind = (
+                    "Routed Decision/Rule" if path in routed_authority_paths
+                    else "Routed Domain" if path in routed_domain_paths
+                    else "Task Context knowledge"
+                )
+                errors.append(
+                    f"{kind} changed since Task preparation: {path!r}; "
+                    "review source changes and record an evidence-backed "
+                    "updated/removed/owner-decision disposition"
+                )
 
         if disposition == "updated":
             if not current_exists:
