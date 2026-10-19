@@ -207,6 +207,13 @@ domains = ["DOMAIN-PAY"]
 +++
 # Special approval constraints
 ''')
+        refreshed = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(refreshed.returncode, 0,
+                         refreshed.stdout + refreshed.stderr)
         packet = self.packet(
             "Review DEC-EXTERNAL-002 while editing src/auth/login.py",
             hits=[self.hit(
