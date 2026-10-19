@@ -13,6 +13,30 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 5. Resolve or explicitly document compatibility/migration behavior.
 6. Confirm `LICENSE` is present and release assets/checksums include the Apache-2.0 license file.
 
+## Enforced release approval (current default: HOLD)
+
+The tag-triggered workflow will **fail before publishing** unless **all**
+of these independently authorized inputs are present for the exact HEAD:
+
+1. A protected GitHub Actions environment named `pact-release-approval`
+   with **required reviewers** configured by the repository owner (GitHub
+   settings are outside version-controlled workflow files and must be checked
+   manually). Without an actual reviewer requirement, the environment name
+   alone is not a human authorization.
+2. An explicit environment/repository variable `PACT_RELEASE_GO=GO`.
+3. An explicit variable `PACT_AGENT_OWNER_GATES_APPROVED=true` only after
+   authentic real Agent/Owner gates #214/#28/#32 are independently accepted.
+4. A variable `PACT_RELEASE_APPROVED_SHA` equal to the **full approved
+   commit SHA**, which must also equal the current `main` HEAD and pushed
+   tag commit.
+
+The variables are deliberately **unset** during Release HOLD and CI cannot
+set them automatically. A passing unit test or source-level benchmark is NOT
+an Owner sign-off. The required-reviewer protection is a repository
+administration setting; don't assert it is configured without checking it.
+This controls the automated publishing path but cannot prevent administrators
+from creating releases by other authorized GitHub interfaces.
+
 ## Tagging
 
 Use an immutable semantic-version tag matching `.pact/VERSION` exactly:
