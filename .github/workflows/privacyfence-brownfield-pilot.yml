@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/privacyfence-brownfield-pilot.yml"
       - "scripts/benchmark/privacyfence_pilot.py"
+      - "scripts/benchmark/privacyfence_nonfunctional_probe.py"
       - "scripts/benchmark/brownfield_adr_viewer.py"
       - "scripts/benchmark/decision_memory_m0.py"
       - "scripts/pact/**"
@@ -91,12 +92,43 @@ jobs:
           PY
           test "$exit_code" -eq 0
 
+      - name: Paired real-source routine-task opt-in probe (no model)
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_code=0
+          python scripts/benchmark/privacyfence_nonfunctional_probe.py \
+            --target "$PRIVACYFENCE_SOURCE" \
+            --baseline "$RUNNER_TEMP/pact-privacyfence-pilot.json" \
+            > "$RUNNER_TEMP/pact-privacyfence-nonfunctional-routine.json" || exit_code=$?
+          cat "$RUNNER_TEMP/pact-privacyfence-nonfunctional-routine.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((
+              Path(os.environ["RUNNER_TEMP"]) /
+              "pact-privacyfence-nonfunctional-routine.json"
+          ).read_text(encoding="utf-8"))
+          assert data["real_agent_executed"] is False
+          assert data["independent_holdout"] is False
+          assert data["authenticated_owner_observation"] is False
+          assert data["provider_billed_tokens"] is None
+          assert data["release_gate"] == "HOLD"
+          print("Engineering gate:", data["engineering_gate"])
+          print("Developer-labelled opt-in routine pairs:",
+                data.get("paired_developer_observation"))
+          print("Failures:", data["failures"])
+          PY
+          test "$exit_code" -eq 0
+
       - name: Preserve developer-only source retrieval receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pinned-privacyfence-developer-retrieval-json
-          path: ${{ runner.temp }}/pact-privacyfence-pilot.json
+          path: |
+            ${{ runner.temp }}/pact-privacyfence-pilot.json
+            ${{ runner.temp }}/pact-privacyfence-nonfunctional-routine.json
           if-no-files-found: warn
           retention-days: 14
 
