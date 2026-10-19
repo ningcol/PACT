@@ -357,6 +357,65 @@ def score(report: dict, cases: dict) -> dict:
     }
 
 
+
+def inspect_proposed_context(
+    target: pathlib.Path, cards: dict, receipt: dict,
+) -> dict:
+    """Prove the standalone status guard received a valid source-bound Context.
+
+    A bare `{"decisions":[]}` is NOT evidence that an unconfirmed ADR was
+    handled safely. The response must pass the same envelope/source checks
+    required of regular task Context, including all selected file digests.
+    """
+    errors: list[str] = []
+    envelope = receipt.get("data")
+    if receipt.get("returncode") != 0:
+        errors.append("proposed-ADR Context lookup failed")
+    if not isinstance(envelope, dict):
+        errors.append("proposed-ADR Context returned non-object packet")
+        envelope = {}
+    else:
+        errors.extend(validate_instance(envelope, SCHEMA))
+
+    by_id = {doc["id"]: doc for doc in cards["source_docs"]}
+    artifacts = envelope.get("artifacts")
+    if not isinstance(artifacts, list):
+        errors.append("proposed-ADR Context missing selected artifact array")
+    else:
+        for item in artifacts:
+            if not isinstance(item, dict):
+                errors.append("proposed-ADR Context selected malformed artifact")
+                continue
+            path, ident = item.get("path"), item.get("id")
+            if not isinstance(path, str):
+                errors.append("proposed-ADR Context artifact lacks source path")
+                continue
+            try:
+                source = safe_source(target, path)
+                if item.get("sha256") != m0.digest_file(source):
+                    errors.append(f"proposed-ADR Context source digest invalid: {path}")
+            except (ValueError, OSError) as exc:
+                errors.append(f"proposed-ADR Context source invalid: {path}: {exc}")
+            if ident is not None:
+                pinned = by_id.get(ident)
+                if (pinned is None or target_path(pinned) != path
+                        or item.get("artifact_type") != "decision"):
+                    errors.append(
+                        f"proposed-ADR Context has unbound Decision source: {ident!r}"
+                    )
+    if envelope.get("decisions") != []:
+        errors.append(
+            "proposed-ADR lookup promoted a non-implemented Decision "
+            "or returned a malformed Decision list"
+        )
+    return {
+        "returncode": receipt.get("returncode"),
+        "stderr": receipt.get("stderr"),
+        "decisions": envelope.get("decisions"),
+        "schema_and_source_errors": errors,
+    }
+
+
 def trial(target: pathlib.Path) -> dict:
     report: dict = {
         "kind":"developer-authored-not-blind-real-repository-installed-PACT",
@@ -393,11 +452,9 @@ def trial(target: pathlib.Path) -> dict:
             "Do not promote a proposed source ADR into a current decision",
             "--risk","low","--intent","history","--no-code","--limit","6",
         ])
-        report["proposed_lookup"] = {
-            "returncode":proposed["returncode"], "stderr":proposed["stderr"],
-            "decisions":(proposed.get("data") or {}).get("decisions")
-            if isinstance(proposed.get("data"),dict) else None,
-        }
+        report["proposed_lookup"] = inspect_proposed_context(
+            target, cards, proposed,
+        )
         report["stage"] = "verify-original-source-unmodified"
         report["tracked_upstream_clean"] = not pilot.git_output(
             target, "status", "--porcelain", "--untracked-files=no"
@@ -426,8 +483,10 @@ def trial(target: pathlib.Path) -> dict:
                 failures.append(f"{label} missing case output")
             for row in records:
                 failures.extend(f"{label}/{row['id']}: {error}" for error in row["schema_and_source_errors"])
-        if report["proposed_lookup"]["returncode"] or report["proposed_lookup"]["decisions"] != []:
-            failures.append("source-Proposed Decision wrongly promoted or lookup failed")
+        failures.extend(
+            "proposed-ADR standalone lookup: " + error
+            for error in report["proposed_lookup"]["schema_and_source_errors"]
+        )
         for key in ("tracked_upstream_clean","source_blobs_unchanged",
                     "only_frozen_projections_added","projection_digests_unchanged"):
             if not report[key]:
