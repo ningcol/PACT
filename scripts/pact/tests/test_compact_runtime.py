@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import json
@@ -54,6 +55,22 @@ class CompactRuntimeTests(unittest.TestCase):
                 names,
             )
             self.assertNotIn("tests/test_task_surface.py", names)
+
+    def test_concurrent_builds_use_distinct_atomic_staging_files(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-concurrent-pyz-") as td:
+            output = pathlib.Path(td) / "pact.pyz"
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                produced = list(workers.map(
+                    lambda _: runtime_bundle.build_runtime_bundle(
+                        PROJECT_ROOT, output,
+                    ),
+                    range(6),
+                ))
+            self.assertTrue(all(path == output for path in produced))
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("__main__.py", archive.namelist())
+                self.assertIn("pact.py", archive.namelist())
+            self.assertEqual(list(pathlib.Path(td).glob("*.tmp")), [])
 
     def test_bundle_normalizes_source_line_endings(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-pyz-newlines-") as tmp:
