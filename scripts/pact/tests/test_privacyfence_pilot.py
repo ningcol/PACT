@@ -233,5 +233,65 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
                          "implemented")
 
 
+
+    def test_proposed_status_guard_rejects_bare_success_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            packet = pilot.inspect_proposed_context(
+                pathlib.Path(td), {"source_docs":[]},
+                {"returncode":0,"stderr":"","data":{"decisions":[]}},
+            )
+        self.assertEqual(packet["decisions"], [])
+        self.assertTrue(packet["schema_and_source_errors"],
+                        "A bare Decision list is not a complete Context envelope")
+        self.assertTrue(any(
+            "missing selected artifact" in error
+            for error in packet["schema_and_source_errors"]
+        ))
+
+    def test_proposed_status_guard_binds_sources_even_if_shape_valid(self):
+        with tempfile.TemporaryDirectory(prefix="pact-pf-guard-") as td:
+            target=pathlib.Path(td)
+            docs=[{"id":"DEC-PF-0005",
+                   "source":"docs/adr/0005-original.md","status":"proposed"}]
+            relative=pilot.target_path(docs[0])
+            p=target/relative
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                '+++\n[pact]\ntype = "decision"\nid = "DEC-PF-0005"\n'
+                'status = "proposed"\n+++\n# Original Proposed source\n',
+                encoding="utf-8",
+            )
+            item={"id":"DEC-PF-0005","path":relative,
+                  "artifact_type":"decision",
+                  "sha256":pilot.m0.digest_file(p)}
+            def lookup(selected):
+                return {"returncode":0,"stderr":"",
+                        "data":{"decisions":[],"artifacts":selected}}
+            with mock.patch.object(pilot,"validate_instance",return_value=[]):
+                valid=pilot.inspect_proposed_context(
+                    target,{"source_docs":docs},lookup([item]),
+                )
+                tampered=pilot.inspect_proposed_context(
+                    target,{"source_docs":docs},
+                    lookup([{**item,"sha256":"0"*64}]),
+                )
+                forged=pilot.inspect_proposed_context(
+                    target,{"source_docs":docs},
+                    lookup([{**item,"path":"docs/adr/0005-original.md",
+                             "sha256":"0"*64}]),
+                )
+                promoted=pilot.inspect_proposed_context(
+                    target,{"source_docs":docs},
+                    {"returncode":0,"stderr":"",
+                     "data":{"decisions":["DEC-PF-0005"],"artifacts":[item]}},
+                )
+        self.assertEqual(valid["schema_and_source_errors"], [])
+        self.assertTrue(any("digest invalid" in e
+                            for e in tampered["schema_and_source_errors"]))
+        self.assertTrue(forged["schema_and_source_errors"])
+        self.assertTrue(any("promoted" in e
+                            for e in promoted["schema_and_source_errors"]))
+
+
 if __name__ == "__main__":
     unittest.main()
