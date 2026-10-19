@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import pathlib
+import tempfile
 import zipfile
 
 
@@ -52,9 +54,15 @@ def build_runtime_bundle(
 
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.tmp")
-    if temporary.exists():
-        temporary.unlink()
+    # Concurrent source installs/upgrades can both need a compact runtime.
+    # Never share or unlink another build's staged ZIP filename.
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.pact-runtime-",
+        suffix=".tmp",
+        dir=output.parent,
+    )
+    os.close(fd)
+    temporary = pathlib.Path(temporary_name)
 
     try:
         with zipfile.ZipFile(
