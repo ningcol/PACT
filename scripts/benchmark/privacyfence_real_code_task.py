@@ -342,6 +342,193 @@ def source_verified_context(arm: pathlib.Path) -> dict:
     }
 
 
+ROUTINE_TASK = (
+    "Rename the local data variable used by the CSV comma-and-newline "
+    "rendering unit test to csv_data for clarity. Do not change its expected "
+    "CSV bytes, runtime behavior, exports or existing architectural decisions. "
+    "Run the original test suite."
+)
+ROUTINE_ID = "TASK-PF-ROUTINE-CSV"
+
+
+def routine_patch(text: str) -> str:
+    """Rename exactly one local variable plus its use, in one pinned test."""
+    begin = "    def test_csv_quotes_commas_and_newlines(self):\n"
+    if text.count(begin) != 1:
+        raise ValueError("source local test case anchor missing/ambiguous")
+    start = text.index(begin) + len(begin)
+    end = text.find("\n    def ", start)
+    if end <= start:
+        raise ValueError("source test next-method boundary is missing")
+    body = text[start:end]
+    old_var = "        data = export_files.render("
+    old_assert = "        assert data == "
+    if (
+        body.count(old_var) != 1
+        or body.count(old_assert) != 1
+        or len(body.splitlines()) > 4
+    ):
+        raise ValueError("source test body changed; refuse broad rewrite")
+    new = body.replace(old_var, "        csv_data = export_files.render(")
+    new = new.replace(old_assert, "        assert csv_data == ")
+    return text[:start] + new + text[end:]
+
+
+def routine_case(source: pathlib.Path, work: pathlib.Path,
+                 original_manifest: dict[str, str]) -> dict:
+    """Real test-file-only edit + installed PACT opt-in + blocked false-done."""
+    a, b = work / "R-A-original", work / "R-B-installed-PACT"
+    for arm in (a, b):
+        shutil.copytree(source, arm, symlinks=True)
+        source_pins(arm)
+        if isolation.tracked_source(arm) != original_manifest:
+            raise ValueError("routine-control source differs from pinned original")
+    if (a / "pact.py").exists() or (a / ".pact").exists():
+        raise ValueError("routine control arm has PACT contamination")
+    for arm in (a, b):
+        if (arm / pf.ORACLE.relative_to(ROOT)).exists():
+            raise ValueError("routine workspace contains evaluator oracle")
+
+    cards = pf.verify_freeze(b)
+    installed = pf.pilot.install_pact(b)
+    projected = pf.project_sources(b, cards)
+    if not installed["installed_source_match"] or len(projected) != 12:
+        raise ValueError("routine B setup lacks source-identical PACT metadata")
+    context = run_step(
+        [
+            sys.executable, str(b / "pact.py"), "context", ROUTINE_TASK,
+            "--success", "Original CSV rendering assertions remain true",
+            "--risk", "low", "--intent", "work", "--nonfunctional",
+            "--limit", "6", "--token-budget", "4096", "--no-code",
+        ], cwd=b, stdout_limit=250000, timeout=190,
+    )
+    if context["returncode"]:
+        raise ValueError("routine B nonfunctional Context failed: " + str(context)[:800])
+    packet = json.loads(context["stdout"])
+    hints = packet.get("nonfunctional_decision_hints")
+    if not isinstance(hints, dict) or not isinstance(hints.get("candidates"), list):
+        raise ValueError("routine Context omitted deferred Decision hints")
+    if packet.get("decisions"):
+        raise ValueError("routine no-ID task unexpectedly materialized current Decisions")
+    if (type(hints.get("total_candidates")) is not int
+            or type(hints.get("truncated_candidates")) is not int
+            or hints["total_candidates"] != (
+                len(hints["candidates"]) + hints["truncated_candidates"]
+            )):
+        raise ValueError("routine Context has inconsistent Decision hint totals")
+    for hint in hints["candidates"]:
+        doc = next(
+            (x for x in cards["source_docs"] if x["id"] == hint.get("id")), None
+        )
+        if (doc is None or hint.get("path") != pf.target_path(doc)
+                or hint.get("status") != doc["status"]
+                or hint.get("sha256") != pf.m0.digest_file(
+                    pf.safe_source(b, hint["path"])
+                )):
+            raise ValueError("routine deferred Decision lacks source binding")
+    if isolation.tracked_source(b) != original_manifest:
+        raise ValueError("routine Context unexpectedly changed tracked source")
+
+    prepared = run_step(
+        [
+            sys.executable, str(b / "pact.py"), "task", "prepare", ROUTINE_TASK,
+            "--success", "Unit tests pass with identical CSV assertions",
+            "--risk", "low", "--intent", "work", "--nonfunctional",
+            "--no-code", "--task-id", ROUTINE_ID, "--json",
+        ], cwd=b, stdout_limit=16000, timeout=150,
+    )
+    if prepared["returncode"]:
+        raise ValueError("routine high-level PACT task prepare failed: "
+                         + str(prepared)[:1500])
+    prepared_json = json.loads(prepared["stdout"])
+    if prepared_json.get("task_id") != ROUTINE_ID:
+        raise ValueError("prepared task receipt is not bound to known ID")
+    if isolation.tracked_source(b) != original_manifest:
+        raise ValueError("PACT prepare changed original tracked source")
+
+    changes = {}
+    tests = {}
+    for name, arm in (("A", a), ("B", b)):
+        file = arm / TEST_FILE
+        file.write_text(
+            routine_patch(file.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
+        snapshot = isolation.tracked_source(arm)
+        changed = sorted(rel for rel in original_manifest
+                         if original_manifest[rel] != snapshot.get(rel))
+        if changed != [TEST_FILE] or set(snapshot) != set(original_manifest):
+            raise ValueError(f"routine task altered unauthorized source in {name}: {changed}")
+        if git(arm, "diff", "--name-only") != TEST_FILE:
+            raise ValueError("routine patch Git diff contains unrelated files")
+        changes[name] = git(arm, "diff", "--", TEST_FILE)
+        check = run_step(
+            [sys.executable, "-m", "pytest", "-q", TEST_FILE],
+            cwd=arm, timeout=150, env=python_env(arm),
+        )
+        if check["returncode"]:
+            raise ValueError(f"routine source unit tests failed on {name}: {check}")
+        tests[name] = check
+    if changes["A"] != changes["B"]:
+        raise ValueError("routine A/B application test-file diffs differ")
+    if git(a, "hash-object", SOURCE_FILE) != SOURCE_BLOB:
+        raise ValueError("routine test edit changed A production code")
+    if git(b, "hash-object", SOURCE_FILE) != SOURCE_BLOB:
+        raise ValueError("routine test edit changed B production code")
+    for arm in (a, b):
+        if not all(git(arm, "hash-object", path) == expected
+                   for path, expected in ADR_BLOBS.items()):
+            raise ValueError("routine maintenance modified an operative ADR")
+    if len(list((b / ".agents/decisions").rglob("*.md"))) != 12:
+        raise ValueError("routine task created extra lasting Decision notes")
+
+    draft = run_step(
+        [sys.executable, str(b / "pact.py"), "task", "draft",
+         ROUTINE_ID, "--json"], cwd=b, timeout=150,
+    )
+    if draft["returncode"]:
+        raise ValueError("cannot stage deliberately incomplete task Evidence")
+    finish = run_step(
+        [sys.executable, str(b / "pact.py"), "task", "finish",
+         ROUTINE_ID, "--json"], cwd=b, timeout=150,
+    )
+    # A successful task completion without any real Evidence or semantic
+    # Convergence review would be a serious false-done regression.
+    if finish["returncode"] == 0:
+        raise ValueError("false done: unreviewed routine task was declared complete")
+    if not (
+        "complet" in (finish["stdout"] + finish["stderr"]).lower()
+        or "converg" in (finish["stdout"] + finish["stderr"]).lower()
+        or "evidence" in (finish["stdout"] + finish["stderr"]).lower()
+    ):
+        raise ValueError("routine completion failed for unrelated reason: " + str(finish)[:1200])
+    if isolation.tracked_source(source) != original_manifest:
+        raise ValueError("routine replay changed original public source checkout")
+
+    return {
+        "task": ROUTINE_TASK,
+        "source_change": "test-only-variable-rename",
+        "modified_tracked_paths": [TEST_FILE],
+        "source_diff_sha256": sha256(changes["A"].encode()),
+        "source_diff": changes["A"][:2800],
+        "A_offline_unit_tests": tests["A"]["stdout"].strip()[-500:],
+        "B_offline_unit_tests": tests["B"]["stdout"].strip()[-500:],
+        "PACT_high_level_task_prepared": True,
+        "PACT_nonfunctional_hints_count": hints["total_candidates"],
+        "PACT_nonfunctional_hints_truncated": hints["truncated_candidates"],
+        "PACT_selected_current_decisions": packet["decisions"],
+        "PACT_initial_context_estimated_tokens": packet.get(
+            "context_budget", {}
+        ).get("selected_estimated_tokens"),
+        "PACT_task_finish_rejected_incomplete_draft": True,
+        "PACT_task_finish_rejection": (
+            finish["stdout"] + finish["stderr"]
+        )[-1600:],
+        "no_added_durable_decisions": True,
+        "owner_approval_observed": False,
+    }
+
+
 def execute(source: pathlib.Path, scratch: pathlib.Path) -> dict:
     result: dict[str, Any] = {
         "kind": "assistant-authored-public-source-real-code-edit-not-agent-ab",
@@ -434,6 +621,9 @@ def execute(source: pathlib.Path, scratch: pathlib.Path) -> dict:
 
             result["stage"] = "source-bound-conflict-negative"
             result["Grist_conflict_guard"] = conflict_negative_control(source, root)
+
+            result["stage"] = "supplemental-real-routine-code-task"
+            result["routine_maintenance"] = routine_case(source, root, pinned)
 
             result["stage"] = "final-integrity"
             if not isolation.original_clean(source) or isolation.tracked_source(source) != pinned:
