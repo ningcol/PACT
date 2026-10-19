@@ -104,6 +104,15 @@ jobs:
           print("PACT target retrieval:", data["retrieval_quality_gate"])
           print("Actual changed paths:", data.get("modified_application_paths"))
           print("Diff SHA256:", data.get("application_diff_sha256"))
+          routine = data.get("routine_maintenance")
+          assert isinstance(routine, dict), "actual routine code task missing"
+          assert routine["PACT_high_level_task_prepared"]
+          assert routine["PACT_task_finish_rejected_incomplete_draft"]
+          assert routine["no_added_durable_decisions"]
+          print("Routine actual changed path:", routine["modified_tracked_paths"])
+          print("Routine initial Context tokens:", routine["PACT_initial_context_estimated_tokens"])
+          print("Routine deferred Decision hints:", routine["PACT_nonfunctional_hints_count"])
+          print("Routine false-done blocked:", routine["PACT_task_finish_rejected_incomplete_draft"])
           print("No LLM Agent sessions:", not data["live_coding_agent_executed"])
           assert data["live_coding_agent_executed"] is False
           assert data["independent_blind_holdout"] is False
