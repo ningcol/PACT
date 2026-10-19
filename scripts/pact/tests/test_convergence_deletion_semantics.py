@@ -115,6 +115,17 @@ class ConvergenceRemovalTests(unittest.TestCase):
                 self.assertTrue(any("artifact no longer exists" in e for e in errors))
                 self.assertEqual(stats["removed_verified"], [])
 
+    def test_modified_ordinary_context_cannot_claim_aligned(self) -> None:
+        self.artifact.write_text("# Overwritten decision without Owner approval\n",
+                                 encoding="utf-8")
+        for disposition in ("aligned", "not-applicable", "stale"):
+            with self.subTest(disposition=disposition):
+                errors, _, _ = self.review(disposition)
+                self.assertTrue(any("changed since Task preparation" in error
+                                    for error in errors), errors)
+        updated_errors, _, _ = self.review("updated")
+        self.assertEqual(updated_errors, [])
+
     def test_existing_stale_file_retains_original_semantics(self) -> None:
         errors, stats, report = self.review("stale")
         self.assertEqual(errors, [])
