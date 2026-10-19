@@ -1,0 +1,154 @@
+name: PACT PrivacyFence Pinned Second Brownfield Pilot
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/privacyfence-brownfield-pilot.yml"
+      - "scripts/benchmark/privacyfence_pilot.py"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+      - "scripts/benchmark/decision_memory_m0.py"
+      - "scripts/pact/**"
+      - ".pact/schema/**"
+      - "scripts/pact/tests/test_privacyfence_pilot.py"
+      - "benchmarks/privacyfence/**"
+      - "docs/evaluation/privacyfence-pilot-*.md"
+      - "bootstrap.py"
+      - "pact.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-privacyfence-pact-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: PACT exact SHA, read-only token
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact test checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Freeze integrity and isolated unit cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts/pact/tests -p "test_privacyfence_pilot.py"
+          python scripts/pact/pact.py schema-lint
+          python scripts/pact/pact.py check
+
+      - name: Clone only public pinned PrivacyFence source into disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/pact-privacyfence-source"
+          echo "PRIVACYFENCE_SOURCE=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/privacyfence/privacyfence.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet \
+            6a03856a6e1819b2eacd3963154ebc7d02923296
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "6a03856a6e1819b2eacd3963154ebc7d02923296"
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+
+      - name: Execute installed PACT A/B and preserve complete success/failure report
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_code=0
+          python scripts/benchmark/privacyfence_pilot.py \
+            --target "$PRIVACYFENCE_SOURCE" \
+            > "$RUNNER_TEMP/pact-privacyfence-pilot.json" || exit_code=$?
+          cat "$RUNNER_TEMP/pact-privacyfence-pilot.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "pact-privacyfence-pilot.json"
+          data = json.loads(path.read_text(encoding="utf-8"))
+          assert data["real_agent_executed"] is False
+          assert data["independent_holdout"] is False
+          assert data["owner_approval_authenticated"] is False
+          assert data["release_gate"] == "HOLD"
+          print("Source", data["source_repo"], data["source_sha"])
+          print("Engineering gate:", data["engineering_gate"])
+          print("Failure reasons:", data.get("integrity_failures"))
+          print("Developer-only retrieval metrics:", data.get("developer_scoring"))
+          PY
+          test "$exit_code" -eq 0
+
+      - name: Preserve developer-only source retrieval receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pinned-privacyfence-developer-retrieval-json
+          path: ${{ runner.temp }}/pact-privacyfence-pilot.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  original-offline-policy-tests:
+    # Untrusted upstream code executes in its own fresh VM, no PACT checkout,
+    # case oracle, evaluator or shared process. No live connector secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python for isolated original-source unit tests
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Clone pinned public upstream in test-only VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/privacyfence-upstream-tests"
+          echo "PRIVACYFENCE_TEST_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/privacyfence/privacyfence.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet \
+            6a03856a6e1819b2eacd3963154ebc7d02923296
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "6a03856a6e1819b2eacd3963154ebc7d02923296"
+
+      - name: Install only original project declared test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            -e "$PRIVACYFENCE_TEST_TARGET[test]"
+
+      - name: Run narrow real repository unit tests, never live connectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PRIVACYFENCE_TEST_TARGET"
+          python -m pytest -q \
+            tests/unit/policy/test_engine.py \
+            tests/unit/policy/test_conditions.py \
+            tests/unit/test_export_files.py \
+            2>&1 | tee "$RUNNER_TEMP/privacyfence-upstream-unit.txt"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Save upstream test-only receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pinned-privacyfence-original-unit-tests
+          path: ${{ runner.temp }}/privacyfence-upstream-unit.txt
+          if-no-files-found: warn
+          retention-days: 14

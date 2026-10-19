@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "kind": "developer-labelled-real-repository-engineering-probe-not-blind",
+  "notice": "12 new developer-authored tasks: 10 source Decision conflict probes plus 2 routine negatives. No real Agent or Owner outcome. Do not claim formal 12-case independent study.",
+  "upstream": "privacyfence/privacyfence",
+  "upstream_commit": "6a03856a6e1819b2eacd3963154ebc7d02923296",
+  "pact_baseline": "09e78ed995fb7cedb5b21851833346274f5aec33",
+  "source_adr_directory": "docs/adr",
+  "source_adr_markdown_count": 184,
+  "settings": {
+    "risk": "low",
+    "intent": "work",
+    "knowledge_limit": 6,
+    "estimated_token_budget": 4096,
+    "code_context": false
+  },
+  "projection": "Test-only minimal source-faithful metadata copies; preserves original ADR body, headings, proposed vs accepted status and internal links; adds no aliases, code paths or confirmed Domain; no Owner authentication.",
+  "source_docs": [
+    {
+      "id": "DEC-PF-0005",
+      "source": "docs/adr/0005-moving-the-approval-decision-off-the-device.md",
+      "git_blob": "a7c703033ac1a587da000cc883a16ced645f30c4",
+      "status": "proposed"
+    },
+    {
+      "id": "DEC-PF-0008",
+      "source": "docs/adr/0008-one-principal-per-os-user.md",
+      "git_blob": "138c0a3eef5852d7d23eb1ee1e191ed41a05a4ec",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0013",
+      "source": "docs/adr/0013-no-mcp-tool-mints-a-sign-in-credential.md",
+      "git_blob": "0a3c217917ab1678986a656e010e29f142ef4a13",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0014",
+      "source": "docs/adr/0014-every-bespoke-route-is-classified-or-the-app-refuses-to-start.md",
+      "git_blob": "57b0fad467cfb5373ffb0a59f52369b435f81d9b",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0015",
+      "source": "docs/adr/0015-unattended-session-flag-is-advisory-only.md",
+      "git_blob": "862e4833f774ebad1d8b29e4166843c89d094bf0",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0038",
+      "source": "docs/adr/0038-gmail-draft-signature-is-shown-but-not-write-scanned.md",
+      "git_blob": "0b4fab78726b9e145fa27f3ee06cca2e5e913174",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0041",
+      "source": "docs/adr/0041-only-the-current-install-layout-is-supported.md",
+      "git_blob": "a831ca748d7d914b807f45543c405ddf0383d633",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0155",
+      "source": "docs/adr/0155-exports-write-a-file-and-return-only-counts-and-a-hash.md",
+      "git_blob": "3aff5b308d87978e694330e14b8c74253300d9f7",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0180",
+      "source": "docs/adr/0180-jira-and-salesforce-csv-exports-neutralise-formula-cells.md",
+      "git_blob": "cf7c47ff6276905f244c2194348466a4aa1e02e2",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0191",
+      "source": "docs/adr/0191-salesforce-writes-create-and-update-one-record-or-a-batch-of-up-to-200-all-or-none-and-never-delete.md",
+      "git_blob": "a1242e25e0f06bf62d8b11ce06e3afc3f8baddcc",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0195",
+      "source": "docs/adr/0195-importing-personal-settings-is-merge-only-previewed-and-step-up-gated-on-the-file-hash.md",
+      "git_blob": "7e82563cfa6b2b19ad4d218a987ea1b35b31286a",
+      "status": "implemented"
+    },
+    {
+      "id": "DEC-PF-0200",
+      "source": "docs/adr/0200-an-organization-bundle-carries-a-signed-serial-and-an-older-one-is-refused.md",
+      "git_blob": "ffb9817b7f1fd621d29ea74c3753b2be8d2a29f0",
+      "status": "implemented"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "os-principal",
+      "kind": "conflict",
+      "task": "Change local approval control-channel identity handling so all connecting OS accounts are treated as one shared principal."
+    },
+    {
+      "id": "mcp-signin",
+      "kind": "conflict",
+      "task": "Add an MCP helper that gives an AI assistant a working web sign-in link before the human opens PrivacyFence settings."
+    },
+    {
+      "id": "route-gating",
+      "kind": "conflict",
+      "task": "Introduce a new custom settings POST route without adding it to the sensitive or exempt route classification list."
+    },
+    {
+      "id": "unattended-approval",
+      "kind": "conflict",
+      "task": "Change unattended sessions so a request without a matching allow policy can still run without waiting for a human."
+    },
+    {
+      "id": "gmail-signature",
+      "kind": "conflict",
+      "task": "Move the Gmail draft signature out of the human preview, then include its full text in the write-content personal-data scan."
+    },
+    {
+      "id": "legacy-settings",
+      "kind": "conflict",
+      "task": "At startup, silently convert old auto_accept_rules and auto_accept_grants keys into the current settings format."
+    },
+    {
+      "id": "csv-formulas",
+      "kind": "conflict",
+      "task": "Export Jira and Salesforce CSV with literal leading formula characters, leaving values unchanged for spreadsheet programs."
+    },
+    {
+      "id": "salesforce-batch",
+      "kind": "conflict",
+      "task": "Allow Salesforce batches of three hundred writes with partial success and add a generic record-delete tool."
+    },
+    {
+      "id": "personal-import",
+      "kind": "conflict",
+      "task": "Make personal settings import replace existing authorization rules and lower the step-up threshold to the imported value."
+    },
+    {
+      "id": "signed-serial",
+      "kind": "conflict",
+      "task": "Accept an older signed organization configuration bundle whenever its cryptographic signature verifies."
+    },
+    {
+      "id": "docs-whitespace",
+      "kind": "routine-negative",
+      "task": "Fix whitespace and punctuation in the local development guide without changing any runtime policy."
+    },
+    {
+      "id": "test-variable",
+      "kind": "routine-negative",
+      "task": "Rename a local variable inside an existing CSV test without changing assertions, behavior or production code."
+    }
+  ]
+}
