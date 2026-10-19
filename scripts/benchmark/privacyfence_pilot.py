@@ -172,6 +172,7 @@ def project_sources(target: pathlib.Path, cards: dict) -> dict[str, str]:
 def run_arm(
     target: pathlib.Path, cards: dict, label: str,
     *, result: list[dict] | None = None, in_flight: dict | None = None,
+    context_options: list[str] | None = None,
 ) -> list[dict]:
     """Append receipts as each case finishes so an interrupted arm is auditable."""
     s = cards["settings"]
@@ -188,6 +189,7 @@ def run_arm(
             "--no-code", "--limit", str(s["knowledge_limit"]),
             "--token-budget", str(s["estimated_token_budget"]),
         ]
+        c_args.extend(context_options or [])
         if in_flight is not None:
             in_flight.clear()
             in_flight.update({
@@ -273,6 +275,28 @@ def run_arm(
                     trusted_current_ids.add(ident)
             except (ValueError, OSError):
                 pass
+        hints = e.get("nonfunctional_decision_hints")
+        if context["returncode"] == 0 and context_options and (
+            "--nonfunctional" in context_options
+            and not isinstance(hints, dict)
+        ):
+            errs.append("requested nonfunctional Context lacks source-bound hints")
+        if isinstance(hints, dict):
+            # Source-authenticate non-materialized navigation metadata, too.
+            for hint in hints.get("candidates", []):
+                if not isinstance(hint, dict):
+                    errs.append("nonfunctional hint is not an object")
+                    continue
+                source = by_id.get(hint.get("id"))
+                if (source is None or target_path(source) != hint.get("path")
+                        or hint.get("status") != source["status"]):
+                    errs.append("nonfunctional hint lacks pinned source identity")
+                    continue
+                try:
+                    if m0.digest_file(safe_source(target, hint["path"])) != hint.get("sha256"):
+                        errs.append("nonfunctional hint has invalid source digest")
+                except (ValueError, OSError) as exc:
+                    errs.append(f"missing nonfunctional hint source: {exc}")
         claimed = e.get("decisions")
         if context["returncode"] == 0 and (
             not isinstance(claimed, list)
@@ -307,6 +331,9 @@ def run_arm(
             "source_verified_decisions":verified_decisions,
             "applicable_rules":e.get("applicable_rules", []),
             "budget":e.get("context_budget", {}),
+            **({"nonfunctional_decision_hints": hints}
+               if context_options and "--nonfunctional" in context_options
+               else {}),
             "schema_and_source_errors":errs,
         })
         if in_flight is not None:
