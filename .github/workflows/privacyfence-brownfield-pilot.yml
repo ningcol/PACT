@@ -141,14 +141,62 @@ jobs:
             tests/unit/policy/test_engine.py \
             tests/unit/policy/test_conditions.py \
             tests/unit/test_export_files.py \
+            tests/unit/test_code_no_history.py \
+            tests/unit/test_docs_no_history.py \
             2>&1 | tee "$RUNNER_TEMP/privacyfence-upstream-unit.txt"
           test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Source-bound ADR 0056 guard — deliberate RED in a disposable clone
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$PRIVACYFENCE_TEST_TARGET"
+          PIN="6a03856a6e1819b2eacd3963154ebc7d02923296"
+          # Assert actual upstream decision and executable guard, not a copied
+          # PACT-authored oracle. Both blobs were recorded before this workflow.
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$PIN"
+          test "$(git -C "$SOURCE" hash-object docs/adr/0056-code-carries-no-project-history.md)" = \
+            "ba2e6a39df04e373ded03ce2f73d2b1313b6657d"
+          test "$(git -C "$SOURCE" hash-object tests/unit/test_code_no_history.py)" = \
+            "ce1102d9a2cab88c149e0b42bb700f3affbdc5c0"
+          test -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)"
+
+          # Negative-control mutation is confined to another disposable copy.
+          # The original pinned checkout stays byte-for-byte unchanged.
+          PROBE="$RUNNER_TEMP/privacyfence-adr0056-negative"
+          git clone --quiet --local --no-hardlinks "$SOURCE" "$PROBE"
+          git -C "$PROBE" checkout --quiet --detach "$PIN"
+          test -f "$PROBE/src/privacyfence/__init__.py"
+          printf '\n# Stale project history from Phase 42 of an obsolete plan.\n' \
+            >> "$PROBE/src/privacyfence/__init__.py"
+          exit_code=0
+          (
+            cd "$PROBE"
+            python -m pytest -q tests/unit/test_code_no_history.py \
+              -k test_code_carries_no_history \
+              > "$RUNNER_TEMP/privacyfence-adr0056-expected-red.txt" 2>&1
+          ) || exit_code=$?
+          if [ "$exit_code" -ne 1 ]; then
+            echo "Expected precise ADR violation test failure (exit 1), got $exit_code"
+            exit 1
+          fi
+          grep -F 'src/privacyfence/__init__.py' \
+            "$RUNNER_TEMP/privacyfence-adr0056-expected-red.txt" > /dev/null
+          grep -F 'Phase 42' \
+            "$RUNNER_TEMP/privacyfence-adr0056-expected-red.txt" > /dev/null
+          grep -F 'phase name' \
+            "$RUNNER_TEMP/privacyfence-adr0056-expected-red.txt" > /dev/null
+          test -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)"
+          echo "Source-backed ADR guard: original GREEN, disposable violation RED."
+          echo "No coding Agent was invoked; semantic and Owner gates remain HOLD."
 
       - name: Save upstream test-only receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pinned-privacyfence-original-unit-tests
-          path: ${{ runner.temp }}/privacyfence-upstream-unit.txt
+          path: |
+            ${{ runner.temp }}/privacyfence-upstream-unit.txt
+            ${{ runner.temp }}/privacyfence-adr0056-expected-red.txt
           if-no-files-found: warn
           retention-days: 14
