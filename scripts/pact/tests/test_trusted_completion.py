@@ -459,6 +459,8 @@ class TrustedCompletionTests(unittest.TestCase):
                 "literal-secret",
                 "header=env-secret-12345",
                 "Authorization: Bearer abc123",
+                "X-Api-Key: SHADOW-NOT-A-REAL-KEY",
+                '{"password":"MY-CUSTOM-SECRET-VALUE"}',
             ],
             capture_output=True,
             text=True,
@@ -471,6 +473,9 @@ class TrustedCompletionTests(unittest.TestCase):
         self.assertNotIn("literal-secret", persisted)
         self.assertNotIn("env-secret-12345", persisted)
         self.assertNotIn("Bearer abc123", persisted)
+        self.assertNotIn("SHADOW-NOT-A-REAL-KEY", persisted)
+        self.assertNotIn("MY-CUSTOM-SECRET-VALUE", persisted)
+        self.assertEqual(data["argv"], ["<redacted: command arguments omitted>"])
         self.assertGreaterEqual(data["redacted_argument_count"], 3)
 
     def test_github_actions_provenance_is_captured(self) -> None:
