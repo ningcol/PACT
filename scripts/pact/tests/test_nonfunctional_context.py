@@ -229,5 +229,130 @@ class InstalledNonfunctionalContextTests(unittest.TestCase):
         self.assertNotIn("nonfunctional_decision_hints", normal_packet)
 
 
+class DeferredDecisionCompletionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="pact-nonfunctional-convergence-")
+        self.root = pathlib.Path(self.temp.name)
+        self.relative = ".agents/decisions/implemented/no-history.md"
+        self.source = self.root / self.relative
+        self.source.parent.mkdir(parents=True, exist_ok=True)
+        self.source.write_text("# Existing Decision\nDo not repeat obsolete phases.\n", encoding="utf-8")
+        self.digest = hashlib.sha256(self.source.read_bytes()).hexdigest()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def packet(self, *, total=1, truncated=0):
+        return {
+            "artifacts": [],
+            "nonfunctional_decision_hints": {
+                "total_candidates": total,
+                "truncated_candidates": truncated,
+                "candidates": [{
+                    "id": "DEC-NO-HISTORY",
+                    "path": self.relative,
+                    "title": "No obsolete project history",
+                    "status": "implemented",
+                    "sha256": self.digest,
+                }],
+            },
+        }
+
+    def convergence_review(self, packet, coverage):
+        import convergence_coverage
+        path = self.root / "task-context.json"
+        path.write_text(json.dumps(packet), encoding="utf-8")
+        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        result = {"context_sha256": sha, "findings": [], "coverage": coverage}
+        errors, stats = convergence_coverage.review(
+            packet, result, root=self.root, context_path=path,
+            expected_context_sha256=sha,
+        )
+        return errors, stats
+
+    def disposition(self):
+        return {
+            "path": self.relative,
+            "disposition": "not-applicable",
+            "rationale": "Read source; no product change in this spelling-only task.",
+        }
+
+    def test_convergence_must_review_deferred_source_and_reject_stale_sha(self):
+        packet = self.packet()
+        errors, stats = self.convergence_review(packet, [])
+        self.assertIn(self.relative, stats["missing_artifacts"])
+        self.assertIn(self.relative, stats["deferred_decision_paths"])
+        self.assertTrue(any("missing from Convergence" in e for e in errors), errors)
+        passed, stats = self.convergence_review(packet, [self.disposition()])
+        self.assertEqual(passed, [])
+        self.assertEqual(stats["covered_artifacts"], 1)
+        self.source.write_text("# Decision changed without approval\n", encoding="utf-8")
+        failed, _ = self.convergence_review(packet, [self.disposition()])
+        self.assertTrue(any("Deferred Decision changed since Task preparation" in e
+                            for e in failed), failed)
+
+    def test_overflow_and_inconsistent_metadata_block_finish(self):
+        packet = self.packet(total=6, truncated=5)
+        errors, _ = self.convergence_review(packet, [self.disposition()])
+        self.assertTrue(any("unlisted or inconsistent Decision" in e for e in errors), errors)
+        packet["nonfunctional_decision_hints"]["truncated_candidates"] = 0
+        errors, _ = self.convergence_review(packet, [self.disposition()])
+        self.assertTrue(any("unlisted or inconsistent Decision" in e for e in errors), errors)
+        packet["nonfunctional_decision_hints"]["total_candidates"] = 1
+        packet["nonfunctional_decision_hints"]["candidates"].append(
+            packet["nonfunctional_decision_hints"]["candidates"][0].copy()
+        )
+        errors, _ = self.convergence_review(packet, [self.disposition()])
+        self.assertTrue(any("duplicate nonfunctional Decision source" in e
+                            for e in errors), errors)
+
+    def test_task_assist_does_not_propose_acceptance_for_unreviewed_hints(self):
+        from unittest.mock import patch
+        import task_review
+
+        task = {"task_id": "TASK-CHECK", "status": "prepared",
+                "risk_level": "low", "contract_sha256": "a" * 64,
+                "context_sha256": "b" * 64}
+        contract = {"acceptance_criteria": [{"id": "AC-1", "text": "Done"}]}
+        evidence = {"claims": [{
+            "id": "CLAIM-1", "required": True, "status": "pass",
+            "claim": "Unit tests were executed",
+            "criteria": ["AC-1"], "evidence": [],
+        }]}
+        packet = self.packet()
+        opts = {"manifest": task, "contract": contract, "context": packet,
+                "evidence": evidence, "owner": None,
+                "task_change": {"supported": True, "changed_files": []},
+                "provenance_errors": [], "policy_gaps": []}
+        with patch.object(task_review, "ROOT", self.root):
+            unreviewed = task_review._diagnose(convergence=None, **opts)
+            self.assertIn(self.relative, unreviewed["missing_context_coverage"])
+            self.assertEqual(unreviewed["safe_mechanical_acceptance"], [])
+            self.assertTrue(any("lack explicit Convergence review" in msg
+                                for msg in unreviewed["policy_gaps"]))
+            packet["nonfunctional_decision_hints"]["truncated_candidates"] = 1
+            packet["nonfunctional_decision_hints"]["total_candidates"] = 2
+            covered = task_review._diagnose(
+                convergence={"coverage": [self.disposition()]}, **opts
+            )
+            self.assertEqual(covered["safe_mechanical_acceptance"], [])
+            self.assertTrue(any("unlisted or inconsistent" in msg
+                                for msg in covered["policy_gaps"]))
+            packet["nonfunctional_decision_hints"]["total_candidates"] = 1
+            packet["nonfunctional_decision_hints"]["truncated_candidates"] = 0
+            clear = task_review._diagnose(
+                convergence={"coverage": [self.disposition()]}, **opts
+            )
+            self.assertEqual(clear["policy_gaps"], [])
+            self.assertEqual(len(clear["safe_mechanical_acceptance"]), 1)
+            self.source.write_text("# Tampered Decision\n", encoding="utf-8")
+            tampered = task_review._diagnose(
+                convergence={"coverage": [self.disposition()]}, **opts
+            )
+            self.assertEqual(tampered["safe_mechanical_acceptance"], [])
+            self.assertTrue(any("no longer matches" in msg
+                                for msg in tampered["policy_gaps"]))
+
+
 if __name__ == "__main__":
     unittest.main()
