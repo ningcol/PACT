@@ -390,9 +390,15 @@ def execute(source: pathlib.Path, scratch: pathlib.Path) -> dict:
             result["B_pact_context"] = source_verified_context(b)
             if isolation.tracked_source(b) != pinned:
                 raise ValueError("PACT Context/materialization changed original tracked files")
-            result["A_direct_original_adr_access"] = (
-                "docs/adr/0180-jira-and-salesforce-csv-exports-neutralise-formula-cells.md"
-            )
+            # The control source file is present and hashed, but no baseline
+            # Agent lookup has been run. Never relabel availability as recall.
+            result["A_original_adr_source"] = {
+                "path": (
+                    "docs/adr/0180-jira-and-salesforce-csv-exports-neutralise-formula-cells.md"
+                ),
+                "original_git_blob_verified": True,
+                "autonomous_decision_retrieval_performed": False,
+            }
             result["stage"] = "pre-edit-expected-RED"
             result["pre_edit_red"] = {
                 "A": stream_check(a, expected_red=True),
