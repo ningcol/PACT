@@ -84,11 +84,42 @@ jobs:
     needs:
       - portability
     runs-on: ubuntu-latest
+    # Configure required reviewers for this protected Environment in GitHub
+    # Settings. An unconfigured environment cannot bypass the explicit
+    # fail-closed GO and exact-commit evidence gates below.
+    environment: pact-release-approval
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fail closed until independently authorized Owner/Agent release gates
+        env:
+          PACT_RELEASE_GO: ${{ vars.PACT_RELEASE_GO }}
+          PACT_RELEASE_APPROVED_SHA: ${{ vars.PACT_RELEASE_APPROVED_SHA }}
+          PACT_AGENT_OWNER_GATES_APPROVED: ${{ vars.PACT_AGENT_OWNER_GATES_APPROVED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          test "$TAG_SHA" = "$MAIN_SHA" || {
+            echo "Release HOLD: tag must identify the currently reviewed main HEAD"
+            exit 1
+          }
+          test "${PACT_RELEASE_GO:-}" = "GO" || {
+            echo "Release HOLD: missing explicit protected-environment GO"
+            exit 1
+          }
+          test "${PACT_AGENT_OWNER_GATES_APPROVED:-}" = "true" || {
+            echo "Release HOLD: real Agent/Owner acceptance is not approved"
+            exit 1
+          }
+          test "${PACT_RELEASE_APPROVED_SHA:-}" = "$TAG_SHA" || {
+            echo "Release HOLD: explicit approval must bind the exact tag commit"
+            exit 1
+          }
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
