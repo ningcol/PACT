@@ -121,6 +121,74 @@ def review(
                 else:
                     required_by_path[path] = item
 
+    # Opt-in nonfunctional mode skips weak lexical Decision bodies, not
+    # responsibility to consider previously recorded Owner decisions.
+    # Otherwise task finish could treat an uninspected Decision as absent.
+    # Apply source binding and explicit Convergence semantics as Domain-first.
+    # Overflow must fail closed rather than certify a capped visible subset.
+    deferred_decision_paths: set[str] = set()
+    deferred = context.get("nonfunctional_decision_hints")
+    if deferred is not None:
+        items = deferred.get("candidates") if isinstance(deferred, dict) else None
+        total = deferred.get("total_candidates") if isinstance(deferred, dict) else None
+        truncated = (
+            deferred.get("truncated_candidates")
+            if isinstance(deferred, dict) else None
+        )
+        if (
+            not isinstance(items, list)
+            or type(total) is not int
+            or type(truncated) is not int
+            or total < 0 or truncated < 0
+            or truncated > 0
+            or total != len(items)
+            or len(items) > 5
+        ):
+            errors.append(
+                "Nonfunctional Context has unlisted or inconsistent Decision "
+                "candidates; rerun without --nonfunctional and review complete "
+                "Decision sources before finishing"
+            )
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    errors.append("Nonfunctional Decision hint is malformed")
+                    continue
+                path, digest, ident = (
+                    item.get("path"), item.get("sha256"), item.get("id")
+                )
+                if (
+                    not isinstance(path, str) or not path
+                    or not isinstance(ident, str)
+                    or not ident.startswith("DEC-")
+                    or not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(ch not in "0123456789abcdef" for ch in digest)
+                ):
+                    errors.append(
+                        "Nonfunctional Decision hint lacks valid source/authority binding"
+                    )
+                    continue
+                if path in deferred_decision_paths:
+                    errors.append(
+                        f"duplicate nonfunctional Decision source {path!r}"
+                    )
+                    continue
+                deferred_decision_paths.add(path)
+                if path in required_by_path:
+                    original = required_by_path[path]
+                    if (
+                        original.get("sha256") != digest
+                        or original.get("id") != ident
+                        or original.get("artifact_type") != "decision"
+                    ):
+                        errors.append(
+                            "Nonfunctional Decision hint conflicts with selected "
+                            f"Task Context source: {path!r}"
+                        )
+                else:
+                    required_by_path[path] = item
+
     coverage_by_path: dict[str, dict] = {}
     duplicate_paths: list[str] = []
     unknown_paths: list[str] = []
@@ -180,6 +248,7 @@ def review(
                 kind = (
                     "Routed Decision/Rule" if path in routed_authority_paths
                     else "Routed Domain" if path in routed_domain_paths
+                    else "Deferred Decision" if path in deferred_decision_paths
                     else "Task Context knowledge"
                 )
                 errors.append(
@@ -244,6 +313,7 @@ def review(
         "context_sha256": current_context_sha256,
         "required_artifacts": len(required_by_path),
         "routed_authority_paths": sorted(routed_authority_paths),
+        "deferred_decision_paths": sorted(deferred_decision_paths),
         "covered_artifacts": len(
             set(required_by_path).intersection(coverage_by_path)
         ),
