@@ -31,7 +31,7 @@ class NonfunctionalCandidateTests(unittest.TestCase):
         weak = self.hit("DEC-WEAK", ["body contains query"])
         exact_id = self.hit("DEC-ID", ["exact stable id"])
         exact_title = self.hit("DEC-TITLE", ["embedded exact title"])
-        exact_alias = self.hit("DEC-ALIAS", ["matched query: owner: exact alias"])
+        exact_alias = self.hit("DEC-ALIAS", ["secondary: exact alias"])
         fake_reason = self.hit("DEC-QUERY-SPOOF", ["matched query: exact stable id"])
         rule = self.hit("RULE-SAFE", ["body contains query"], kind="rule")
         document = self.hit("NONE", ["body contains query"], kind="document")
@@ -153,10 +153,6 @@ class InstalledNonfunctionalContextTests(unittest.TestCase):
             "rerun WITHOUT --nonfunctional" in warning
             for warning in packet["known_unknowns"]
         ))
-        self.assertTrue(any(
-            "Decision" in d["artifact_type"] or False
-            for d in []
-        ) is False)
         # No unmaterialized Decision may claim verification or authority.
         self.assertNotIn(
             "DEC-LOCAL-ISOLATION",
