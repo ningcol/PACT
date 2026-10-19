@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import os
 import pathlib
-import stat
 import tempfile
 import time
 import zipfile
@@ -134,15 +133,10 @@ def build_runtime_bundle(
                     .encode("utf-8"),
                 )
 
-        # mkstemp creates 0600 staging files. Preserve source-granted
-        # group/world *read* permissions (typically 0644), but never widen
-        # public visibility beyond the known source's own permissions.
-        # Restores the original ZipFile-built runtime's readable install mode.
-        if os.name != "nt":
-            source_mode = stat.S_IMODE(
-                (source_root / RUNTIME_DIR / "pact.py").stat().st_mode
-            )
-            os.chmod(temporary, 0o600 | (source_mode & 0o044))
+        # Keep mkstemp's restrictive creation mode. Chmod'ing 0644 based
+        # only on the source's permissions would override a caller's umask
+        # (such as 077) and expose an adopted runtime to other OS users.
+        # An administrator can explicitly grant wider access after install.
         _publish_runtime(temporary, output)
     finally:
         if temporary.exists():
