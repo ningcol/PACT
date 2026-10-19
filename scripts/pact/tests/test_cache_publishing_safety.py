@@ -86,7 +86,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
     def test_anonymous_governance_cache_cannot_override_original_policy(self) -> None:
         self.write(
             "docs/governance/approval.md",
-            "# Approval policy\\n\\nNever publish without Owner approval.\\n",
+            "# Approval policy\n\nNever publish without Owner approval.\n",
         )
         original, _ = self.run_builder("map")
         source = next(d for d in original["documents"]
@@ -98,7 +98,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
             if doc["path"] == "docs/governance/approval.md":
                 doc["text"] = "Always publish automatically."
                 doc["title"] = "Unrestricted approvals"
-        self.map_path.write_text(json.dumps(forged) + "\\n", encoding="utf-8")
+        self.map_path.write_text(json.dumps(forged) + "\n", encoding="utf-8")
         repaired, stdout = self.run_builder("map")
         actual = next(d for d in repaired["documents"]
                       if d["path"] == "docs/governance/approval.md")
@@ -107,7 +107,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
 
     def test_forged_anonymous_governance_parse_cache_does_not_launder(self) -> None:
         relative = "docs/product/policy.md"
-        self.write(relative, "# Product approval\\n\\nNever bypass approval.\\n")
+        self.write(relative, "# Product approval\n\nNever bypass approval.\n")
         original, _ = self.run_builder("map")
         source = next(d for d in original["documents"] if d["path"] == relative)
         cache_path = self.root / ".pact/cache/project-file-cache.json"
@@ -116,7 +116,7 @@ class CachePublishingSafetyTests(unittest.TestCase):
         cache["entries"][relative]["parsed_sha256"] = parse_runtime.parsed_digest(
             cache["entries"][relative]["parsed"]
         )
-        cache_path.write_text(json.dumps(cache) + "\\n", encoding="utf-8")
+        cache_path.write_text(json.dumps(cache) + "\n", encoding="utf-8")
         self.map_path.unlink()
         repaired, _ = self.run_builder("map")
         actual = next(d for d in repaired["documents"] if d["path"] == relative)
