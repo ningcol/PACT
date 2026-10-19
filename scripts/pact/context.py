@@ -684,13 +684,21 @@ def main() -> int:
         if can_restrict:
             home = scope_route["domains"][0]
             known_paths = all_candidate_paths
-            # Explicit, metadata-backed title/alias/ID hits stay selectable;
-            # merely sharing a Domain is NOT sufficient to assert a rule.
+            # A source-scored exact Decision explicitly named in the task
+            # must survive even if it belongs to ANOTHER Domain. Preserve it
+            # as a review candidate, never as asserted applicable authority.
+            cross_domain_exact = [
+                item for item in candidate_results
+                if item.get("artifact_type") == "decision"
+                and item.get("path") not in known_paths
+                and exact_match_priority(item.get("reasons", [])) > 0
+            ]
             grounded = [
                 item for item in candidate_results
                 if item.get("path") == home["path"] or (
                     (item.get("path") in known_paths
-                     or item.get("id") in required_rules)
+                     or item.get("id") in required_rules
+                     or item in cross_domain_exact)
                     and exact_match_priority(item.get("reasons", [])) > 0
                 )
             ]
@@ -817,6 +825,13 @@ def main() -> int:
     unknowns: list[str] = governance_path_hints()
     unknowns.extend(nearby_readme_hints(code_results))
     if scope_route is not None:
+        if scope_route.get("restricted_selection") and cross_domain_exact:
+            unknowns.append(
+                "An explicitly identified cross-Domain Decision was retained as "
+                "a candidate, NOT automatically applicable authority: "
+                + ", ".join(sorted(str(item["path"]) for item in cross_domain_exact))
+                + ". Verify its premises and Owner scope before changing behavior."
+            )
         if scope_route["status"] != "unique":
             unknowns.append(
                 "Domain routing was not unique; baseline lexical Context was retained. "
