@@ -148,6 +148,11 @@ def _ensure_clean_gitlinks(root: pathlib.Path, seen: set[pathlib.Path] | None = 
         raise WorkspaceError(f"repeated Git submodule worktree: {root}")
     seen.add(root)
 
+    # Git status and diff can hide edits in *any* nested worktree when
+    # assume-unchanged or skip-worktree is set. Checking only the parent
+    # index does not authenticate tracked files inside its gitlinks.
+    _require_visible_git_index(root)
+
     for relative, expected_sha in _git_index_gitlinks(root).items():
         child = root / relative
         if child.is_symlink() or not child.is_dir():
@@ -275,7 +280,6 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
 
     installed_exclusions = discovery_excluded_paths(root)
     _ensure_clean_gitlinks(root)
-    _require_visible_git_index(root)
 
     try:
         head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
@@ -597,7 +601,6 @@ def task_workspace_baseline(cwd: pathlib.Path) -> dict:
         }
 
     _ensure_clean_gitlinks(root)
-    _require_visible_git_index(root)
     head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
     head = head_result.stdout.strip() if head_result.returncode == 0 else None
     dirty_paths = sorted(_git_changed_paths(root))
@@ -670,7 +673,6 @@ def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
         raise WorkspaceError("prepared task used Git but repository is no longer a Git worktree")
 
     _ensure_clean_gitlinks(root)
-    _require_visible_git_index(root)
     current_head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
     current_head = (
         current_head_result.stdout.strip()
