@@ -82,6 +82,36 @@ class SourceBoundCodeTaskUnitTests(unittest.TestCase):
             self.assertEqual(receipt["returncode"], 0)
             self.assertEqual(receipt["stdout"].strip(), data)
 
+    def test_routine_test_rename_is_only_two_identifier_occurrences(self):
+        original = (
+            'class TestRender:\n'
+            '    def test_csv_quotes_commas_and_newlines(self):\n'
+            '        data = export_files.render(["a"], [["one"]], "csv").decode()\n'
+            '        assert data == "a\\none\\n"\n'
+            '\n'
+            '    def test_followup(self):\n'
+            '        assert True\n'
+        )
+        result = task.routine_patch(original)
+        self.assertEqual(result.count("csv_data"), 2)
+        self.assertIn('assert csv_data == "a', result)
+        self.assertIn("    def test_followup(self):", result)
+        self.assertNotIn("        data =", result)
+        self.assertEqual(task.routine_patch.__name__, "routine_patch")
+        with self.assertRaisesRegex(ValueError, "source local test case anchor"):
+            task.routine_patch(result.replace(
+                "    def test_csv_quotes_commas_and_newlines(self):",
+                "    def test_a_different_method(self):",
+            ))
+        with self.assertRaisesRegex(ValueError, "source test body changed"):
+            task.routine_patch(result)
+
+    def test_routine_task_is_explicitly_low_risk_without_decision_hint(self):
+        self.assertNotIn("DEC-PF-", task.ROUTINE_TASK)
+        self.assertNotIn("docs/adr/", task.ROUTINE_TASK)
+        self.assertNotIn("src/privacyfence/", task.ROUTINE_TASK)
+        self.assertTrue(task.ROUTINE_ID.startswith("TASK-"))
+
     def test_unavailable_real_source_fails_closed_without_success_claim(self):
         with tempfile.TemporaryDirectory(prefix="pact-code-no-upstream-") as td:
             root = pathlib.Path(td)
