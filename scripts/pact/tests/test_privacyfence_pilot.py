@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -298,6 +299,69 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
         self.assertTrue(forged["schema_and_source_errors"])
         self.assertTrue(any("promoted" in e
                             for e in promoted["schema_and_source_errors"]))
+
+
+
+    def test_arm_retains_completed_case_when_later_discover_times_out(self):
+        cards = {
+            "settings":{"risk":"low","intent":"work","knowledge_limit":6,
+                        "estimated_token_budget":4096,"code_context":False},
+            "source_docs":[],
+            "tasks":[
+                {"id":"first","kind":"routine-negative","task":"Fix whitespace"},
+                {"id":"second","kind":"conflict","task":"Change a decision"},
+            ],
+        }
+        def receipt(data,command):
+            return {"returncode":0,"data":data,"command":["pact.py",command],
+                    "stderr":"","elapsed_ms":1}
+        with tempfile.TemporaryDirectory() as td:
+            output=[]
+            in_flight={}
+            with mock.patch.object(pilot.m0,"run_json",side_effect=[
+                receipt({"results":[]},"discover"),
+                receipt({"artifacts":[],"decisions":[]},"context"),
+                subprocess.TimeoutExpired(
+                    cmd=["pact.py","discover","Change a decision"],timeout=90,
+                ),
+            ]):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    pilot.run_arm(
+                        pathlib.Path(td),cards,"B",
+                        result=output,in_flight=in_flight,
+                    )
+        self.assertEqual([x["id"] for x in output],["first"])
+        self.assertEqual(in_flight["id"],"second")
+        self.assertEqual(in_flight["stage"],"discover")
+        self.assertEqual(in_flight["arm"],"B")
+        self.assertEqual(in_flight["command"][0:2],["pact.py","discover"])
+
+    def test_trial_preserves_partial_results_and_failing_command(self):
+        def fail_late(target,cards,label,*,result,in_flight):
+            result.append({"id":"first","kind":"routine-negative",
+                           "schema_and_source_errors":[]})
+            in_flight.update({"arm":label,"id":"second","stage":"context",
+                              "command":["pact.py","context","Change a decision"]})
+            raise subprocess.TimeoutExpired(
+                cmd=["python","pact.py","context","Change a decision"],
+                timeout=90,
+            )
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(pilot,"verify_freeze",return_value={}), \
+                mock.patch.object(pilot.pilot,"install_pact",return_value={}), \
+                mock.patch.object(pilot,"run_arm",side_effect=fail_late):
+            result=pilot.trial(pathlib.Path(td))
+        self.assertEqual(result["engineering_gate"],"FAIL")
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertEqual(result["stage"],"A-unadapted-source")
+        self.assertEqual([x["id"] for x in result["arms"]["A_unadapted"]],
+                         ["first"])
+        self.assertEqual(result["in_flight_probe"]["id"],"second")
+        self.assertEqual(result["in_flight_probe"]["stage"],"context")
+        self.assertEqual(result["timed_out_command"][:3],
+                         ["python","pact.py","context"])
+        self.assertTrue(any("TimeoutExpired" in e
+                            for e in result["integrity_failures"]))
 
 
 if __name__ == "__main__":
