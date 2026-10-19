@@ -1147,6 +1147,19 @@ def main() -> int:
                   file=sys.stderr)
             return 2
 
+    if deferred_decision_hints is not None:
+        # Hints do not confer authority, but a stale source digest would still
+        # mislead navigation. Fail closed on a changed/deleted source.
+        if any(
+            artifact_sha256(hint["path"]) != hint["sha256"]
+            for hint in deferred_decision_hints["candidates"]
+        ):
+            print(
+                "PACT context: deferred Decision source changed before "
+                "Context publication", file=sys.stderr,
+            )
+            return 2
+
     errors = validate(envelope)
     if errors:
         print("PACT context: generated invalid envelope", file=sys.stderr)
