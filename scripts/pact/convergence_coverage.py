@@ -313,7 +313,6 @@ def review(
         "context_sha256": current_context_sha256,
         "required_artifacts": len(required_by_path),
         "routed_authority_paths": sorted(routed_authority_paths),
-        "deferred_decision_paths": sorted(deferred_decision_paths),
         "covered_artifacts": len(
             set(required_by_path).intersection(coverage_by_path)
         ),
@@ -327,4 +326,6 @@ def review(
         "stale_artifacts": sorted(stale_paths),
         "owner_decision_artifacts": sorted(owner_decision_paths),
     }
+    if deferred is not None:
+        stats["deferred_decision_paths"] = sorted(deferred_decision_paths)
     return errors, stats
