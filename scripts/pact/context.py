@@ -74,15 +74,27 @@ def run_discovery(
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "discovery failed")
     if not result.stdout.strip():
-        return {
-            "query": queries[0],
-            "queries": queries,
-            "result_count": 0,
-            "results": [],
-            "code_result_count": 0,
-            "code_results": [],
-        }
-    return json.loads(result.stdout)
+        raise RuntimeError(
+            "discover --json exited 0 without a response; "
+            "refuse to infer that no Decision/Rule exists"
+        )
+    data = json.loads(result.stdout)
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("results"), list)
+        or not isinstance(data.get("code_results"), list)
+        or any(not isinstance(row, dict) for row in data["results"])
+        or any(not isinstance(row, dict) for row in data["code_results"])
+        or ("result_count" in data
+            and data["result_count"] != len(data["results"]))
+        or ("code_result_count" in data
+            and data["code_result_count"] != len(data["code_results"]))
+    ):
+        raise RuntimeError(
+            "discover --json returned malformed/inconsistent results; "
+            "refuse to prepare an empty or partial Context"
+        )
+    return data
 
 
 def validate(envelope: dict) -> list[str]:
