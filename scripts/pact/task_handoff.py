@@ -168,8 +168,11 @@ def _read_handoff(path: pathlib.Path, task_id: str) -> dict:
 def checkpoint(args) -> int:
     try:
         manifest, _, bundle = _prepared(args.task_id)
-        with _exclusive_bundle(bundle):
-            manifest, _, _ = _prepared(args.task_id)
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+            manifest, _, checked_bundle = _prepared(args.task_id)
+            if checked_bundle != bundle:
+                raise ValueError("completion bundle changed before checkpoint lock")
             folder, _ = _task_dir_manifest(args.task_id)
             evidence = _existing_evidence(bundle / "evidence.json", manifest)
             decision_refs, run_refs, claim_ids = _validated_checkpoint_refs(
