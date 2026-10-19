@@ -83,6 +83,56 @@ class CachePublishingSafetyTests(unittest.TestCase):
         ):
             return module.main()
 
+    def test_forged_decision_cache_cannot_promote_rejected_authority(self) -> None:
+        authority = self.write(
+            ".agents/decisions/rejected/denied.md",
+            '+++\n[pact]\ntype = "decision"\n'
+            'id = "DEC-CACHE-DENIED"\nstatus = "rejected"\n'
+            '+++\n# Denied authorization\n\nWe rejected this proposal.\n',
+        )
+        pristine, _ = self.run_builder("map")
+        target = next(d for d in pristine["documents"]
+                      if d.get("id") == "DEC-CACHE-DENIED")
+        self.assertEqual(target["status"], "rejected")
+        bad = copy.deepcopy(pristine)
+        for d in bad["documents"]:
+            if d.get("id") == "DEC-CACHE-DENIED":
+                d["status"] = "implemented"
+                d["title"] = "Approved authorization"
+                d["text"] = "This is approved normative Product Truth."
+        self.map_path.write_text(json.dumps(bad), encoding="utf-8")
+        recovered, output = self.run_builder("map")
+        repaired = next(d for d in recovered["documents"]
+                        if d.get("id") == "DEC-CACHE-DENIED")
+        self.assertEqual(repaired, target)
+        self.assertNotIn("fresh ->", output)
+        self.assertEqual(authority.read_bytes(),
+                         (self.root / ".agents/decisions/rejected/denied.md").read_bytes())
+
+    def test_forged_parse_cache_cannot_override_source_on_map_rebuild(self) -> None:
+        self.write(
+            ".agents/decisions/rejected/denied.md",
+            '+++\n[pact]\ntype = "decision"\n'
+            'id = "DEC-PARSE-DENIED"\nstatus = "rejected"\n'
+            '+++\n# Denied parse-cache rule\n',
+        )
+        original, _ = self.run_builder("map")
+        cache_path = self.root / ".pact/cache/project-file-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        relative = ".agents/decisions/rejected/denied.md"
+        cache["entries"][relative]["parsed"]["status"] = "implemented"
+        cache["entries"][relative]["parsed_sha256"] = parse_runtime.parsed_digest(
+            cache["entries"][relative]["parsed"]
+        )
+        cache_path.write_text(json.dumps(cache), encoding="utf-8")
+        # Force the map builder to consume even a validly-checksummed,
+        # deliberately forged parsed result rather than trusting prior map.
+        self.map_path.unlink()
+        fixed, _ = self.run_builder("map")
+        result = next(d for d in fixed["documents"]
+                      if d.get("id") == "DEC-PARSE-DENIED")
+        self.assertEqual(result["status"], "rejected")
+
     def test_project_map_missing_documents_rebuilds_not_fresh(self) -> None:
         original, _ = self.run_builder("map")
         damaged = copy.deepcopy(original)
