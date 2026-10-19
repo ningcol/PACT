@@ -39,6 +39,11 @@ class GitHubActionsAgentPreflightTests(unittest.TestCase):
                 ["git", "add", "--", "README.md"], cwd=root,
                 check=True, capture_output=True, timeout=10,
             )
+            subprocess.run(
+                ["git", "-c", "user.email=ci@example.invalid",
+                 "-c", "user.name=Preflight Test", "commit", "-qm", "pin"],
+                cwd=root, check=True, capture_output=True, timeout=10,
+            )
             initial = runner.tracked_source(root)
             digest = runner.manifest_digest(initial)
             self.assertEqual(list(initial), ["README.md"])
