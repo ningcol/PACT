@@ -182,6 +182,12 @@ def _diagnose(
                 "without --scope-first before task assist can draft acceptance"
             )
     effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
+    if (not task_change.get("supported")
+            and manifest.get("risk_level") in {"medium", "high"}):
+        effective_policy_gaps.append(
+            "No reliable Git changed-file attribution for medium/high-risk "
+            "task; task finish cannot claim complete change coverage"
+        )
     passing_claims = [
         claim for claim in evidence["claims"]
         if claim.get("required") and claim.get("status") == "pass"
