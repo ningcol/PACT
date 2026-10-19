@@ -378,6 +378,8 @@ def inspect_proposed_context(
         errors.extend(validate_instance(envelope, SCHEMA))
 
     by_id = {doc["id"]: doc for doc in cards["source_docs"]}
+    proposed_source = by_id.get("DEC-PF-0005")
+    observed_proposed = False
     artifacts = envelope.get("artifacts")
     if not isinstance(artifacts, list):
         errors.append("proposed-ADR Context missing selected artifact array")
@@ -390,12 +392,21 @@ def inspect_proposed_context(
             if not isinstance(path, str):
                 errors.append("proposed-ADR Context artifact lacks source path")
                 continue
+            digest_verified = False
             try:
                 source = safe_source(target, path)
-                if item.get("sha256") != m0.digest_file(source):
+                digest_verified = item.get("sha256") == m0.digest_file(source)
+                if not digest_verified:
                     errors.append(f"proposed-ADR Context source digest invalid: {path}")
             except (ValueError, OSError) as exc:
                 errors.append(f"proposed-ADR Context source invalid: {path}: {exc}")
+            if (proposed_source is not None
+                    and proposed_source.get("status") == "proposed"
+                    and ident == "DEC-PF-0005"
+                    and item.get("artifact_type") == "decision"
+                    and path == target_path(proposed_source)
+                    and digest_verified):
+                observed_proposed = True
             if ident is not None:
                 pinned = by_id.get(ident)
                 if (pinned is None or target_path(pinned) != path
@@ -403,6 +414,11 @@ def inspect_proposed_context(
                     errors.append(
                         f"proposed-ADR Context has unbound Decision source: {ident!r}"
                     )
+    if not observed_proposed:
+        errors.append(
+            "exact-ID proposed-ADR lookup did not materialize a "
+            "source-verified DEC-PF-0005 proposed artifact"
+        )
     if envelope.get("decisions") != []:
         errors.append(
             "proposed-ADR lookup promoted a non-implemented Decision "
@@ -451,6 +467,7 @@ def trial(target: pathlib.Path) -> dict:
             "context", "DEC-PF-0005", "--success",
             "Do not promote a proposed source ADR into a current decision",
             "--risk","low","--intent","history","--no-code","--limit","6",
+            "--token-budget","0",
         ])
         report["proposed_lookup"] = inspect_proposed_context(
             target, cards, proposed,
