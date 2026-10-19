@@ -169,9 +169,13 @@ def project_sources(target: pathlib.Path, cards: dict) -> dict[str, str]:
     return dict(sorted(result.items()))
 
 
-def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
+def run_arm(
+    target: pathlib.Path, cards: dict, label: str,
+    *, result: list[dict] | None = None, in_flight: dict | None = None,
+) -> list[dict]:
+    """Append receipts as each case finishes so an interrupted arm is auditable."""
     s = cards["settings"]
-    output = []
+    output = result if result is not None else []
     for case in cards["tasks"]:
         task = case["task"]
         d_args = [
@@ -184,7 +188,19 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
             "--no-code", "--limit", str(s["knowledge_limit"]),
             "--token-budget", str(s["estimated_token_budget"]),
         ]
+        if in_flight is not None:
+            in_flight.clear()
+            in_flight.update({
+                "arm": label, "id": case["id"], "stage": "discover",
+                "command": ["pact.py", *d_args],
+            })
         discover = m0.run_json(target, d_args)
+        if in_flight is not None:
+            in_flight.update({
+                "stage": "context", "command": ["pact.py", *c_args],
+                "discovery_returncode": discover.get("returncode"),
+                "discovery_ms": discover.get("elapsed_ms"),
+            })
         context = m0.run_json(target, c_args)
         d = discover.get("data") if isinstance(discover.get("data"), dict) else {}
         e = context.get("data") if isinstance(context.get("data"), dict) else {}
@@ -293,6 +309,8 @@ def run_arm(target: pathlib.Path, cards: dict, label: str) -> list[dict]:
             "budget":e.get("context_budget", {}),
             "schema_and_source_errors":errs,
         })
+        if in_flight is not None:
+            in_flight.clear()
     return output
 
 
@@ -448,7 +466,13 @@ def trial(target: pathlib.Path) -> dict:
         report["stage"] = "install-source-identical-PACT"
         report["install"] = pilot.install_pact(target)
         report["stage"] = "A-unadapted-source"
-        report["arms"]["A_unadapted"] = run_arm(target, cards, "A_unadapted")
+        report["arms"]["A_unadapted"] = []
+        report["in_flight_probe"] = {}
+        run_arm(
+            target, cards, "A_unadapted",
+            result=report["arms"]["A_unadapted"],
+            in_flight=report["in_flight_probe"],
+        )
         report["stage"] = "B-project-source-projections"
         report["projected_source_sha256"] = project_sources(target,cards)
         report["stage"] = "verify-pact-check"
@@ -461,7 +485,13 @@ def trial(target: pathlib.Path) -> dict:
             "stdout":check.stdout[:2500], "stderr":check.stderr[:2500],
         }
         report["stage"] = "B-projected-source"
-        report["arms"]["B_source_projection"] = run_arm(target,cards,"B_source_projection")
+        report["arms"]["B_source_projection"] = []
+        report["in_flight_probe"] = {}
+        run_arm(
+            target, cards, "B_source_projection",
+            result=report["arms"]["B_source_projection"],
+            in_flight=report["in_flight_probe"],
+        )
         report["stage"] = "verify-proposed-status"
         proposed = m0.run_json(target,[
             "context", "DEC-PF-0005", "--success",
@@ -512,6 +542,12 @@ def trial(target: pathlib.Path) -> dict:
         report["stage"]="done"
     except Exception as exc:
         report["integrity_failures"].append(f"{type(exc).__name__}: {exc}")
+        if isinstance(exc, subprocess.TimeoutExpired):
+            command = exc.cmd
+            report["timed_out_command"] = (
+                [str(part) for part in command]
+                if isinstance(command, (list, tuple)) else str(command)
+            )
         report["exception_traceback"] = traceback.format_exc(limit=8)
         report["engineering_gate"]="FAIL"
     return report
