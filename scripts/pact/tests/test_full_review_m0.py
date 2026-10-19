@@ -50,6 +50,83 @@ class FullReviewM0Tests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         self.query()
 
+    def test_partial_source_rows_cannot_silently_disappear(self):
+        valid = {
+            "path": ".agents/decisions/implemented/owner.md",
+            "score": 180,
+            "reasons": ["exact stable id"],
+            "id": "DEC-OWNER",
+            "artifact_type": "decision",
+            "status": "implemented",
+            "title": "Owner approval",
+            "mixed_authority": False,
+            "domains": [],
+            "related": [],
+            "verification": [],
+        }
+        for bad in (
+            {},
+            {"path": "", "score": 12},
+            {key: value for key, value in valid.items() if key != "path"},
+            {key: value for key, value in valid.items() if key != "status"},
+            {**valid, "score": "500"},
+            {**valid, "reasons": None},
+            {**valid, "domains": "DOMAIN-AUTH"},
+        ):
+            with self.subTest(bad=bad):
+                payload = {
+                    "results": [bad], "result_count": 1,
+                    "code_results": [], "code_result_count": 0,
+                }
+                fake = subprocess.CompletedProcess(
+                    ["pact.py", "discover"], 0,
+                    stdout=json.dumps(payload), stderr="",
+                )
+                with mock.patch.object(pact_context.subprocess, "run",
+                                       return_value=fake):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "malformed/inconsistent results"
+                    ):
+                        self.query()
+
+    def test_invalid_code_row_cannot_silently_disappear(self):
+        payload = {
+            "results": [], "result_count": 0,
+            "code_results": [{"language": "python", "is_test": False,
+                              "symbols": [], "score": 50,
+                              "reasons": ["exact symbol"]}],
+            "code_result_count": 1,
+        }
+        fake = subprocess.CompletedProcess(
+            ["pact.py", "discover"], 0,
+            stdout=json.dumps(payload), stderr="",
+        )
+        with mock.patch.object(pact_context.subprocess, "run",
+                               return_value=fake):
+            with self.assertRaisesRegex(RuntimeError, "malformed/inconsistent"):
+                self.query()
+
+    def test_source_bound_complete_discover_row_remains_valid(self):
+        item = {
+            "path": ".agents/decisions/implemented/owner.md",
+            "score": 180,
+            "reasons": ["exact stable id"], "id": "DEC-OWNER",
+            "artifact_type": "decision", "status": "implemented",
+            "title": "Owner approval", "mixed_authority": False,
+            "domains": [], "related": [], "verification": [],
+        }
+        payload = {
+            "results": [item], "result_count": 1,
+            "code_results": [], "code_result_count": 0,
+        }
+        fake = subprocess.CompletedProcess(
+            ["pact.py", "discover"], 0,
+            stdout=json.dumps(payload), stderr="",
+        )
+        with mock.patch.object(pact_context.subprocess, "run",
+                               return_value=fake):
+            self.assertEqual(self.query(), payload)
+
     def test_genuine_empty_json_is_valid(self):
         expected = {
             "query": "Is the existing Decision still binding?",
