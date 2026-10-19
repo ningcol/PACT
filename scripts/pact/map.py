@@ -174,31 +174,19 @@ def valid_project_index(index: dict, *, expected_paths: set[str]) -> bool:
     return observed_paths == expected_paths and by_id == expected_id_map
 
 
-def _authoritative_document(path: str, document: dict) -> bool:
-    """Never derive live Product Truth from an unauthenticated parse cache."""
-    return (
-        path.startswith(("docs/product/domains/", "docs/product/rules/",
-                         ".agents/decisions/"))
-        or document.get("artifact_type") in {"domain", "rule", "decision"}
-        or bool(document.get("id"))
-    )
-
-
-def source_bound_authorities(
+def source_bound_documents(
     index: dict, root: pathlib.Path, *, expected_paths: set[str],
 ) -> bool:
-    """Validate cached authoritative metadata against original Markdown bytes.
+    """All indexed content must match source, even anonymous governance docs.
 
-    A matching whole-source fingerprint authenticates the *files*, not a
-    mutable JSON map; a cache writer can alter status/aliases/text without
-    altering the source. Read only authority-bearing homes on every cache hit.
+    Authority cannot be classified safely from an untrusted cache record:
+    a forged record can impersonate a generic document or hide its ID/type.
+    A matching source fingerprint checks only *file bytes*, not cache text.
     """
     if not valid_project_index(index, expected_paths=expected_paths):
         return False
     for document in index["documents"]:
         relative = document["path"]
-        if not _authoritative_document(relative, document):
-            continue
         path = root / relative
         if path.is_symlink() or not path.is_file():
             return False
@@ -238,7 +226,7 @@ def main() -> int:
                 output,
                 format_version=FORMAT_VERSION,
                 source_fingerprint=source_fingerprint,
-                validator=lambda data: source_bound_authorities(
+                validator=lambda data: source_bound_documents(
                     data, root, expected_paths=expected_paths
                 ),
             )
@@ -253,14 +241,11 @@ def main() -> int:
                 )
                 if set(parsed) != expected_paths:
                     raise OSError("source set changed while parsing")
-                # The per-file parse cache is also disposable/untrusted. A
-                # recomputed cache checksum does not prove the parsed authority
-                # is equal to its original Markdown; repair from source.
+                # Recomputed per-file cache digests are not authentication.
+                # Reparse every indexed Markdown, including ID-less governance
+                # docs, so a demoted/forged cached authority is never published.
                 for relative in sorted(parsed):
-                    if not _authoritative_document(relative, parsed[relative]):
-                        continue
-                    source = root / relative
-                    canonical = parse_document(source, root)
+                    canonical = parse_document(root / relative, root)
                     if canonical != parsed[relative]:
                         parsed[relative] = canonical
             updated_paths, updated_mode = source_paths(root)
