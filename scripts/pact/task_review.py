@@ -181,13 +181,14 @@ def _diagnose(
                 "candidates; review the complete Domain sources and reprepare "
                 "without --scope-first before task assist can draft acceptance"
             )
+    # Mechanical Owner drafts are still partial, editable work, NOT a
+    # completion gate. Keep historical assist diagnostics usable in non-Git
+    # projects, while clearly reporting the hard finish blocker separately.
+    finish_blocked_by_non_git = (
+        not task_change.get("supported")
+        and manifest.get("risk_level") in {"medium", "high"}
+    )
     effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
-    if (not task_change.get("supported")
-            and manifest.get("risk_level") in {"medium", "high"}):
-        effective_policy_gaps.append(
-            "No reliable Git changed-file attribution for medium/high-risk "
-            "task; task finish cannot claim complete change coverage"
-        )
     passing_claims = [
         claim for claim in evidence["claims"]
         if claim.get("required") and claim.get("status") == "pass"
@@ -370,6 +371,7 @@ def _diagnose(
         "missing_scoped_domain_artifacts": missing_scoped_domain_artifacts,
         "missing_change_coverage": missed_changes,
         "change_attribution_supported": bool(task_change.get("supported")),
+        "finish_blocked_by_unsupported_change_attribution": finish_blocked_by_non_git,
         "change_attribution_unknown": task_change.get("reason")
             if not task_change.get("supported") else None,
         "owner_acceptance_unreported": unreported,
