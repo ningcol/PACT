@@ -59,6 +59,11 @@ class PrivacyFenceExplicitModeScoringTests(unittest.TestCase):
         opt.append(row("different-case", mode="opt", decisions=[], tokens=100))
         with self.assertRaisesRegex(ValueError, "mismatched"):
             probe.paired_metrics(base, opt)
+        opt.pop()
+        opt.append(row("test-variable", mode="opt", decisions=[], tokens=100))
+        opt.append(row("test-variable", mode="opt", decisions=[], tokens=100))
+        with self.assertRaisesRegex(ValueError, "mismatched"):
+            probe.paired_metrics(base, opt)
 
 
 if __name__ == "__main__":
