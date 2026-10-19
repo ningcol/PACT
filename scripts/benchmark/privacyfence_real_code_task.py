@@ -170,14 +170,15 @@ def change_only_agreed_file(arm: pathlib.Path, before: dict[str, str]) -> str:
 
 
 def run_step(args: list[str], *, cwd: pathlib.Path, timeout: int = 160,
-             env: dict[str, str] | None = None) -> dict[str, Any]:
+             env: dict[str, str] | None = None,
+             stdout_limit: int = 6500) -> dict[str, Any]:
     proc = subprocess.run(
         args, cwd=cwd, env=env, capture_output=True, text=True,
         timeout=timeout, check=False,
     )
     return {
         "returncode": proc.returncode,
-        "stdout": proc.stdout[-6500:],
+        "stdout": proc.stdout[-stdout_limit:],
         "stderr": proc.stderr[-3500:],
     }
 
@@ -297,7 +298,7 @@ def source_verified_context(arm: pathlib.Path) -> dict:
         "--risk", "medium", "--intent", "work", "--no-code",
         "--limit", "8", "--token-budget", "8192",
     ]
-    query = run_step(arguments, cwd=arm, timeout=200)
+    query = run_step(arguments, cwd=arm, timeout=200, stdout_limit=250000)
     if query["returncode"] != 0:
         raise ValueError("installed PACT Context failed: " + str(query)[:1400])
     envelope = json.loads(query["stdout"])
