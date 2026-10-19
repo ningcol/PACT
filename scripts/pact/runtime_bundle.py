@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import pathlib
+import tempfile
+import time
 import zipfile
 
 
@@ -39,6 +42,34 @@ def _write_entry(
     archive.writestr(info, content)
 
 
+WINDOWS_RUNTIME_REPLACE_RETRIES = 15
+WINDOWS_RUNTIME_RETRY_BASE_SECONDS = 0.01
+
+
+def _retryable_windows_runtime_replace(error: OSError) -> bool:
+    """Only transient Windows sharing denials merit a bounded retry."""
+    return (
+        os.name == "nt"
+        and isinstance(error, PermissionError)
+        and getattr(error, "winerror", None) in {5, 32}
+    )
+
+
+def _publish_runtime(temporary: pathlib.Path, output: pathlib.Path) -> None:
+    """Atomically replace complete ZIP under short-lived Windows sharing locks."""
+    for attempt in range(WINDOWS_RUNTIME_REPLACE_RETRIES):
+        try:
+            os.replace(temporary, output)
+            return
+        except OSError as exc:
+            if (
+                attempt + 1 >= WINDOWS_RUNTIME_REPLACE_RETRIES
+                or not _retryable_windows_runtime_replace(exc)
+            ):
+                raise
+            time.sleep(WINDOWS_RUNTIME_RETRY_BASE_SECONDS * (attempt + 1))
+
+
 def build_runtime_bundle(
     source_root: pathlib.Path,
     output: pathlib.Path,
@@ -52,9 +83,15 @@ def build_runtime_bundle(
 
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.tmp")
-    if temporary.exists():
-        temporary.unlink()
+    # Concurrent source installs/upgrades can both need a compact runtime.
+    # Never share or unlink another build's staged ZIP filename.
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.pact-runtime-",
+        suffix=".tmp",
+        dir=output.parent,
+    )
+    os.close(fd)
+    temporary = pathlib.Path(temporary_name)
 
     try:
         with zipfile.ZipFile(
@@ -96,7 +133,11 @@ def build_runtime_bundle(
                     .encode("utf-8"),
                 )
 
-        temporary.replace(output)
+        # Keep mkstemp's restrictive creation mode. Chmod'ing 0644 based
+        # only on the source's permissions would override a caller's umask
+        # (such as 077) and expose an adopted runtime to other OS users.
+        # An administrator can explicitly grant wider access after install.
+        _publish_runtime(temporary, output)
     finally:
         if temporary.exists():
             temporary.unlink()

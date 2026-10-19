@@ -193,7 +193,13 @@ def _write_new_json(path: pathlib.Path, data: dict) -> bool:
 def draft(args) -> int:
     try:
         manifest, _, bundle = _prepared(args.task_id)
-        with _exclusive_bundle(bundle):
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        # Task finish holds this primary per-task lock. Acquire it first,
+        # then retain the legacy bundle lock for other compatible writers.
+        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+            manifest, _, checked_bundle = _prepared(args.task_id)
+            if checked_bundle != bundle:
+                raise ValueError("completion bundle changed before draft lock")
             evidence_path = bundle / "evidence.json"
             # Existing Evidence is never clobbered, and invalid Evidence is
             # not silently treated as an absent source.
@@ -344,7 +350,15 @@ def verify(args) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = run_dir / f"verify-{uuid.uuid4().hex}.json"
 
-        with _exclusive_bundle(bundle):
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+            # A verifier started before finish must not append claims to
+            # already-completed Evidence after waiting for the primary lock.
+            manifest, contract, checked_bundle = _prepared(args.task_id)
+            if checked_bundle != bundle:
+                raise ValueError("completion bundle changed before verify lock")
+            if not set(criteria) <= {item["id"] for item in contract["acceptance_criteria"]}:
+                raise ValueError("Task Contract criteria changed before verify lock")
             evidence_path = bundle / "evidence.json"
             data = _existing_evidence(evidence_path, manifest)
             used_ids = {item["id"] for item in data["claims"]}

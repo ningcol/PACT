@@ -565,6 +565,20 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(context["context_budget"]["limit_tokens"], 1234)
 
     def test_task_prepare_and_finish_happy_path(self) -> None:
+        # A medium-risk task must have Git-backed changed-file attribution.
+        for git_args in (
+            ("init", "-q"),
+            ("config", "user.email", "pact-test@example.invalid"),
+            ("config", "user.name", "PACT Test"),
+            ("add", "-A"),
+            ("commit", "-qm", "prepared baseline"),
+        ):
+            result = subprocess.run(
+                ["git", *git_args], cwd=self.root,
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
         task_id = "TASK-HAPPY"
         prepared = self.pact(
             "task",
@@ -727,11 +741,8 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertTrue(finish_data["complete"])
         self.assertEqual(finish_data["acceptance"]["total"], 3)
         self.assertEqual(finish_data["acceptance"]["owner_report_covered"], 3)
-        self.assertEqual(len(finish_data["trust_warnings"]), 1)
-        self.assertIn(
-            "Exact task changed-file attribution is unavailable",
-            finish_data["trust_warnings"][0],
-        )
+        self.assertEqual(finish_data["trust_warnings"], [])
+        self.assertTrue(finish_data["task_change"]["supported"])
 
         final_status = self.pact("task", "status", task_id, "--json")
         self.assertEqual(final_status.returncode, 0, final_status.stdout + final_status.stderr)

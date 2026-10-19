@@ -148,6 +148,11 @@ def _ensure_clean_gitlinks(root: pathlib.Path, seen: set[pathlib.Path] | None = 
         raise WorkspaceError(f"repeated Git submodule worktree: {root}")
     seen.add(root)
 
+    # Git status and diff can hide edits in *any* nested worktree when
+    # assume-unchanged or skip-worktree is set. Checking only the parent
+    # index does not authenticate tracked files inside its gitlinks.
+    _require_visible_git_index(root)
+
     for relative, expected_sha in _git_index_gitlinks(root).items():
         child = root / relative
         if child.is_symlink() or not child.is_dir():
@@ -171,6 +176,38 @@ def _ensure_clean_gitlinks(root: pathlib.Path, seen: set[pathlib.Path] | None = 
         if status.stdout:
             raise WorkspaceError(f"Git submodule has unverified workspace changes: {relative}")
         _ensure_clean_gitlinks(child, seen)
+
+
+def _require_visible_git_index(root: pathlib.Path) -> None:
+    """Fail closed on index flags that make Git diff/status omit real edits.
+
+    Git 'assume-unchanged' (h) and 'skip-worktree' (S/s) can conceal tracked
+    file edits even while the current workspace SHA remains unchanged. PACT
+    cannot offer completion-grade task attribution under those flags.
+    """
+    try:
+        result = _run_git(root, ["ls-files", "-v", "-z"])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot inspect special Git index flags: {exc}") from exc
+    if result.returncode != 0:
+        raise WorkspaceError("cannot inspect special Git index flags")
+
+    hidden: list[str] = []
+    for entry in result.stdout.split(b"\0"):
+        if not entry:
+            continue
+        if len(entry) < 3 or entry[1:2] != b" ":
+            raise WorkspaceError("malformed Git ls-files index flags")
+        if entry[0:1] != b"H":
+            name = entry[2:].decode("utf-8", errors="surrogateescape")
+            hidden.append(name)
+    if hidden:
+        raise WorkspaceError(
+            "Git index flags hide potentially modified source from status/diff; "
+            "clear assume-unchanged/skip-worktree before verification: "
+            + ", ".join(sorted(hidden)[:8])
+            + (" ..." if len(hidden) > 8 else "")
+        )
 
 
 def _git_filemode_enabled(root: pathlib.Path) -> bool:

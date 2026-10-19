@@ -64,6 +64,33 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         self.git("commit", "-qm", "parent initial")
         return child
 
+    def test_special_git_index_flags_never_hide_business_source_changes(self) -> None:
+        business = self.root / "business_rule.py"
+        business.write_text("AUTH_ALLOW = False\n", encoding="utf-8")
+        self.commit_all("approved product logic")
+        baseline = workspace.task_workspace_baseline(self.root)
+
+        for flag, undo in (
+            ("--assume-unchanged", "--no-assume-unchanged"),
+            ("--skip-worktree", "--no-skip-worktree"),
+        ):
+            with self.subTest(flag=flag):
+                self.git("update-index", flag, "business_rule.py")
+                business.write_text("AUTH_ALLOW = True\n", encoding="utf-8")
+                # Ordinary Git diff can be empty with these flags. PACT must
+                # refuse to attest completion instead of trusting that view.
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.workspace_snapshot(self.root)
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.task_workspace_baseline(self.root)
+                with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+                    workspace.task_changed_files(self.root, baseline)
+                self.git("update-index", undo, "business_rule.py")
+                business.write_text("AUTH_ALLOW = False\n", encoding="utf-8")
+        self.assertEqual(workspace.task_changed_files(
+            self.root, baseline,
+        )["changed_files"], [])
+
     def test_content_restored_to_original_head_does_not_count_as_task_change(self) -> None:
         file = self.root / "source.txt"
         file.write_text("original\n", encoding="utf-8")
@@ -120,6 +147,65 @@ class GitWorkspaceIdentityTests(unittest.TestCase):
         first = workspace.workspace_snapshot(self.root)
         second = workspace.workspace_snapshot(self.root)
         self.assertEqual(first["sha256"], second["sha256"])
+
+    def test_submodule_hidden_index_flags_cannot_attest_clean_parent(self) -> None:
+        child = self.gitlink()
+        baseline = workspace.task_workspace_baseline(self.root)
+        for flag, undo in (
+            ("--assume-unchanged", "--no-assume-unchanged"),
+            ("--skip-worktree", "--no-skip-worktree"),
+        ):
+            with self.subTest(flag=flag):
+                self.git("update-index", flag, "source.txt", cwd=child)
+                (child / "source.txt").write_text("hidden unauthorized change\n",
+                                                   encoding="utf-8")
+                # A parent can appear clean because Git trusts a gitlink HEAD
+                # and the child Git status can suppress flagged file edits.
+                with self.assertRaisesRegex(
+                    workspace.WorkspaceError, "Git index flags"
+                ):
+                    workspace.workspace_snapshot(self.root)
+                with self.assertRaisesRegex(
+                    workspace.WorkspaceError, "Git index flags"
+                ):
+                    workspace.task_workspace_baseline(self.root)
+                with self.assertRaisesRegex(
+                    workspace.WorkspaceError, "Git index flags"
+                ):
+                    workspace.task_changed_files(self.root, baseline)
+                self.git("update-index", undo, "source.txt", cwd=child)
+                (child / "source.txt").write_text("version-A\n", encoding="utf-8")
+        self.assertEqual(workspace.task_changed_files(
+            self.root, baseline,
+        )["changed_files"], [])
+
+    def test_nested_submodule_hidden_index_flags_fail_closed(self) -> None:
+        child = self.gitlink()
+        nested = child / "nested"
+        nested.mkdir()
+        self.git("init", "-q", cwd=nested)
+        self.git("config", "user.email", "pact@example.invalid", cwd=nested)
+        self.git("config", "user.name", "PACT Test", cwd=nested)
+        source = nested / "inner-rule.py"
+        source.write_text("ALLOW = False\n", encoding="utf-8")
+        self.git("add", "inner-rule.py", cwd=nested)
+        self.git("commit", "-qm", "nested original", cwd=nested)
+        nested_sha = self.git("rev-parse", "HEAD", cwd=nested)
+        self.git(
+            "update-index", "--add", "--cacheinfo",
+            f"160000,{nested_sha},nested", cwd=child,
+        )
+        self.git("commit", "-qm", "child adds nested gitlink", cwd=child)
+        self.git("add", "sub")
+        self.git("commit", "-qm", "parent includes nested gitlink")
+        baseline = workspace.task_workspace_baseline(self.root)
+        self.git("update-index", "--assume-unchanged", "inner-rule.py",
+                 cwd=nested)
+        source.write_text("ALLOW = True\n", encoding="utf-8")
+        with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+            workspace.workspace_snapshot(self.root)
+        with self.assertRaisesRegex(workspace.WorkspaceError, "Git index flags"):
+            workspace.task_changed_files(self.root, baseline)
 
     def test_dirty_gitlink_cannot_reuse_an_old_workspace_fingerprint(self) -> None:
         child = self.gitlink()

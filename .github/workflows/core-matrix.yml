@@ -24,6 +24,7 @@ jobs:
           - "3.13"
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,37 +46,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m unittest discover -s scripts/pact/tests -p "test_bootstrap.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_compact_runtime.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_distribution_upgrade.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_stdlib_runtime.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_init_readiness.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_discovery_ownership.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_cache_publishing_safety.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_multi_query_retrieval.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_mixed_authority.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_audit_retention.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_m0.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_m0_evaluation.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_m1_evaluation.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_m1_noise_regression.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_brownfield_adr_viewer_pilot.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_decision_memory_noise_probe.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_scope_routing.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_impact_markdown_links.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_task_change_coverage.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_convergence_deletion_semantics.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_task_state_atomicity.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_task_state_root_safety.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_task_workflow.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_run_input_origins.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_merged_trust_integration.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_run_pipe_shutdown.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_streaming_reliability.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_workspace_git_identity.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_context_intent_require_rules.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_installed_intent_comparison.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_task_handoff.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_host_wiring.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_eight_stage_synthetic.py"
-          python -m unittest discover -s scripts/pact/tests -p "test_workflow_failfast.py"
+          # Auto-discover every current and future test, including trusted
+          # Evidence / Task Finish, on all three OS and Python versions.
+          python -m unittest discover -s scripts/pact/tests -p 'test_*.py'

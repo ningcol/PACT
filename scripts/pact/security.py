@@ -47,7 +47,19 @@ def redact_argv(
     argv: list[str],
     *,
     extra_values: list[str] | None = None,
+    detailed: bool = False,
 ) -> tuple[list[str], int]:
+    """Default to NOT persisting any executed command arguments.
+
+    Regex filtering can never prove that custom HTTP headers, JSON payloads,
+    bespoke credential flags or command names contain no secret. PACT Evidence
+    requires exit status/output digests, not argv, so full argument omission is
+    the only safe automatic persistence policy. `detailed=True` is for
+    trusted local diagnostic callers; PACT's run receipt never enables it.
+    """
+    if not detailed:
+        return ["<redacted: command arguments omitted>"], len(argv)
+
     redacted: list[str] = []
     count = 0
     hide_next = False

@@ -174,6 +174,27 @@ def valid_project_index(index: dict, *, expected_paths: set[str]) -> bool:
     return observed_paths == expected_paths and by_id == expected_id_map
 
 
+def source_bound_documents(
+    index: dict, root: pathlib.Path, *, expected_paths: set[str],
+) -> bool:
+    """All indexed content must match source, even anonymous governance docs.
+
+    Authority cannot be classified safely from an untrusted cache record:
+    a forged record can impersonate a generic document or hide its ID/type.
+    A matching source fingerprint checks only *file bytes*, not cache text.
+    """
+    if not valid_project_index(index, expected_paths=expected_paths):
+        return False
+    for document in index["documents"]:
+        relative = document["path"]
+        path = root / relative
+        if path.is_symlink() or not path.is_file():
+            return False
+        if parse_document(path, root) != document:
+            return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build PACT project discovery map")
     parser.add_argument(
@@ -205,8 +226,8 @@ def main() -> int:
                 output,
                 format_version=FORMAT_VERSION,
                 source_fingerprint=source_fingerprint,
-                validator=lambda data: valid_project_index(
-                    data, expected_paths=expected_paths
+                validator=lambda data: source_bound_documents(
+                    data, root, expected_paths=expected_paths
                 ),
             )
             if not fresh:
@@ -220,6 +241,13 @@ def main() -> int:
                 )
                 if set(parsed) != expected_paths:
                     raise OSError("source set changed while parsing")
+                # Recomputed per-file cache digests are not authentication.
+                # Reparse every indexed Markdown, including ID-less governance
+                # docs, so a demoted/forged cached authority is never published.
+                for relative in sorted(parsed):
+                    canonical = parse_document(root / relative, root)
+                    if canonical != parsed[relative]:
+                        parsed[relative] = canonical
             updated_paths, updated_mode = source_paths(root)
             if (
                 [rel(path, root) for path in updated_paths]

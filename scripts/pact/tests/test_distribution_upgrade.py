@@ -626,7 +626,8 @@ class DistributionUpgradeTests(unittest.TestCase):
             if (
                 not modified["done"]
                 and pathlib.Path(destination) == changed_path
-                and pathlib.Path(source).name.endswith(".pact-upgrade-tmp")
+                and pathlib.Path(source).name.startswith(".VERSION.pact-upgrade-")
+                and pathlib.Path(source).name.endswith(".tmp")
             ):
                 changed_path.write_bytes(user_edit)
                 modified["done"] = True

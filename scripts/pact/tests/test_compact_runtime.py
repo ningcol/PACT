@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import json
 import pathlib
+import os
+import stat
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -54,6 +58,102 @@ class CompactRuntimeTests(unittest.TestCase):
                 names,
             )
             self.assertNotIn("tests/test_task_surface.py", names)
+
+    def test_runtime_publish_retries_only_classified_transient_replace_errors(self):
+        with tempfile.TemporaryDirectory(prefix="pact-runtime-retry-") as tmp:
+            target = pathlib.Path(tmp) / "pact.pyz"
+            staged = pathlib.Path(tmp) / "staged.zip"
+            staged.write_bytes(b"verified complete runtime")
+            calls = {"n": 0}
+            original_replace = os.replace
+
+            def transient(source, destination):
+                calls["n"] += 1
+                if calls["n"] <= 2:
+                    raise PermissionError("simulated temporary Windows sharing denial")
+                return original_replace(source, destination)
+
+            with mock.patch.object(runtime_bundle.os, "replace", side_effect=transient), \
+                 mock.patch.object(runtime_bundle, "_retryable_windows_runtime_replace",
+                                   return_value=True), \
+                 mock.patch.object(runtime_bundle.time, "sleep") as sleep:
+                runtime_bundle._publish_runtime(staged, target)
+            self.assertEqual(calls["n"], 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(target.read_bytes(), b"verified complete runtime")
+            self.assertFalse(staged.exists())
+
+            staged.write_bytes(b"new attempt")
+            with mock.patch.object(
+                runtime_bundle.os, "replace",
+                side_effect=PermissionError("permanent ACL denial"),
+            ), mock.patch.object(
+                runtime_bundle, "_retryable_windows_runtime_replace",
+                return_value=False,
+            ), mock.patch.object(runtime_bundle.time, "sleep") as sleep:
+                with self.assertRaises(PermissionError):
+                    runtime_bundle._publish_runtime(staged, target)
+            sleep.assert_not_called()
+            self.assertEqual(target.read_bytes(), b"verified complete runtime")
+            self.assertEqual(staged.read_bytes(), b"new attempt")
+
+    def test_bounded_windows_runtime_replace_error_classifier(self):
+        class WindowsError(PermissionError):
+            def __init__(self, winerror):
+                super().__init__(f"Windows error {winerror}")
+                self.winerror = winerror
+        for winerror in (5, 32):
+            expected = os.name == "nt"
+            self.assertEqual(
+                runtime_bundle._retryable_windows_runtime_replace(
+                    WindowsError(winerror)
+                ),
+                expected,
+            )
+        self.assertFalse(
+            runtime_bundle._retryable_windows_runtime_replace(WindowsError(13))
+        )
+        self.assertFalse(
+            runtime_bundle._retryable_windows_runtime_replace(
+                OSError("some other I/O failure")
+            )
+        )
+
+    def test_concurrent_builds_use_distinct_atomic_staging_files(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-concurrent-pyz-") as td:
+            output = pathlib.Path(td) / "pact.pyz"
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                produced = list(workers.map(
+                    lambda _: runtime_bundle.build_runtime_bundle(
+                        PROJECT_ROOT, output,
+                    ),
+                    range(6),
+                ))
+            # Windows canonicalizes temporary-directory path spelling.
+            # Compare resolved identity, not lexical spelling.
+            self.assertTrue(all(path.resolve() == output.resolve()
+                                for path in produced))
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("__main__.py", archive.namelist())
+                self.assertIn("pact.py", archive.namelist())
+            self.assertEqual(list(pathlib.Path(td).glob("*.tmp")), [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX process umask is the relevant contract")
+    def test_runtime_permissions_never_override_restrictive_umask(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-pyz-mode-") as td:
+            output = pathlib.Path(td) / "runtime.pyz"
+            # Even if the PACT source file is world-readable, the builder
+            # must not widen a private caller's permission boundary.
+            source = PROJECT_ROOT / "scripts/pact/pact.py"
+            self.assertTrue(source.is_file())
+            old_umask = os.umask(0o077)
+            try:
+                runtime_bundle.build_runtime_bundle(PROJECT_ROOT, output)
+            finally:
+                os.umask(old_umask)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("pact.py", archive.namelist())
 
     def test_bundle_normalizes_source_line_endings(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-pyz-newlines-") as tmp:

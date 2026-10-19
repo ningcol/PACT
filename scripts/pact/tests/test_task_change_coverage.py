@@ -234,6 +234,35 @@ class TaskChangedFileTests(unittest.TestCase):
         self.assertNotEqual(customized["sha256"], snapshot["sha256"])
         self.assertEqual(customized["file_count"], 2)
 
+    def test_non_git_medium_task_cannot_claim_complete_change_coverage(self) -> None:
+        project = pathlib.Path(self.temp.name) / "non-git-medium"
+        project.mkdir()
+        (project / "README.md").write_text("# Source\\n", encoding="utf-8")
+        initialized = subprocess.run(
+            [sys.executable, str(INIT), "--target", str(project), "--apply"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(initialized.returncode, 0,
+                         initialized.stdout + initialized.stderr)
+        def invoke(*params):
+            return subprocess.run(
+                [sys.executable, str(project / "pact.py"), *params],
+                cwd=project, capture_output=True, text=True,
+            )
+        task_id = "TASK-NONGIT-MEDIUM"
+        prepared = invoke(
+            "task", "prepare", "Change permissions",
+            "--success", "Maintain approved security behavior",
+            "--risk", "medium", "--task-id", task_id, "--no-code",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        refused = invoke("task", "finish", task_id, "--json")
+        self.assertEqual(refused.returncode, 2, refused.stderr)
+        self.assertIn("without supported Git provenance", refused.stderr)
+        status = invoke("task", "status", task_id, "--json")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertEqual(json.loads(status.stdout)["status"], "prepared")
+
     def test_high_level_finish_requires_changed_file_convergence_coverage(self) -> None:
         (self.root / "README.md").write_text(
             "# Demo\n\nFeature behavior.\n",

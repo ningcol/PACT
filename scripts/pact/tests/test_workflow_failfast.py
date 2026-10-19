@@ -31,12 +31,9 @@ class WorkflowFailFastTests(unittest.TestCase):
                         )
                         self.assertIn(expected, config)
                         self.assertIn(
-                            'test_distribution_upgrade.py', config,
-                            "license upgrade regression must remain in the matrix",
-                        )
-                        self.assertIn(
-                            'test_installed_intent_comparison.py', config,
-                            "installed runtime intent regression must remain",
+                            "python -m unittest discover -s scripts/pact/tests "
+                            "-p 'test_*.py'", config,
+                            "every PACT test must run on all 9 portability cells",
                         )
 
     def test_release_source_validation_is_fail_fast_too(self):

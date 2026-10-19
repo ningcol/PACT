@@ -181,6 +181,13 @@ def _diagnose(
                 "candidates; review the complete Domain sources and reprepare "
                 "without --scope-first before task assist can draft acceptance"
             )
+    # Mechanical Owner drafts are still partial, editable work, NOT a
+    # completion gate. Keep historical assist diagnostics usable in non-Git
+    # projects, while clearly reporting the hard finish blocker separately.
+    finish_blocked_by_non_git = (
+        not task_change.get("supported")
+        and manifest.get("risk_level") in {"medium", "high"}
+    )
     effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps]
     passing_claims = [
         claim for claim in evidence["claims"]
@@ -364,6 +371,7 @@ def _diagnose(
         "missing_scoped_domain_artifacts": missing_scoped_domain_artifacts,
         "missing_change_coverage": missed_changes,
         "change_attribution_supported": bool(task_change.get("supported")),
+        "finish_blocked_by_unsupported_change_attribution": finish_blocked_by_non_git,
         "change_attribution_unknown": task_change.get("reason")
             if not task_change.get("supported") else None,
         "owner_acceptance_unreported": unreported,
@@ -400,9 +408,11 @@ def assist(args) -> int:
         result, bundle, owner = _snapshot(args.task_id)
         result["draft_written"] = False
         if args.write_draft:
-            # Entire re-read under the existing task Evidence lock to prevent
-            # laundering concurrent changes between evaluation and publication.
-            with _exclusive_bundle(bundle):
+            # Finish/verify/draft/checkpoint also take the task primary lock.
+            # Re-read under BOTH locks to prevent a completed task from
+            # receiving new generated Owner data.
+            task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+            with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
                 result, _, owner = _snapshot(args.task_id)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
@@ -515,9 +525,10 @@ def export(args) -> int:
         output_dir = confined_child(run_root, args.task_id, repository_root=ROOT)
         confined_state_root(ROOT, output_dir, field="task run evidence")
 
-        # Hold the same bundle lock as task verify/checkpoint while re-reading
-        # Evidence and the workspace. Do not publish a pre-lock stale snapshot.
-        with _exclusive_bundle(bundle):
+        # Share the task-level lock with finish, then acquire the existing
+        # Evidence-bundle lock in a consistent global order.
+        task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
+        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
             manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed during evidence export")

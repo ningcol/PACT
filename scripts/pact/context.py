@@ -36,6 +36,49 @@ GOVERNANCE_PATHS = (
 RULE_ID = re.compile(r"^RULE-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
+def _valid_discovery_row(row: object, *, code: bool) -> bool:
+    """Reject malformed successful Discover results before candidate filtering.
+
+    Missing source paths must not become quiet zero-hit Context. Validate
+    fields used by ranking, budgeting and authority classification, not only
+    that each row happens to be a JSON object.
+    """
+    if not isinstance(row, dict):
+        return False
+    if (
+        not isinstance(row.get("path"), str)
+        or not row["path"].strip()
+        or type(row.get("score")) is not int
+        or not isinstance(row.get("reasons"), list)
+        or not all(isinstance(reason, str) for reason in row["reasons"])
+    ):
+        return False
+    if code:
+        return (
+            isinstance(row.get("language"), str)
+            and bool(row["language"])
+            and type(row.get("is_test")) is bool
+            and isinstance(row.get("symbols"), list)
+            and all(isinstance(x, str) for x in row["symbols"])
+        )
+    return (
+        isinstance(row.get("artifact_type"), str)
+        and bool(row["artifact_type"])
+        and isinstance(row.get("title"), str)
+        and bool(row["title"])
+        and "id" in row
+        and (row["id"] is None or isinstance(row["id"], str))
+        and "status" in row
+        and (row["status"] is None or isinstance(row["status"], str))
+        and type(row.get("mixed_authority")) is bool
+        and all(
+            isinstance(row.get(name), list)
+            and all(isinstance(item, str) for item in row[name])
+            for name in ("domains", "related", "verification")
+        )
+    )
+
+
 def run_discovery(
     queries: list[str],
     knowledge_limit: int,
@@ -74,15 +117,29 @@ def run_discovery(
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "discovery failed")
     if not result.stdout.strip():
-        return {
-            "query": queries[0],
-            "queries": queries,
-            "result_count": 0,
-            "results": [],
-            "code_result_count": 0,
-            "code_results": [],
-        }
-    return json.loads(result.stdout)
+        raise RuntimeError(
+            "discover --json exited 0 without a response; "
+            "refuse to infer that no Decision/Rule exists"
+        )
+    data = json.loads(result.stdout)
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("results"), list)
+        or not isinstance(data.get("code_results"), list)
+        or any(not _valid_discovery_row(row, code=False)
+               for row in data["results"])
+        or any(not _valid_discovery_row(row, code=True)
+               for row in data["code_results"])
+        or type(data.get("result_count")) is not int
+        or data["result_count"] != len(data["results"])
+        or type(data.get("code_result_count")) is not int
+        or data["code_result_count"] != len(data["code_results"])
+    ):
+        raise RuntimeError(
+            "discover --json returned malformed/inconsistent results; "
+            "refuse to prepare an empty or partial Context"
+        )
+    return data
 
 
 def validate(envelope: dict) -> list[str]:
@@ -672,13 +729,21 @@ def main() -> int:
         if can_restrict:
             home = scope_route["domains"][0]
             known_paths = all_candidate_paths
-            # Explicit, metadata-backed title/alias/ID hits stay selectable;
-            # merely sharing a Domain is NOT sufficient to assert a rule.
+            # A source-scored exact Decision explicitly named in the task
+            # must survive even if it belongs to ANOTHER Domain. Preserve it
+            # as a review candidate, never as asserted applicable authority.
+            cross_domain_exact = [
+                item for item in candidate_results
+                if item.get("artifact_type") == "decision"
+                and item.get("path") not in known_paths
+                and exact_match_priority(item.get("reasons", [])) > 0
+            ]
             grounded = [
                 item for item in candidate_results
                 if item.get("path") == home["path"] or (
                     (item.get("path") in known_paths
-                     or item.get("id") in required_rules)
+                     or item.get("id") in required_rules
+                     or item in cross_domain_exact)
                     and exact_match_priority(item.get("reasons", [])) > 0
                 )
             ]
@@ -805,6 +870,13 @@ def main() -> int:
     unknowns: list[str] = governance_path_hints()
     unknowns.extend(nearby_readme_hints(code_results))
     if scope_route is not None:
+        if scope_route.get("restricted_selection") and cross_domain_exact:
+            unknowns.append(
+                "An explicitly identified cross-Domain Decision was retained as "
+                "a candidate, NOT automatically applicable authority: "
+                + ", ".join(sorted(str(item["path"]) for item in cross_domain_exact))
+                + ". Verify its premises and Owner scope before changing behavior."
+            )
         if scope_route["status"] != "unique":
             unknowns.append(
                 "Domain routing was not unique; baseline lexical Context was retained. "

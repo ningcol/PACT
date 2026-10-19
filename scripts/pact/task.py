@@ -629,6 +629,18 @@ def _finish_locked(args) -> int:
         return 2
 
     changed_files = task_change.get("changed_files", [])
+    # Without Git, PACT cannot identify which final files differ from the
+    # prepared task baseline. Low-risk diagnostics may warn, but a required
+    # medium/high-risk result must not claim full change coverage.
+    if (not task_change.get("supported")
+            and manifest.get("risk_level") in {"medium", "high"}):
+        print(
+            "PACT task finish: cannot establish complete changed-file "
+            "coverage for medium/high risk without supported Git provenance; "
+            "initialize Git and reprepare, or keep the task explicitly pending",
+            file=sys.stderr,
+        )
+        return 2
     trust_warnings: list[str] = []
     if not task_change.get("supported"):
         trust_warnings.append(

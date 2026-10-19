@@ -255,6 +255,32 @@ class TaskWorkflowTests(unittest.TestCase):
         self.assertEqual(outside.read_text(encoding="utf-8"), "do not change")
 
 
+    def test_verify_and_draft_cannot_start_while_finish_holds_task_lock(self) -> None:
+        task_dir = self.root / ".pact" / "tasks" / self.task_id
+        marker = self.root / "verification-should-not-run.txt"
+        command = self.lock_command("hold", task_dir)
+        with subprocess.Popen(command, stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True) as holder:
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "acquired")
+                rejected = self.pact("task", "draft", self.task_id)
+                self.assertEqual(rejected.returncode, 2, rejected.stderr)
+                self.assertIn("another task Evidence writer", rejected.stderr)
+                rejected = self.pact(
+                    "task", "verify", self.task_id,
+                    "--criterion", "AC-1", "--claim", "A check",
+                    "--", sys.executable, "-c",
+                    "from pathlib import Path; "
+                    + f"Path({str(marker)!r}).write_text('executed')",
+                )
+                self.assertEqual(rejected.returncode, 2, rejected.stderr)
+                self.assertIn("another task Evidence writer", rejected.stderr)
+                self.assertFalse(marker.exists())
+            finally:
+                holder.communicate(input="\n", timeout=30)
+        self.assertEqual(holder.returncode, 0)
+
     def test_finish_refuses_concurrent_same_task_state_writer(self) -> None:
         task_dir = self.root / ".pact" / "tasks" / self.task_id
         command = self.lock_command("hold", task_dir)

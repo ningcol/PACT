@@ -147,7 +147,7 @@ Completion then:
 
 Each change-coverage entry contains a path and an Agent-written rationale. PACT checks coverage mechanically; the rationale remains semantic review.
 
-For non-Git projects, PACT reports that exact task-delta path attribution is unavailable rather than inventing changed-file coverage.
+For non-Git projects, PACT reports that exact task-delta path attribution is unavailable rather than inventing changed-file coverage. Low-risk tasks retain a warning-only compatibility path. **Medium and high risk tasks fail closed at `task finish`** because PACT cannot claim that every changed file was reviewed; initialize Git and reprepare (or keep the task pending) rather than assigning automatic Owner approval.
 
 ## Distinct states, not interchangeable success badges
 

@@ -521,13 +521,17 @@ def apply_upgrade(
                     removed.append(path)
                 else:
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    temp_destination = destination.parent / (
-                        f".{destination.name}.pact-upgrade-tmp"
+                    fd, temp_name = tempfile.mkstemp(
+                        prefix=f".{destination.name}.pact-upgrade-",
+                        suffix=".tmp", dir=destination.parent,
                     )
-                    if path_present(temp_destination):
-                        temp_destination.unlink()
-                    shutil.copy2(staged[path], temp_destination)
-                    os.replace(temp_destination, destination)
+                    os.close(fd)
+                    temp_destination = pathlib.Path(temp_name)
+                    try:
+                        shutil.copy2(staged[path], temp_destination)
+                        os.replace(temp_destination, destination)
+                    finally:
+                        temp_destination.unlink(missing_ok=True)
 
                     replaced.append(path)
                     written_targets[path] = op["source_sha256"]

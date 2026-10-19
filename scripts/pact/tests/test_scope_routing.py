@@ -196,6 +196,42 @@ domains = ["DOMAIN-PAY"]
         self.assertEqual(p["decisions"], [])
         self.assertEqual(p["scope_route"]["status"], "unique")
 
+    def test_exact_cross_domain_decision_is_not_silently_dropped(self):
+        path = ".agents/decisions/implemented/external.md"
+        self.write(path, '''+++
+[pact]
+type = "decision"
+id = "DEC-EXTERNAL-002"
+status = "implemented"
+domains = ["DOMAIN-PAY"]
++++
+# Special approval constraints
+''')
+        refreshed = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pact/map.py"),
+            "--root", str(self.root),
+            "--output", str(self.root / ".pact/cache/project-map.json"),
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(refreshed.returncode, 0,
+                         refreshed.stdout + refreshed.stderr)
+        packet = self.packet(
+            "Review DEC-EXTERNAL-002 while editing src/auth/login.py",
+            hits=[self.hit(
+                "DEC-EXTERNAL-002", "decision", "implemented",
+                path, "Special approval constraints", 500,
+                ["exact stable id"],
+            )],
+        )
+        self.assertEqual(packet["scope_route"]["status"], "unique")
+        self.assertTrue(packet["scope_route"]["restricted_selection"])
+        self.assertIn(path, [d["path"] for d in packet["artifacts"]])
+        self.assertIn("DEC-EXTERNAL-002", packet["decisions"])
+        self.assertFalse(packet["scope_route"]["applicability_verified"])
+        self.assertTrue(any(
+            "cross-Domain Decision" in msg and "NOT automatically applicable" in msg
+            for msg in packet["known_unknowns"]
+        ))
+
     def test_unknown_or_ambiguous_scope_preserves_baseline_candidates(self):
         for task, status in (
             ("Refactor opaque component without path", "unmapped"),
