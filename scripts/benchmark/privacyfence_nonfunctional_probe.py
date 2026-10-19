@@ -20,7 +20,10 @@ EXPECTED_NEGATIVES = 2
 def paired_metrics(baseline: list[dict], opt_in: list[dict]) -> dict:
     base = {x["id"]: x for x in baseline if x.get("kind") == "routine-negative"}
     got = {x["id"]: x for x in opt_in}
-    if (len(base) != EXPECTED_NEGATIVES
+    source_negatives = [x for x in baseline if x.get("kind") == "routine-negative"]
+    if (len(source_negatives) != EXPECTED_NEGATIVES
+            or len(opt_in) != EXPECTED_NEGATIVES
+            or len(base) != EXPECTED_NEGATIVES
             or len(got) != EXPECTED_NEGATIVES
             or set(base) != set(got)):
         raise ValueError("mismatched frozen routine-task pair count/IDs")
@@ -55,7 +58,7 @@ def paired_metrics(baseline: list[dict], opt_in: list[dict]) -> dict:
 def trial(target: pathlib.Path, baseline_receipt: dict) -> dict:
     report = {
         "kind": "nonblind-opt-in-nonfunctional-routine-source-probe",
-        "pact_source_commit": None,
+        "pact_source_commit": pilot.pilot.git_output(pilot.ROOT, "rev-parse", "HEAD"),
         "source_repo": pilot.UPSTREAM,
         "source_sha": pilot.UPSTREAM_SHA,
         "real_agent_executed": False,
