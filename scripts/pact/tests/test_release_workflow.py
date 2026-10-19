@@ -21,7 +21,10 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
 
         self.assertIn("needs:", text)
         self.assertIn("- portability", text)
-        self.assertIn("test_streaming_reliability.py", text)
+        self.assertIn(
+            "python -m unittest discover -s scripts/pact/tests -p 'test_*.py'",
+            text,
+        )
 
     def test_release_marks_version_suffixes_as_prerelease(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
