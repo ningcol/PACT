@@ -5,6 +5,8 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import os
+import stat
 import shutil
 import subprocess
 import sys
@@ -66,11 +68,23 @@ class CompactRuntimeTests(unittest.TestCase):
                     ),
                     range(6),
                 ))
-            self.assertTrue(all(path == output for path in produced))
+            # Windows canonicalizes temporary-directory path spelling.
+            # Compare resolved identity, not lexical spelling.
+            self.assertTrue(all(path.resolve() == output.resolve()
+                                for path in produced))
             with zipfile.ZipFile(output) as archive:
                 self.assertIn("__main__.py", archive.namelist())
                 self.assertIn("pact.py", archive.namelist())
             self.assertEqual(list(pathlib.Path(td).glob("*.tmp")), [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX chmod mode is the relevant contract")
+    def test_runtime_permissions_preserve_source_read_visibility(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pact-pyz-mode-") as td:
+            output = pathlib.Path(td) / "runtime.pyz"
+            runtime_bundle.build_runtime_bundle(PROJECT_ROOT, output)
+            src = PROJECT_ROOT / "scripts/pact/pact.py"
+            expected = 0o600 | (stat.S_IMODE(src.stat().st_mode) & 0o044)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), expected)
 
     def test_bundle_normalizes_source_line_endings(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pact-pyz-newlines-") as tmp:
