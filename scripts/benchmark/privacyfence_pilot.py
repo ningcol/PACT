@@ -282,8 +282,17 @@ def run_arm(
         ):
             errs.append("requested nonfunctional Context lacks source-bound hints")
         if isinstance(hints, dict):
+            # A compacted or truncated receipt must not disguise actual hints.
+            rows = hints.get("candidates", [])
+            if (not isinstance(rows, list)
+                    or type(hints.get("total_candidates")) is not int
+                    or type(hints.get("truncated_candidates")) is not int
+                    or len(rows) + hints["truncated_candidates"] != hints["total_candidates"]
+                    or len(rows) > 5):
+                errs.append("nonfunctional hint totals/limit are inconsistent")
+                rows = rows if isinstance(rows, list) else []
             # Source-authenticate non-materialized navigation metadata, too.
-            for hint in hints.get("candidates", []):
+            for hint in rows:
                 if not isinstance(hint, dict):
                     errs.append("nonfunctional hint is not an object")
                     continue
