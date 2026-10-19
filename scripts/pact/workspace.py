@@ -173,6 +173,38 @@ def _ensure_clean_gitlinks(root: pathlib.Path, seen: set[pathlib.Path] | None = 
         _ensure_clean_gitlinks(child, seen)
 
 
+def _require_visible_git_index(root: pathlib.Path) -> None:
+    """Fail closed on index flags that make Git diff/status omit real edits.
+
+    Git 'assume-unchanged' (h) and 'skip-worktree' (S/s) can conceal tracked
+    file edits even while the current workspace SHA remains unchanged. PACT
+    cannot offer completion-grade task attribution under those flags.
+    """
+    try:
+        result = _run_git(root, ["ls-files", "-v", "-z"])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WorkspaceError(f"cannot inspect special Git index flags: {exc}") from exc
+    if result.returncode != 0:
+        raise WorkspaceError("cannot inspect special Git index flags")
+
+    hidden: list[str] = []
+    for entry in result.stdout.split(b"\0"):
+        if not entry:
+            continue
+        if len(entry) < 3 or entry[1:2] != b" ":
+            raise WorkspaceError("malformed Git ls-files index flags")
+        if entry[0:1] != b"H":
+            name = entry[2:].decode("utf-8", errors="surrogateescape")
+            hidden.append(name)
+    if hidden:
+        raise WorkspaceError(
+            "Git index flags hide potentially modified source from status/diff; "
+            "clear assume-unchanged/skip-worktree before verification: "
+            + ", ".join(sorted(hidden)[:8])
+            + (" ..." if len(hidden) > 8 else "")
+        )
+
+
 def _git_filemode_enabled(root: pathlib.Path) -> bool:
     try:
         result = _run_git(root, ["config", "--bool", "core.filemode"], text=True)
@@ -243,6 +275,7 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
 
     installed_exclusions = discovery_excluded_paths(root)
     _ensure_clean_gitlinks(root)
+    _require_visible_git_index(root)
 
     try:
         head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
@@ -564,6 +597,7 @@ def task_workspace_baseline(cwd: pathlib.Path) -> dict:
         }
 
     _ensure_clean_gitlinks(root)
+    _require_visible_git_index(root)
     head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
     head = head_result.stdout.strip() if head_result.returncode == 0 else None
     dirty_paths = sorted(_git_changed_paths(root))
@@ -636,6 +670,7 @@ def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
         raise WorkspaceError("prepared task used Git but repository is no longer a Git worktree")
 
     _ensure_clean_gitlinks(root)
+    _require_visible_git_index(root)
     current_head_result = _run_git(root, ["rev-parse", "HEAD"], text=True)
     current_head = (
         current_head_result.stdout.strip()
