@@ -349,13 +349,17 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
 
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 staged = stage_root / pathlib.Path(relative)
-                temp_destination = destination.parent / (
-                    f".{destination.name}.pact-init-tmp"
+                fd, temp_name = tempfile.mkstemp(
+                    prefix=f".{destination.name}.pact-init-",
+                    suffix=".tmp", dir=destination.parent,
                 )
-                if path_present(temp_destination):
-                    temp_destination.unlink()
-                shutil.copy2(staged, temp_destination)
-                os.replace(temp_destination, destination)
+                os.close(fd)
+                temp_destination = pathlib.Path(temp_name)
+                try:
+                    shutil.copy2(staged, temp_destination)
+                    os.replace(temp_destination, destination)
+                finally:
+                    temp_destination.unlink(missing_ok=True)
                 created.append(relative)
 
                 if fail_after is not None and len(created) >= fail_after:
