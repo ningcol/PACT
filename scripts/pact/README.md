@@ -209,6 +209,28 @@ use `--intent work|decision|history` (available on `discover`,
   properties alone do not preserve compatibility with old v1
   `additionalProperties: false` consumers.
 
+### Default weak Decision search (source-bound, conservative)
+
+In a single-query low/medium risk task, ordinary Context now materializes
+implemented Decision records only when retrieval has more than a weak
+one/two-term body match. Source-scored 8/16-point, no-reason Decisions become
+up to five source-hashed `weak_decision_hints` with total/truncated counts,
+not silently dropped and **not** marked as inapplicable authority.
+
+This changes Context materialization, **not** the indexed source, Discover
+ranking or Product Rule precedence. A prepared task **must** review deferred
+Decision hints in Convergence; task assist cannot draft mechanically passing
+Owner acceptance while any remain unchecked. If hints are truncated, finish
+fails closed and the task must be reprepared with `--full-decisions`.
+
+Always use `--full-decisions` (on `context` or `task prepare`) when original
+unrestricted Decision context is necessary. High-risk, history/decision intent,
+multi-query and `--scope-first` contexts already retain the original selection.
+No task-text heuristic decides whether code changes behavior. This optimization
+does not prove semantic inapplicability, real Agent obedience, true billed
+model-token savings or independent Owner improvement. The previously explicit
+`--nonfunctional` mode below remains separate and more aggressive.
+
 ### Explicit nonfunctional Context (low-risk only)
 
 For an **already-established no-behavior-change** task (e.g. a variable
