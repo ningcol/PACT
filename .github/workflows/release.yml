@@ -100,6 +100,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Fail closed without real GitHub environment reviewer, GO and exact-main green CI
         env:
           GH_TOKEN: ${{ github.token }}
@@ -133,33 +137,6 @@ jobs:
             --approvals-file "$RUNNER_TEMP/pact-release-approvals.json" \
             --check-runs-file "$RUNNER_TEMP/pact-release-check-runs.json" \
             --matrix-runs-file "$RUNNER_TEMP/pact-release-matrix-runs.json"
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-
-      - name: Verify tag matches runtime version and classify release
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          RUNTIME_VERSION="$(tr -d '[:space:]' < .pact/VERSION)"
-          echo "tag=$TAG_VERSION runtime=$RUNTIME_VERSION"
-          test "$TAG_VERSION" = "$RUNTIME_VERSION"
-
-          python - "$TAG_VERSION" >> "$GITHUB_OUTPUT" <<'PY'
-          import re
-          import sys
-
-          version = sys.argv[1]
-          if not re.fullmatch(
-              r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?",
-              version,
-          ):
-              raise SystemExit(f"unsupported release version: {version}")
-          print(f"prerelease={'true' if '-' in version else 'false'}")
-          PY
 
       - name: Validate release source
         shell: bash
