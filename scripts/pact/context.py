@@ -16,7 +16,8 @@ from repository_files import DEFAULT_PRUNE_DIRS
 from risk import profile
 from schema_validate import load_schema, validate_instance
 from scope_routing import route_only
-from discover import exact_match_priority
+from discover import (DOCUMENT_STOPWORDS, document_term_matches,
+                      exact_match_priority, has_unspaced_script)
 from runtime_exec import runtime_command
 
 
@@ -523,24 +524,68 @@ def split_nonfunctional_decisions(
     return materialize, deferred
 
 
-def split_weak_lexical_decisions(
-    knowledge: list[dict],
-) -> tuple[list[dict], list[dict]]:
-    """Default: avoid materializing *only* uncorroborated 8/16-point hits.
+def _weak_source_unconfirmed(item: dict, task: str) -> bool:
+    """Body matches alone must not masquerade as verified task applicability.
 
-    Source-scored single-query evidence only. No task-text classifier and no
-    inference of Decision applicability; deferred sources remain mandatory
-    Convergence review candidates in prepared tasks.
+    Preserve explicit references, any real source title term, and distinctive
+    code/domain phrases actually found in source, including opaque-titled
+    pathless Decisions. Unreadable/huge/symlinked source keeps full Context.
+    Return True only for the weakest evidence, still as a mandatory hint.
     """
+    if (item.get("reasons") != []
+            or has_unspaced_script(task)
+            or type(item.get("score")) is not int
+            or item["score"] <= 0):
+        return False
+    raw_terms = re.findall(r"[\\w\\-]+", task, flags=re.UNICODE)
+    terms = list(dict.fromkeys(
+        term for term in raw_terms
+        if term.casefold() not in DOCUMENT_STOPWORDS
+        and len(term) >= 4
+    ))
+    if len(terms) < 3:
+        return False
+
+    # Project-authored title is much better evidence than generic body words.
+    title = str(item.get("title") or "")
+    if any(document_term_matches(term, title) for term in terms):
+        return False
+
+    # Protect source-authored code symbols and compound domain phrases even
+    # without a descriptive title (e.g. auto_accept_rules or screen-reader).
+    # A long exact body term is another conservative lexical safeguard.
+    source_terms = [
+        term for term in terms
+        if len(term) >= 12
+    ]
+    if source_terms:
+        relative = str(item.get("path") or "")
+        lexical_path = ROOT / relative
+        path = repo_file(relative)
+        if (path is None or lexical_path.is_symlink()):
+            return False
+        try:
+            if path.stat().st_size > 128 * 1024:
+                return False
+            body = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return False
+        if any(document_term_matches(term, body) for term in source_terms):
+            return False
+    return True
+
+
+def split_weak_lexical_decisions(
+    knowledge: list[dict], task: str,
+) -> tuple[list[dict], list[dict]]:
+    """Default: defer only uncorroborated body matches as reviewable hints."""
     materialize: list[dict] = []
     deferred: list[dict] = []
     for item in knowledge:
         if (
             item.get("artifact_type") == "decision"
             and item.get("status") == "implemented"
-            and type(item.get("score")) is int
-            and 0 < item["score"] <= WEAK_DECISION_SCORE_MAX
-            and item.get("reasons") == []
+            and _weak_source_unconfirmed(item, task)
         ):
             deferred.append(item)
         else:
@@ -883,7 +928,7 @@ def main() -> int:
     ):
         # Never use fused RRF scores as the raw 8-point lexical source score.
         # Unscoped weak hits are a navigation hint, not normative truth.
-        candidate_results, weak = split_weak_lexical_decisions(candidate_results)
+        candidate_results, weak = split_weak_lexical_decisions(candidate_results, args.task)
         if weak:
             try:
                 weak_decision_hints = nonfunctional_decision_hints(weak)
@@ -985,7 +1030,8 @@ def main() -> int:
     unknowns: list[str] = governance_path_hints()
     if weak_decision_hints is not None:
         unknowns.append(
-            "Source-scored 8/16-point body-only Decision matches were deferred "
+            "Source-scored generic-body-only Decision matches without "
+            "title/code/domain corroboration were deferred "
             f"({weak_decision_hints['total_candidates']} candidates), NOT "
             "judged inapplicable. Review the source-hashed weak_decision_hints "
             "before implementation if they can affect behavior; prepared tasks "
