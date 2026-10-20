@@ -11,6 +11,8 @@ import shutil
 import sys
 import tempfile
 
+import legacy_upgrade
+
 from distribution import (
     github_actions_entry,
     manifest_record,
@@ -30,6 +32,8 @@ MUTATING_ACTIONS = {
     "update-framework",
     "create-seed",
     "remove-framework",
+    "migrate-legacy-seed",
+    "migrate-legacy-metadata",
 }
 
 
@@ -76,7 +80,10 @@ def desired_entries(source_root: pathlib.Path, target: pathlib.Path, manifest: d
     return entries
 
 
-def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict) -> dict:
+def plan_upgrade(
+    source_root: pathlib.Path, target: pathlib.Path, manifest: dict,
+    *, migrate_legacy: bool = False,
+) -> dict:
     tracked = manifest.get("files", {})
     entries = desired_entries(source_root, target, manifest)
     desired_by_path = {entry["target"].as_posix(): entry for entry in entries}
@@ -278,6 +285,31 @@ def plan_upgrade(source_root: pathlib.Path, target: pathlib.Path, manifest: dict
                 ),
             })
 
+    # Old PACT YAML seeds/front matter are NOT read by the compact 0.4
+    # runtime. Preserve the original user data and refuse a misleading green
+    # upgrade unless it is explicitly migrated or manually reconciled.
+    legacy = legacy_upgrade.scan(
+        source_root, target, tracked, migrate_legacy,
+        installed_version=manifest.get("runtime_version", "unknown"),
+    )
+    for op in legacy["operations"]:
+        if op["action"] == "migrate-legacy-seed":
+            # A missing TOML seed would otherwise be created from the new
+            # empty default, silently shadowing the user's original settings.
+            operations = [
+                existing for existing in operations
+                if not (existing["path"] == op["path"]
+                        and existing["action"] == "create-seed")
+            ]
+        if any(existing["path"] == op["path"] for existing in operations):
+            conflicts.append({
+                "path": op["path"],
+                "reason": "legacy migration overlaps another framework operation",
+            })
+            continue
+        operations.append(op)
+    conflicts.extend(legacy["conflicts"])
+    notices.extend(legacy["notices"])
     return {
         "from_runtime_version": manifest.get("runtime_version", "unknown"),
         "to_runtime_version": runtime_version(source_root),
@@ -351,6 +383,22 @@ def assert_planned_target_unchanged(
         return
 
     destination = resolve_install_target(target, path)
+    if action in {"migrate-legacy-seed", "migrate-legacy-metadata"}:
+        source = resolve_install_target(target, operation["legacy_path"])
+        if (
+            not source.is_file()
+            or sha256_file(source) != operation["legacy_sha256"]
+        ):
+            raise RuntimeError("legacy migration source changed after plan: " + path)
+        if action == "migrate-legacy-seed":
+            if path_present(destination):
+                raise RuntimeError("new TOML seed appeared after plan: " + path)
+        elif (
+            not destination.is_file()
+            or sha256_file(destination) != operation["legacy_sha256"]
+        ):
+            raise RuntimeError("legacy authority changed after plan: " + path)
+        return
     must_be_missing = (
         action in {"create-framework", "create-seed"}
         or (action == "remove-framework" and operation.get("already_absent"))
@@ -389,6 +437,7 @@ def apply_upgrade(
     target: pathlib.Path,
     manifest: dict,
     plan: dict,
+    *, migrate_legacy: bool = False,
 ) -> dict:
     if plan["conflicts"]:
         raise UpgradeApplyError(
@@ -402,7 +451,9 @@ def apply_upgrade(
     try:
         if load_manifest(target) != manifest:
             raise RuntimeError("install manifest changed after planning")
-        refreshed_plan = plan_upgrade(source_root, target, manifest)
+        refreshed_plan = plan_upgrade(
+            source_root, target, manifest, migrate_legacy=migrate_legacy,
+        )
         if refreshed_plan != plan:
             raise RuntimeError("upgrade source or target changed after planning")
         for operation in plan["operations"]:
@@ -449,10 +500,15 @@ def apply_upgrade(
                 if op["action"] == "remove-framework":
                     continue
                 path = op["path"]
-                entry = desired[path]
                 staged_path = stage_root / pathlib.Path(path)
                 staged_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(entry["source"], staged_path)
+                if op["action"].startswith("migrate-legacy-"):
+                    staged_path.write_bytes(
+                        legacy_upgrade.render(source_root, target, op)
+                    )
+                else:
+                    entry = desired[path]
+                    shutil.copy2(entry["source"], staged_path)
                 actual_sha = sha256_file(staged_path)
                 if actual_sha != op["source_sha256"]:
                     raise UpgradeApplyError(
@@ -555,13 +611,30 @@ def apply_upgrade(
                 *refresh_ops,
             ]:
                 path = op["path"]
-                entry = desired[path]
                 destination = resolve_install_target(target, path)
                 if op["action"] == "refresh-manifest":
                     assert_planned_target_unchanged(target, op, manifest)
+                if op["action"] == "migrate-legacy-metadata":
+                    # Decision/Rule bytes are project-owned; never adopt them
+                    # as framework-owned install inventory.
+                    if (
+                        not destination.is_file()
+                        or sha256_file(destination) != op["source_sha256"]
+                    ):
+                        raise RuntimeError("migrated authority digest differs: " + path)
+                    continue
+                entry = desired[path]
                 if destination.is_file():
                     record = manifest_record(entry, destination)
-                    if record.get("source_sha256") != op.get("source_sha256"):
+                    # Migrated TOML seeds are project-owned. The intended
+                    # installed bytes differ from today's blank seed template.
+                    if op["action"] == "migrate-legacy-seed":
+                        if (
+                            sha256_file(destination) != op["source_sha256"]
+                            or record["management"] != "seed"
+                        ):
+                            raise RuntimeError("migrated seed failed verification: " + path)
+                    elif record.get("source_sha256") != op.get("source_sha256"):
                         raise RuntimeError(
                             f"upgrade source changed after staging: {path}"
                         )
@@ -677,6 +750,10 @@ def main() -> int:
         help="transactionally apply only when there are no framework conflicts",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--migrate-legacy", action="store_true",
+        help="explicitly convert only verifiable historical YAML seeds/authority metadata",
+    )
     args = parser.parse_args()
 
     target = pathlib.Path(args.target).expanduser().resolve()
@@ -688,7 +765,9 @@ def main() -> int:
 
     try:
         manifest = load_manifest(target)
-        plan = plan_upgrade(source_root, target, manifest)
+        plan = plan_upgrade(
+            source_root, target, manifest, migrate_legacy=args.migrate_legacy,
+        )
     except Exception as exc:
         print(f"PACT upgrade: cannot plan upgrade: {exc}", file=sys.stderr)
         return 2
@@ -719,7 +798,10 @@ def main() -> int:
             return 1
 
         try:
-            transaction = apply_upgrade(source_root, target, manifest, plan)
+            transaction = apply_upgrade(
+                source_root, target, manifest, plan,
+                migrate_legacy=args.migrate_legacy,
+            )
             result["applied"] = True
             result.update(transaction)
         except UpgradeApplyError as exc:
