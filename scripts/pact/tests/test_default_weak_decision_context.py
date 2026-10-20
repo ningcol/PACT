@@ -42,9 +42,17 @@ class WeakLexicalScoringTests(unittest.TestCase):
             self.hit("RULE-GOOD", 8, kind="rule", status="confirmed"),
             self.hit("DOC-GUIDE", 8, kind="document"),
         ]
-        material, weak = context.split_weak_lexical_decisions(
-            rows, "Fix code bugs with tests",
-        )
+        # Source trust must be real even for short, generic task tokens.
+        with tempfile.TemporaryDirectory(prefix="pact-weak-scored-sources-") as td:
+            root = pathlib.Path(td)
+            for doc in rows:
+                file = root / doc["path"]
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text("Original unrelated source Decision.\n", encoding="utf-8")
+            with patch.object(context, "ROOT", root):
+                material, weak = context.split_weak_lexical_decisions(
+                    rows, "Fix code bugs with tests",
+                )
         self.assertEqual([x["id"] for x in weak], ["DEC-ONE", "DEC-TWO", "DEC-THREE"])
         self.assertEqual(
             [x["id"] for x in material],
@@ -115,6 +123,18 @@ class SourceCorroborationTests(unittest.TestCase):
                 # Unverifiable provenance never grants an automatic omission.
                 self.assertFalse(context._weak_source_unconfirmed(
                     generic, "Change startup logic to silently migrate auto_accept_rules from old installs",
+                ))
+                # Even without long/compound terms, a missing source is never
+                # safe to exclude from authoritative Context materialization.
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Fix code bugs with tests",
+                ))
+                path.write_bytes(b"x" * (128 * 1024 + 1))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Fix code bugs with tests",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Rename a local test variable without changing production behavior",
                 ))
 
 
