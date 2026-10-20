@@ -373,6 +373,36 @@ def scan(
             except (OSError, ValueError) as exc:
                 conflicts.append({"path": rel, "reason": f"manual authority review required: {exc}"})
 
+    # The historical AGENTS.md is project-owned and must not be overwritten.
+    # It can still refer to deleted YAML sources or pre-compact CLI commands,
+    # so report the necessary manual reconciliation without inventing Owner
+    # acceptance or replacing the project's Agent instructions.
+    if not installed_version.startswith("0.4."):
+        guide = target / "AGENTS.md"
+        if guide.is_symlink():
+            conflicts.append({
+                "path": "AGENTS.md",
+                "reason": "legacy Agent guide is a symlink and requires manual review",
+            })
+        elif guide.is_file():
+            try:
+                raw_guide = guide.read_text(encoding="utf-8")
+                if ".pact/baseline.yaml" in raw_guide or ".pact/config.yaml" in raw_guide:
+                    notices.append({
+                        "kind": "legacy-agent-guide",
+                        "path": "AGENTS.md",
+                        "reason": (
+                            "existing project-owned Agent guide still names old YAML; "
+                            "after upgrade review the guide and change references to "
+                            "the authoritative TOML/compact PACT commands manually"
+                        ),
+                    })
+            except (OSError, UnicodeError) as exc:
+                conflicts.append({
+                    "path": "AGENTS.md",
+                    "reason": f"historical Agent guide cannot be audited: {exc}",
+                })
+
     tasks = target / ".pact" / "tasks"
     # Only historical prepared tasks have a different trust/provenance format.
     # A current-format 0.4 task must not prevent a routine 0.4 upgrade.
