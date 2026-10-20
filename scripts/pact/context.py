@@ -933,8 +933,10 @@ def main() -> int:
         and args.intent not in {"decision", "history"}
         and not args.scope_first
         and len(queries) == 1
+        and queries[0].strip().casefold() == args.task.strip().casefold()
     ):
-        # Never use fused RRF scores as the raw 8-point lexical source score.
+        # Never use fused RRF scores or a replacement-query score as
+        # corroboration for the original task's Decision relevance.
         # Unscoped weak hits are a navigation hint, not normative truth.
         candidate_results, weak = split_weak_lexical_decisions(candidate_results, args.task)
         if weak:
