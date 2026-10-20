@@ -141,17 +141,14 @@ class DistributionUpgradeTests(unittest.TestCase):
 
         with mock.patch.object(init_runtime.os, "link",
                                side_effect=concurrent_create):
-            created = init_runtime.apply(self.target, init_runtime.plan(self.target))
+            with self.assertRaises(RuntimeError):
+                init_runtime.apply(self.target, init_runtime.plan(self.target))
         self.assertEqual(len(planted), 1)
-        self.assertNotIn("pact.py", created)
         self.assertEqual(
             (self.target / "pact.py").read_text(encoding="utf-8"),
             "concurrent project file\n",
         )
-        tracked = json.loads(
-            (self.target / ".pact/install.json").read_text(encoding="utf-8")
-        )["files"]
-        self.assertNotIn("pact.py", tracked)
+        self.assertFalse((self.target / ".pact/install.json").exists())
 
     def test_init_rollback_preserves_file_replaced_by_other_writer(self) -> None:
         self.target.mkdir()
