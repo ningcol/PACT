@@ -203,7 +203,13 @@ class TrustedCompletionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         response = json.loads(result.stdout)
         self.assertFalse(response["complete"])
-        self.assertEqual(response["evidence"], "incomplete")
+        # The Owner's false completed assertion also makes the combined
+        # bundle invalid; the underlying readiness reason must be explicit.
+        self.assertEqual(response["evidence"], "invalid")
+        self.assertTrue(any(
+            "evidence readiness is 'incomplete'" in error
+            for error in response["errors"]
+        ), response)
 
     def test_optional_only_claims_cannot_satisfy_completion(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
@@ -214,7 +220,13 @@ class TrustedCompletionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         response = json.loads(result.stdout)
         self.assertFalse(response["complete"])
-        self.assertEqual(response["evidence"], "incomplete")
+        # The Owner's false completed assertion also makes the combined
+        # bundle invalid; the underlying readiness reason must be explicit.
+        self.assertEqual(response["evidence"], "invalid")
+        self.assertTrue(any(
+            "evidence readiness is 'incomplete'" in error
+            for error in response["errors"]
+        ), response)
 
     def test_legacy_v2_receipt_does_not_verify_v3_worktree(self) -> None:
         evidence, convergence, owner = self.base_bundle("medium")
