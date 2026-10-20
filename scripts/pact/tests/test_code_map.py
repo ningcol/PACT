@@ -105,6 +105,28 @@ class CodeMapTests(unittest.TestCase):
         self.assertTrue(by_path["src/a.test.ts"]["is_test"])
         self.assertIn("read", by_path["src/a.ts"]["symbols"])
 
+    def test_javascript_comments_and_strings_do_not_forge_import_edges(self) -> None:
+        self.write("src/real.ts", "export const actual = true;\n")
+        self.write("src/ghost.ts", "export const unrelated = true;\n")
+        self.write(
+            "src/entry.ts",
+            '// import { unrelated } from "./ghost";\n'
+            '/*\nexport { unrelated } from "./ghost";\n'
+            'function FakeCommentSymbol() {}\n*/\n'
+            'const text = "import fake from \'./ghost\'";\n'
+            'const template = `\nfunction FakeTemplateSymbol() {}\n`;\n'
+            'import { actual } from "./real";\n'
+            'export function ActualSymbol() { return actual; }\n',
+        )
+
+        data = self.build()
+        source = next(item for item in data["files"] if item["path"] == "src/entry.ts")
+        edges = {edge["to"] for edge in data["edges"] if edge["from"] == "src/entry.ts"}
+        self.assertEqual(edges, {"src/real.ts"})
+        self.assertIn("ActualSymbol", source["symbols"])
+        self.assertNotIn("FakeCommentSymbol", source["symbols"])
+        self.assertNotIn("FakeTemplateSymbol", source["symbols"])
+
     def test_vue_relative_import_is_resolved(self) -> None:
         self.write("src/widget.ts", "export const widget = 1;\n")
         self.write(
