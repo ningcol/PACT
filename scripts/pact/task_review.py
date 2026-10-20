@@ -481,12 +481,12 @@ def _snapshot(task_id: str):
         manifest, contract, context, evidence, convergence, owner, task_change,
         errors, gaps,
     )
-    return diagnosis, bundle, owner
+    return diagnosis, bundle, owner, manifest
 
 
 def assist(args) -> int:
     try:
-        result, bundle, owner = _snapshot(args.task_id)
+        result, bundle, owner, observed_manifest = _snapshot(args.task_id)
         result["draft_written"] = False
         if args.write_draft:
             # Finish/verify/draft/checkpoint also take the task primary lock.
@@ -498,14 +498,8 @@ def assist(args) -> int:
                 _exclusive_bundle(task_dir),
                 _exclusive_bundle(bundle),
             ):
-                current_manifest = read_task_manifest(task_dir / "task.json")
-                previous_manifest = read_task_manifest(task_dir / "task.json")
-                # The first diagnostic may have observed a previous task
-                # generation. Preserve its binding for safe comparison.
-                if (result.get("contract_sha256") != current_manifest.get("contract_sha256")
-                        or result.get("context_sha256") != current_manifest.get("context_sha256")):
-                    raise ValueError("task generation changed before Owner draft lock")
-                result, _, owner = _snapshot(args.task_id)
+                result, _, owner, checked_manifest = _snapshot(args.task_id)
+                assert_same_task_generation(observed_manifest, checked_manifest)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
                 if owner is None:
