@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/decision-memory-noise-diagnostic.yml"
       - "scripts/benchmark/decision_memory_noise_probe.py"
+      - "scripts/benchmark/default_weak_decision_gate.py"
       - "scripts/pact/tests/test_decision_memory_noise_probe.py"
       - "benchmarks/decision-memory/noise-*.json"
       - "docs/evaluation/decision-memory-noise-*.md"
@@ -95,6 +96,14 @@ jobs:
           print("Extra current Decision candidates",
                 receipt["oracle_extraneous_current_candidates"])
           PY
+
+      - name: Gate frozen ADR positive recall and weak-hit routine reduction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/benchmark/default_weak_decision_gate.py \
+            --project adr-viewer \
+            --input "$RUNNER_TEMP/pact-brownfield-noise.json"
 
       - name: Preserve full nonblind diagnostic and failures
         if: always()
