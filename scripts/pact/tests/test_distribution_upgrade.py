@@ -22,6 +22,7 @@ NEXT_VERSION = "9.9.9-test"
 
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "pact"))
 import upgrade as upgrade_runtime
+import init as init_runtime
 
 
 class DistributionUpgradeTests(unittest.TestCase):
@@ -126,6 +127,57 @@ class DistributionUpgradeTests(unittest.TestCase):
             encoding="utf-8",
         )
         return destination
+
+    def test_init_atomic_publish_never_replaces_concurrently_created_file(self) -> None:
+        self.target.mkdir()
+        original_link = init_runtime.os.link
+        planted = []
+        def concurrent_create(source, destination, *args, **kwargs):
+            destination = pathlib.Path(destination)
+            if destination.name == "pact.py" and not planted:
+                destination.write_text("concurrent project file\n", encoding="utf-8")
+                planted.append(destination)
+            return original_link(source, destination, *args, **kwargs)
+
+        with mock.patch.object(init_runtime.os, "link",
+                               side_effect=concurrent_create):
+            created = init_runtime.apply(self.target, init_runtime.plan(self.target))
+        self.assertEqual(len(planted), 1)
+        self.assertNotIn("pact.py", created)
+        self.assertEqual(
+            (self.target / "pact.py").read_text(encoding="utf-8"),
+            "concurrent project file\n",
+        )
+        tracked = json.loads(
+            (self.target / ".pact/install.json").read_text(encoding="utf-8")
+        )["files"]
+        self.assertNotIn("pact.py", tracked)
+
+    def test_init_rollback_preserves_file_replaced_by_other_writer(self) -> None:
+        self.target.mkdir()
+        original_link = init_runtime.os.link
+        created_file = []
+        attempts = []
+
+        def concurrent_replace(source, destination, *args, **kwargs):
+            destination = pathlib.Path(destination)
+            attempts.append(destination)
+            if len(attempts) == 2:
+                self.assertTrue(created_file)
+                outside = created_file[0]
+                temporary = outside.parent / "new-owner-write.tmp"
+                temporary.write_text("other writer\n", encoding="utf-8")
+                os.replace(temporary, outside)
+                raise OSError("simulated third-party concurrent write")
+            original_link(source, destination, *args, **kwargs)
+            created_file.append(destination)
+
+        with mock.patch.object(init_runtime.os, "link",
+                               side_effect=concurrent_replace):
+            with self.assertRaises(OSError):
+                init_runtime.apply(self.target, init_runtime.plan(self.target))
+        self.assertEqual(created_file[0].read_text(encoding="utf-8"), "other writer\n")
+        self.assertFalse((self.target / ".pact/install.json").exists())
 
     def test_mid_init_failure_rolls_back_created_files_and_manifest(self) -> None:
         self.target.mkdir(parents=True)
