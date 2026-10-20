@@ -302,6 +302,42 @@ class TaskWorkflowTests(unittest.TestCase):
         resumed = self.pact("task", "finish", self.task_id)
         self.assertNotIn("another task Evidence writer", resumed.stderr)
 
+    def test_force_reprepare_uses_stable_generation_lock(self) -> None:
+        task_dir = self.root / ".pact" / "tasks" / self.task_id
+        contract = task_dir / "contract.json"
+        baseline = contract.read_bytes()
+        stable_lock = self.root / ".pact" / "tasks" / ".locks" / self.task_id
+        command = self.lock_command("hold", stable_lock)
+        with subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        ) as holder:
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "acquired")
+                forced = self.pact(
+                    "task", "prepare", "Replacement task", "--task-id", self.task_id,
+                    "--success", "Replacement succeeds", "--risk", "low",
+                    "--no-code", "--force",
+                )
+                self.assertEqual(forced.returncode, 2, forced.stdout + forced.stderr)
+                self.assertIn("another task Evidence writer", forced.stderr)
+                self.assertEqual(contract.read_bytes(), baseline)
+                self.assertEqual(
+                    self.pact("task", "finish", self.task_id).returncode, 2,
+                )
+                self.assertEqual(self.verify().returncode, 2)
+            finally:
+                holder.communicate(input="\n", timeout=30)
+        self.assertEqual(holder.returncode, 0)
+        forced = self.pact(
+            "task", "prepare", "Replacement task", "--task-id", self.task_id,
+            "--success", "Replacement succeeds", "--risk", "low",
+            "--no-code", "--force",
+        )
+        self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
+        self.assertNotEqual(contract.read_bytes(), baseline)
+        self.assertTrue((stable_lock / ".task-workflow.lock").is_file())
+
     def test_verify_timeout_releases_lock_without_passing_evidence(self) -> None:
         result = self.pact(
             "task", "verify", self.task_id,
