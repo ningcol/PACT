@@ -6,6 +6,20 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Historical PACT upgrade compatibility (not yet released)
+
+- Detect old PACT 0.1/0.2 YAML seeds and PACT-marked authoritative Markdown
+  before automatic framework upgrade. Legacy Owner or Decision semantics
+  cannot be shadowed by blank TOML defaults or silently demoted to prose.
+- Add explicit dry-run and transactional `upgrade --migrate-legacy` conversion
+  (also available from single-file Bootstrap), with strict stdlib-only legacy
+  syntax checks, original body/ID preservation, and schema validation.
+- Preserve legacy YAML originals and user-owned TOML seeds; non-default
+  retired project settings, absent Decision IDs, unsafe files and incomplete
+  historical Task state block instead of guessing Owner intent.
+- Add staged/atomic migration, rollback and source-bound tests. A no-manifest
+  0.1 installation remains manual, and no real Owner approval is inferred.
+
 ### Scoped S0–S7 engineering integration (2026-10-15/16)
 
 - Integrate S1 stable-workspace Evidence constraints, S2 premise-aware Decision
