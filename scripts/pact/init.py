@@ -155,6 +155,37 @@ def path_present(path: pathlib.Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
+# A pre-manifest PACT is not a fresh project. Creating default TOML files
+# next to its original YAML would shadow user-owned Owner/Decision settings.
+_PRE_MANIFEST_MARKERS = (
+    ".pact/VERSION",
+    ".pact/pact.pyz",
+    ".pact/config.yaml",
+    ".pact/baseline.yaml",
+    ".pact/fitness.yaml",
+    ".pact/AGENT_BOOTSTRAP.md",
+    "pact.py",
+)
+
+
+def require_fresh_or_tracked_init(target: pathlib.Path) -> None:
+    if read_install_manifest(target) is not None:
+        return
+    existing = [
+        relative
+        for relative in _PRE_MANIFEST_MARKERS
+        if path_present(safe_init_target(target, relative))
+    ]
+    if existing:
+        raise RuntimeError(
+            "pre-manifest PACT state detected ("
+            + ", ".join(existing)
+            + "); init cannot invent historical ownership or shadow legacy "
+            "Owner/Decision data. Preserve the original project and manually "
+            "reconcile/migrate in an isolated copy before a tracked install."
+        )
+
+
 def safe_init_target(target: pathlib.Path, relative: str) -> pathlib.Path:
     """Return an init destination without following a parent symlink outside target."""
     pure = pathlib.PurePosixPath(relative)
@@ -338,6 +369,9 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
         fail_after = int(fail_after_raw) if fail_after_raw else None
 
         try:
+            # Recheck directly before first target write: pre-manifest state
+            # may have appeared while the scaffold was being staged.
+            require_fresh_or_tracked_init(target)
             target.mkdir(parents=True, exist_ok=True)
             for op in create_ops:
                 relative = op["path"]
@@ -456,6 +490,7 @@ def main() -> int:
         if manifest_path.is_symlink():
             raise ValueError("invalid .pact/install.json: path must not be a symlink")
         existing_manifest = read_install_manifest(target)
+        require_fresh_or_tracked_init(target)
         operations = plan(target, github_actions=args.github_actions)
     except (ValueError, RuntimeError) as exc:
         print(f"PACT init: {exc}", file=sys.stderr)
