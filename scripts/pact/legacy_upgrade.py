@@ -325,7 +325,31 @@ def scan(
                 break
             if path.name in {"README.md", "TEMPLATE.md"}:
                 continue
-            if tracked.get(rel, {}).get("management") == "framework":
+            record = tracked.get(rel, {})
+            if record.get("management") == "framework":
+                # Old full-profile installs managed governance/doc examples.
+                # An unchanged example is safe for the normal obsolete-file
+                # removal path, but a locally edited copy was effectively
+                # adopted by the project. Never silently detach its YAML
+                # authority without reviewing the change and original source.
+                try:
+                    if (
+                        path.is_symlink() or not path.is_file()
+                        or sha(path.read_bytes()) != record.get("installed_sha256")
+                    ):
+                        conflicts.append({
+                            "path": rel,
+                            "reason": (
+                                "historically framework-owned knowledge was locally "
+                                "modified; review project authority and detach/migrate "
+                                "manually before upgrading"
+                            ),
+                        })
+                except OSError as exc:
+                    conflicts.append({
+                        "path": rel,
+                        "reason": f"historically framework-owned source unreadable: {exc}",
+                    })
                 continue
             try:
                 if path.is_symlink() or path.stat().st_size > MAX_SOURCE:
