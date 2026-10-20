@@ -62,6 +62,7 @@ jobs:
           TARGET="$RUNNER_TEMP/pact-historical-adopted"
           echo "OLD_PACT_SOURCE=$ORIGIN" >> "$GITHUB_ENV"
           echo "OLD_PACT_TARGET=$TARGET" >> "$GITHUB_ENV"
+          echo "HISTORICAL_PIN=$PIN" >> "$GITHUB_ENV"
           git clone --quiet https://github.com/ningcol/PACT.git "$ORIGIN"
           git -C "$ORIGIN" checkout --detach --quiet "$PIN"
           test "$(git -C "$ORIGIN" rev-parse HEAD)" = "$PIN"
@@ -120,7 +121,7 @@ jobs:
           }
           proof = {
               "historical_version": os.environ["VERSION"],
-              "historical_commit": os.environ.get("PIN"),
+              "historical_commit": os.environ["HISTORICAL_PIN"],
               "old_sha256": tracked,
               "original_decision_body": doc.read_text().split("---\n", 2)[2],
               "legacy_source": legacy,
