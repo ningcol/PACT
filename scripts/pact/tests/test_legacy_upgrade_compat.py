@@ -297,6 +297,30 @@ class LegacyUpgradeTests(unittest.TestCase):
         self.assertIn("ambiguous YAML", result.stdout)
         self.assertFalse((self.project / ".pact/config.toml").exists())
 
+    def test_project_owned_rule_in_readme_is_not_skipped_as_a_template(self):
+        self.old(notes=False)
+        rel = "docs/product/rules/README.md"
+        page = self.project / rel
+        page.parent.mkdir(parents=True, exist_ok=True)
+        source = (
+            "---\npact:\n  type: rule\n  id: RULE-OWNER-REVIEW\n"
+            "  status: confirmed\n  owners:\n    - product\n---\n"
+            "# Important Rule\n\nNever change Owner authority silently.\n"
+        )
+        page.write_text(source, encoding="utf-8")
+        plan = self.run_upgrade("--migrate-legacy")
+        self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
+        actions = json.loads(plan.stdout)["operations"]
+        self.assertTrue(any(
+            a["action"] == "migrate-legacy-metadata" and a["path"] == rel
+            for a in actions
+        ))
+        applied = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        text = page.read_text(encoding="utf-8")
+        self.assertIn("RULE-OWNER-REVIEW", text)
+        self.assertTrue(text.endswith("# Important Rule\n\nNever change Owner authority silently.\n"))
+
     def test_no_machine_decision_id_requires_manual_owner_review(self):
         self.old()
         p = self.project / ".agents/decisions/implemented/approval.md"
