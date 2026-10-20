@@ -29,9 +29,10 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
     def test_release_marks_version_suffixes_as_prerelease(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
 
-        self.assertIn("prerelease={'true' if '-' in version else 'false'}", text)
+        self.assertIn("scripts/release/release_policy.py classify", text)
+        self.assertIn("needs.classify.outputs.prerelease", text)
         self.assertIn("IS_PRERELEASE:", text)
-        self.assertIn("EXTRA_ARGS+=(--prerelease)", text)
+        self.assertIn("EXTRA_ARGS+=(--prerelease --latest=false)", text)
         self.assertIn('test "$TAG_VERSION" = "$RUNTIME_VERSION"', text)
 
     def test_release_keeps_publish_permission_scoped_to_release_job(self) -> None:
@@ -42,17 +43,38 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
 
     def test_release_requires_protected_owner_go_on_exact_main_commit(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
-        self.assertIn("environment: pact-release-approval", text)
-        self.assertIn('PACT_RELEASE_GO:', text)
-        self.assertIn('PACT_RELEASE_APPROVED_SHA:', text)
-        self.assertIn('PACT_AGENT_OWNER_GATES_APPROVED:', text)
-        self.assertIn('git ls-remote --exit-code origin refs/heads/main', text)
+        # Channel selection is derived from strict release-policy source,
+        # not an unprotected default or a mere 'pact-rc' job name.
+        self.assertIn("needs.classify.outputs.environment", text)
+        self.assertIn("PACT_RC_RELEASE_GO:", text)
+        self.assertIn("PACT_RC_RELEASE_APPROVED_SHA:", text)
+        self.assertIn("PACT_RELEASE_GO:", text)
+        self.assertIn("PACT_RELEASE_APPROVED_SHA:", text)
+        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", text)
+        self.assertIn("actions: read", text)
+        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", text)
+        self.assertIn("actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA", text)
+        self.assertIn("actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA", text)
+        self.assertIn("git ls-remote --exit-code origin refs/heads/main", text)
         self.assertIn('test "$TAG_SHA" = "$MAIN_SHA"', text)
-        self.assertIn('test "${PACT_RELEASE_APPROVED_SHA:-}" = "$TAG_SHA"', text)
-        self.assertIn('test "${PACT_AGENT_OWNER_GATES_APPROVED:-}" = "true"', text)
-        self.assertIn('test "${PACT_RELEASE_GO:-}" = "GO"', text)
-        self.assertLess(text.index("Release HOLD: missing explicit"),
-                        text.index("gh release create"))
+        self.assertIn("scripts/release/release_policy.py gate", text)
+        self.assertLess(
+            text.index("scripts/release/release_policy.py gate"),
+            text.index("gh release create"),
+        )
+        policy_text = (
+            PROJECT_ROOT / "scripts/release/release_policy.py"
+        ).read_text(encoding="utf-8")
+        for gate in (
+            "PACT_RC_RELEASE_GO",
+            "PACT_RC_RELEASE_APPROVED_SHA",
+            "PACT_RELEASE_GO",
+            "PACT_RELEASE_APPROVED_SHA",
+            "PACT_AGENT_OWNER_GATES_APPROVED",
+            "pact-rc-approval",
+            "pact-release-approval",
+        ):
+            self.assertIn(gate, policy_text)
 
     def test_release_builds_and_smokes_exact_assets_before_publish(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
