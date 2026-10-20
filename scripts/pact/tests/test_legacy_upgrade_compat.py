@@ -265,6 +265,31 @@ class LegacyUpgradeTests(unittest.TestCase):
         self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         self.assertEqual(guide.read_bytes(), existing)
 
+    def test_02_dual_yaml_and_toml_cannot_shadow_owner_profile(self):
+        self.old()
+        # PACT 0.2 would read the customized YAML even if a different TOML
+        # file existed. Modern PACT would read TOML. That changes Owner truth.
+        other = self.project / ".pact/config.toml"
+        other.write_text((ROOT / ".pact/config.example.toml").read_text())
+        original_toml = other.read_bytes()
+        original_yaml = (self.project / ".pact/config.yaml").read_bytes()
+        result = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("YAML/TOML settings", result.stdout)
+        self.assertEqual(other.read_bytes(), original_toml)
+        self.assertEqual((self.project / ".pact/config.yaml").read_bytes(), original_yaml)
+
+    def test_ambiguous_unquoted_legacy_yaml_does_not_change_owner_authority(self):
+        self.old()
+        file = self.project / ".pact/config.yaml"
+        file.write_text(OLD_OWNER.replace(
+            "  language: zh-CN", '  language: "zh-CN'
+        ))
+        result = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("ambiguous YAML", result.stdout)
+        self.assertFalse((self.project / ".pact/config.toml").exists())
+
     def test_no_machine_decision_id_requires_manual_owner_review(self):
         self.old()
         p = self.project / ".agents/decisions/implemented/approval.md"
