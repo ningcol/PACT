@@ -17,6 +17,8 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - Code Map now verifies lexical and import metadata against source, including
   forged parse-cache checksums; a source set changing during scan is retried
   or rejected instead of publishing a mixed index.
+- JS/TS/Vue lexical indexing ignores comment and quoted-string import/symbol
+  lookalikes so incidental documentation cannot create false import graph edges.
 - Init uses atomic create-if-absent file publishing and identity-checked
   rollback, failing closed when a newly planned path appears concurrently.
 - These engineering controls do not replace independent Agent/Owner trials
