@@ -43,6 +43,7 @@ from task import (
     validate_finish_manifest,
     write_json,
     task_generation_lock,
+    assert_same_task_generation,
 )
 
 
@@ -202,7 +203,9 @@ def draft(args) -> int:
             _exclusive_bundle(task_dir),
             _exclusive_bundle(bundle),
         ):
-            manifest, _, checked_bundle = _prepared(args.task_id)
+            checked_manifest, _, checked_bundle = _prepared(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before draft lock")
             evidence_path = bundle / "evidence.json"
@@ -363,7 +366,9 @@ def verify(args) -> int:
         ):
             # A verifier started before finish must not append claims to
             # already-completed Evidence after waiting for the primary lock.
-            manifest, contract, checked_bundle = _prepared(args.task_id)
+            checked_manifest, contract, checked_bundle = _prepared(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before verify lock")
             if not set(criteria) <= {item["id"] for item in contract["acceptance_criteria"]}:
