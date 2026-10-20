@@ -153,12 +153,32 @@ python3 /tmp/pact-bootstrap.py upgrade \
   --target ../my-existing-project \
   --ref "$PACT_REF"
 
-# Transactional apply.
+# Transactional apply, when preview has no legacy conflicts.
 python3 /tmp/pact-bootstrap.py upgrade \
   --target ../my-existing-project \
   --ref "$PACT_REF" \
   --apply
+
+# If preview identifies legacy PACT 0.1/0.2 YAML seeds or authority notes:
+# Explicit conversion preview (still read-only).
+python3 /tmp/pact-bootstrap.py upgrade \
+  --target ../my-existing-project \
+  --ref "$PACT_REF" \
+  --migrate-legacy
+
+# Review converted Owner settings, Decision IDs and any conflicts first.
+python3 /tmp/pact-bootstrap.py upgrade \
+  --target ../my-existing-project \
+  --ref "$PACT_REF" \
+  --migrate-legacy --apply
 ```
+
+The current runtime reads TOML, **not** PACT 0.1/0.2 YAML. Upgrades
+fail closed rather than leaving historical Owner config or Decision
+metadata silently inactive. Conversions require source-verified metadata,
+preserve Decision prose, and run in the same transactional upgrade; custom
+retired settings, ID-less Decisions and incomplete old Task state require
+manual review. See [upgrade design](docs/design/distribution-upgrades.md).
 
 A local PACT checkout remains supported for development/offline use.
 
