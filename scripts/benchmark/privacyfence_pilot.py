@@ -258,7 +258,8 @@ def run_arm(
                  by_id[x["id"]]["status"] if x.get("id") in by_id else None
              ),
              "artifact_type":x.get("artifact_type"), "sha256":x.get("sha256"),
-             "estimated_tokens":x.get("estimated_tokens")}
+             "score":x.get("score"), "reasons":x.get("reasons"),
+             "title":x.get("title"), "estimated_tokens":x.get("estimated_tokens")}
             for x in items if isinstance(x, dict)
         ]
         trusted_current_ids: set[str] = set()
@@ -335,7 +336,8 @@ def run_arm(
             "discover_stderr": discover["stderr"], "discover_ms": discover["elapsed_ms"],
             "discover_hits": [
                 {"id":x.get("id"), "path":x.get("path"),
-                 "status":x.get("status"), "type":x.get("artifact_type")}
+                 "status":x.get("status"), "type":x.get("artifact_type"),
+                 "score":x.get("score"), "reasons":x.get("reasons")}
                 for x in hits if isinstance(x, dict)
             ],
             "context_command":context["command"],
