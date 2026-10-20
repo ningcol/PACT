@@ -7,6 +7,7 @@ Dry-run is the default. --apply writes only missing files and never overwrites.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -20,6 +21,7 @@ from distribution import (
     runtime_version,
     source_manifest,
     read_install_manifest,
+    sha256_file,
 )
 from runtime_bundle import ensure_runtime_bundle
 
@@ -348,6 +350,11 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
         if manifest_existed
         else None
     )
+    original_manifest_sha = (
+        hashlib.sha256(manifest_backup).hexdigest()
+        if manifest_backup is not None
+        else None
+    )
 
     with tempfile.TemporaryDirectory(
         prefix=".pact-init-txn-",
@@ -365,6 +372,8 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             )
 
         created: list[str] = []
+        created_identity: dict[str, tuple[int, int, str]] = {}
+        manifest_written_identity: tuple[int, int, str] | None = None
         fail_after_raw = os.environ.get("PACT_TEST_FAIL_INIT_AFTER_CREATE")
         fail_after = int(fail_after_raw) if fail_after_raw else None
 
@@ -391,10 +400,21 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 temp_destination = pathlib.Path(temp_name)
                 try:
                     shutil.copy2(staged, temp_destination)
-                    os.replace(temp_destination, destination)
+                    staged_stat = temp_destination.stat()
+                    identity = (
+                        staged_stat.st_dev, staged_stat.st_ino,
+                        sha256_file(temp_destination),
+                    )
+                    try:
+                        # Atomic create-if-absent: os.replace would overwrite
+                        # another process's file after our existence check.
+                        os.link(temp_destination, destination)
+                    except FileExistsError:
+                        continue
+                    created.append(relative)
+                    created_identity[relative] = identity
                 finally:
                     temp_destination.unlink(missing_ok=True)
-                created.append(relative)
 
                 if fail_after is not None and len(created) >= fail_after:
                     raise RuntimeError(
@@ -413,7 +433,22 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 encoding="utf-8",
             )
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staged_manifest, manifest_path)
+            staged_stat = staged_manifest.stat()
+            manifest_written_identity = (
+                staged_stat.st_dev, staged_stat.st_ino,
+                sha256_file(staged_manifest),
+            )
+            if manifest_existed:
+                if (
+                    manifest_path.is_symlink()
+                    or not manifest_path.is_file()
+                    or sha256_file(manifest_path) != original_manifest_sha
+                ):
+                    raise RuntimeError("init install manifest changed during preparation")
+                os.replace(staged_manifest, manifest_path)
+            else:
+                # Do not overwrite a manifest another initializer just wrote.
+                os.link(staged_manifest, manifest_path)
 
             # Validate the final recorded hashes after manifest commit.
             for relative in created:
@@ -437,28 +472,51 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             return created_set
 
         except Exception:
-            # Manifest was committed last, so rollback only removes files this
-            # transaction created and restores the prior manifest if any.
+            # Only remove our own published inode *and* unchanged bytes.
+            # If another writer replaced/modified it, preserve their work.
             for relative in reversed(created):
                 destination = safe_init_target(target, relative)
+                expected = created_identity[relative]
                 try:
-                    if destination.is_file() or destination.is_symlink():
-                        destination.unlink()
+                    if not path_present(destination):
+                        continue
+                    current = destination.lstat()
+                    if (
+                        destination.is_symlink()
+                        or (current.st_dev, current.st_ino) != expected[:2]
+                        or not destination.is_file()
+                        or sha256_file(destination) != expected[2]
+                    ):
+                        continue
+                    destination.unlink()
                     cleanup_empty_parents(destination.parent, target)
                 except OSError:
                     pass
 
-            try:
-                if manifest_existed and manifest_backup is not None:
-                    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-                    restore = txn / "restore-install.json"
-                    restore.write_bytes(manifest_backup)
-                    os.replace(restore, manifest_path)
-                elif path_present(manifest_path):
-                    manifest_path.unlink()
-                    cleanup_empty_parents(manifest_path.parent, target)
-            except OSError:
-                pass
+            # A failed commit must not delete/restore another writer's
+            # install.json. Restore only if the exact inode/bytes we published
+            # are still present; otherwise preserve the newer manifest.
+            if manifest_written_identity is not None:
+                try:
+                    if path_present(manifest_path) and not manifest_path.is_symlink():
+                        current = manifest_path.lstat()
+                        same = (
+                            (current.st_dev, current.st_ino)
+                            == manifest_written_identity[:2]
+                            and manifest_path.is_file()
+                            and sha256_file(manifest_path)
+                            == manifest_written_identity[2]
+                        )
+                        if same:
+                            if manifest_existed and manifest_backup is not None:
+                                restore = txn / "restore-install.json"
+                                restore.write_bytes(manifest_backup)
+                                os.replace(restore, manifest_path)
+                            else:
+                                manifest_path.unlink()
+                                cleanup_empty_parents(manifest_path.parent, target)
+                except OSError:
+                    pass
 
             # Remove an empty target created only by this transaction.
             try:
