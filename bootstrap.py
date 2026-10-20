@@ -156,6 +156,7 @@ def invoke_source(
     *,
     apply: bool,
     github_actions: bool = False,
+    migrate_legacy: bool = False,
 ) -> int:
     runtime = source_root / "scripts" / "pact" / "pact.py"
     if not runtime.is_file():
@@ -171,6 +172,8 @@ def invoke_source(
 
     if command == "upgrade":
         argv.extend(["--source", str(source_root)])
+        if migrate_legacy:
+            argv.append("--migrate-legacy")
 
     if apply:
         argv.append("--apply")
@@ -199,6 +202,10 @@ def main() -> int:
     )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--github-actions", action="store_true")
+    parser.add_argument(
+        "--migrate-legacy", action="store_true",
+        help="upgrade only: explicitly convert verified old YAML config and authority",
+    )
     args = parser.parse_args()
 
     if sys.version_info < (3, 11):
@@ -207,6 +214,9 @@ def main() -> int:
 
     if args.command == "upgrade" and args.github_actions:
         print("--github-actions applies only to init", file=sys.stderr)
+        return 2
+    if args.command != "upgrade" and args.migrate_legacy:
+        print("--migrate-legacy applies only to upgrade", file=sys.stderr)
         return 2
 
     target = pathlib.Path(args.target).expanduser().resolve()
@@ -254,6 +264,7 @@ def main() -> int:
                 target,
                 apply=args.apply,
                 github_actions=args.github_actions,
+                migrate_legacy=args.migrate_legacy,
             )
     except Exception as exc:
         print(f"PACT bootstrap: {exc}", file=sys.stderr)
