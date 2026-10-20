@@ -43,7 +43,7 @@ class WeakLexicalScoringTests(unittest.TestCase):
             self.hit("DOC-GUIDE", 8, kind="document"),
         ]
         material, weak = context.split_weak_lexical_decisions(
-            rows, "Rename a local variable in tests without changing behavior",
+            rows, "Fix code bugs with tests",
         )
         self.assertEqual([x["id"] for x in weak], ["DEC-ONE", "DEC-TWO", "DEC-THREE"])
         self.assertEqual(
@@ -64,7 +64,7 @@ class WeakLexicalScoringTests(unittest.TestCase):
             self.hit("DEC-UNKNOWN", 8, status="candidate"),
         ]
         keep, defer = context.split_weak_lexical_decisions(
-            bad, "Rename a local variable in tests without changing behavior",
+            bad, "Fix code bugs with tests",
         )
         self.assertEqual(keep, bad)
         self.assertEqual(defer, [])
