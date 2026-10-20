@@ -229,6 +229,42 @@ class LegacyUpgradeTests(unittest.TestCase):
         self.assertEqual((self.project / ".pact/install.json").read_bytes(), before)
         self.assertFalse((self.project / ".pact/config.toml").exists())
 
+    def test_modified_historical_framework_document_blocks_silent_detach(self):
+        manifest = self.old()
+        rel = "docs/product/rules/old-framework-example.md"
+        file = self.project / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("# Original framework-provided example\\n")
+        source_hash = hashlib.sha256(file.read_bytes()).hexdigest()
+        manifest["files"][rel] = {
+            "management": "framework", "source_path": rel,
+            "source_sha256": source_hash, "installed_sha256": source_hash,
+        }
+        (self.project / ".pact/install.json").write_text(
+            json.dumps(manifest, indent=2) + "\\n"
+        )
+        file.write_text(
+            "---\\npact:\\n  type: rule\\n  id: RULE-OWNER-SAFETY\\n"
+            "  status: confirmed\\n---\\n# User modified this rule\\n"
+        )
+        before = file.read_bytes()
+        result = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("framework-owned knowledge was locally modified", result.stdout)
+        self.assertEqual(file.read_bytes(), before)
+
+    def test_historical_agent_guide_remains_project_owned_with_warning(self):
+        self.old()
+        guide = self.project / "AGENTS.md"
+        existing = guide.read_bytes()
+        plan = self.run_upgrade("--migrate-legacy")
+        self.assertEqual(plan.returncode, 0)
+        notes = json.loads(plan.stdout)["notices"]
+        self.assertTrue(any(n["kind"] == "legacy-agent-guide" for n in notes))
+        applied = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertEqual(guide.read_bytes(), existing)
+
     def test_no_machine_decision_id_requires_manual_owner_review(self):
         self.old()
         p = self.project / ".agents/decisions/implemented/approval.md"
