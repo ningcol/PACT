@@ -16,7 +16,7 @@ from repository_files import DEFAULT_PRUNE_DIRS
 from risk import profile
 from schema_validate import load_schema, validate_instance
 from scope_routing import route_only
-from discover import (DOCUMENT_STOPWORDS, document_term_matches,
+from discover import (DOCUMENT_STOPWORDS, document_term_matches, document_tokens,
                       exact_match_priority, has_unspaced_script)
 from runtime_exec import runtime_command
 
@@ -553,10 +553,19 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
     # Protect source-authored code symbols and compound domain phrases even
     # without a descriptive title (e.g. auto_accept_rules or screen-reader).
     # A long exact body term is another conservative lexical safeguard.
-    source_terms = [
-        term for term in terms
-        if len(term) >= 12
-    ]
+    source_terms = [term for term in terms if len(term) >= 12]
+    # Natural-language rationale can be a distinctive *spaced* phrase rather
+    # than a code symbol: "screen reader" must recover an opaque-titled ADR.
+    # Require adjacent meaningful words, never a bag-of-words body score.
+    units = document_tokens(task)
+    source_terms.extend(
+        units[i] + " " + units[i + 1]
+        for i in range(len(units) - 1)
+        if len(units[i]) >= 5 and len(units[i + 1]) >= 5
+        and len(units[i]) + len(units[i + 1]) >= 12
+        and units[i] not in DOCUMENT_STOPWORDS
+        and units[i + 1] not in DOCUMENT_STOPWORDS
+    )
     if source_terms:
         relative = str(item.get("path") or "")
         lexical_path = ROOT / relative
