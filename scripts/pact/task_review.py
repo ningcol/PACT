@@ -26,6 +26,7 @@ from report import OWNER_SCHEMA, validate as validate_owner
 from task import (
     ROOT, TASK_ROOT, completion_bundle_path, read_status_contract,
     read_task_manifest, validate_finish_manifest, write_json,
+    task_generation_lock,
 )
 from task_workflow import (
     RUN_ROOT, _existing_evidence, _exclusive_bundle, _prepared,
@@ -491,7 +492,11 @@ def assist(args) -> int:
             # Re-read under BOTH locks to prevent a completed task from
             # receiving new generated Owner data.
             task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-            with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+            with (
+                _exclusive_bundle(task_generation_lock(args.task_id)),
+                _exclusive_bundle(task_dir),
+                _exclusive_bundle(bundle),
+            ):
                 result, _, owner = _snapshot(args.task_id)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
@@ -607,7 +612,11 @@ def export(args) -> int:
         # Share the task-level lock with finish, then acquire the existing
         # Evidence-bundle lock in a consistent global order.
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
             manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed during evidence export")
