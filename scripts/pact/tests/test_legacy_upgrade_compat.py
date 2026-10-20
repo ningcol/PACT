@@ -293,7 +293,7 @@ class LegacyUpgradeTests(unittest.TestCase):
             legacy_upgrade.parse_yaml("pact:\n  id: DEC-X\n  id: DEC-Y\n")
         with self.assertRaisesRegex(ValueError, "Decision needs original stable ID"):
             legacy_upgrade.document_bytes(b"---\npact:\n  type: decision\n  status: implemented\n---\n# X\n")
-        with self.assertRaisesRegex(ValueError, "legacy seed must have version"):
+        with self.assertRaisesRegex(ValueError, "historical seed must have version"):
             legacy_upgrade.seed_bytes(ROOT, "fitness", b"checks: []\n")
 
 
