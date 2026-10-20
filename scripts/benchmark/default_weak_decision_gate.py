@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 PRIVACYFENCE_SHA = "6a03856a6e1819b2eacd3963154ebc7d02923296"
@@ -44,7 +45,7 @@ def hint_integrity(items: list[dict], expected_kind: str) -> tuple[int, int]:
                 or not item["id"].startswith(expected_kind)
                 or not isinstance(item.get("path"), str) or not item["path"]
                 or not isinstance(item.get("sha256"), str)
-                or len(item["sha256"]) != 64
+                or re.fullmatch(r"[a-f0-9]{64}", item["sha256"]) is None
                 or item["id"] in selected
             ):
                 raise ValueError("weak Decision hint has unbound/selected/invalid identity")
