@@ -33,7 +33,7 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertIn("needs.classify.outputs.prerelease", text)
         self.assertIn("IS_PRERELEASE:", text)
         self.assertIn("EXTRA_ARGS+=(--prerelease --latest=false)", text)
-        self.assertIn('test "$TAG_VERSION" = "$RUNTIME_VERSION"', text)
+        self.assertIn("scripts/release/release_policy.py gate", text)
 
     def test_release_keeps_publish_permission_scoped_to_release_job(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
