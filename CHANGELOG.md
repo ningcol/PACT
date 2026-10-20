@@ -6,6 +6,22 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+### Call-chain trust and concurrency hardening (PR #234)
+
+- Low-level Evidence and Complete cannot mark empty or optional-only
+  verification claims ready; Owner completed assertions cannot launder them.
+- Fresh init rejects historical PACT state without a trusted install manifest
+  rather than shadowing YAML Owner settings with default TOML.
+- Stable generation locks and revalidation prevent force-reprepare from
+  overlapping task Evidence writers or mixing old and new task generations.
+- Code Map now verifies lexical and import metadata against source, including
+  forged parse-cache checksums; a source set changing during scan is retried
+  or rejected instead of publishing a mixed index.
+- Init uses atomic create-if-absent file publishing and identity-checked
+  rollback, failing closed when a newly planned path appears concurrently.
+- These engineering controls do not replace independent Agent/Owner trials
+  or grant permission to publish stable releases.
+
 ### Historical PACT upgrade compatibility (not yet released)
 
 - Detect old PACT 0.1/0.2 YAML seeds and PACT-marked authoritative Markdown
