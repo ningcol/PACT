@@ -52,12 +52,22 @@ def load_manifest(target: pathlib.Path) -> dict:
     manifest_path = resolve_install_target(target, INSTALL_MANIFEST.as_posix())
     if not manifest_path.is_file():
         raise FileNotFoundError(
-            "missing .pact/install.json; initialize the project with PACT first"
+            (
+                "missing .pact/install.json; tracked upgrade cannot verify "
+                "historical ownership. Preserve any pre-manifest PACT project "
+                "and migrate its Owner/Decision/Agent state in an isolated copy "
+                "with manual review; never re-init in-place to invent provenance."
+            )
         )
     data = read_install_manifest(target)
     if data is None:
         raise FileNotFoundError(
-            "missing .pact/install.json; initialize the project with PACT first"
+            (
+                "missing .pact/install.json; tracked upgrade cannot verify "
+                "historical ownership. Preserve any pre-manifest PACT project "
+                "and migrate its Owner/Decision/Agent state in an isolated copy "
+                "with manual review; never re-init in-place to invent provenance."
+            )
         )
     return data
 
