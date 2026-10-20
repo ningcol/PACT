@@ -46,6 +46,21 @@ def task_generation_lock(task_id: str) -> pathlib.Path:
     return confined_state_root(ROOT, lock_dir, field="task generation lock")
 
 
+def assert_same_task_generation(before: dict, after: dict) -> None:
+    """Prevent stale CLI requests from crossing a forced reprepare.
+
+    The stable lock excludes overlapping writers, but read-only preflight can
+    observe generation N immediately before N+1 is published. Re-read under
+    the lock and refuse rather than attaching N's Claim/draft to N+1.
+    """
+    fields = ("task_id", "created_at", "contract_sha256", "context_sha256")
+    if any(before.get(field) != after.get(field) for field in fields):
+        raise ValueError(
+            "task was re-prepared after this operation started; "
+            "restart against the current Task Contract/Context"
+        )
+
+
 def generated_task_id(task: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     suffix = hashlib.sha256(task.encode("utf-8")).hexdigest()[:8].upper()
