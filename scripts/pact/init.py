@@ -386,9 +386,11 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 relative = op["path"]
                 destination = safe_init_target(target, relative)
                 if path_present(destination):
-                    # Re-check at publish time to preserve no-overwrite semantics
-                    # if another process created the path after planning.
-                    continue
+                    # A planned missing framework path appeared concurrently.
+                    # Skipping it would publish a misleading partial install.
+                    raise RuntimeError(
+                        f"init target appeared after planning: {relative}"
+                    )
 
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 staged = stage_root / pathlib.Path(relative)
@@ -409,8 +411,10 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                         # Atomic create-if-absent: os.replace would overwrite
                         # another process's file after our existence check.
                         os.link(temp_destination, destination)
-                    except FileExistsError:
-                        continue
+                    except FileExistsError as exc:
+                        raise RuntimeError(
+                            f"init target appeared during atomic create: {relative}"
+                        ) from exc
                     created.append(relative)
                     created_identity[relative] = identity
                 finally:
