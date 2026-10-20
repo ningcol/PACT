@@ -171,6 +171,37 @@ class ReleaseApprovalTests(unittest.TestCase):
             with self.assertRaises(policy.ReleaseHold):
                 self.gate(sha=sha, main=sha)
 
+    def test_release_workflow_wires_actual_remote_approvals_before_publication(self):
+        raw = (
+            ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("needs.classify.outputs.environment", raw)
+        self.assertIn("actions: read", raw)
+        self.assertIn("PACT_RC_RELEASE_APPROVED_SHA:", raw)
+        self.assertIn("PACT_RELEASE_APPROVED_SHA:", raw)
+        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", raw)
+        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", raw)
+        self.assertIn("actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA", raw)
+        self.assertIn("actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA", raw)
+        self.assertIn("scripts/release/release_policy.py gate", raw)
+        self.assertLess(
+            raw.index("scripts/release/release_policy.py gate"),
+            raw.index("gh release create"),
+        )
+        self.assertIn("--verify-tag", raw)
+        self.assertIn("--prerelease --latest=false", raw)
+        self.assertIn("EXPERIMENTAL RC FOR REAL-PROJECT PILOTS ONLY", raw)
+        self.assertIn("dist/SHA256SUMS", raw)
+        self.assertIn("dist/LICENSE", raw)
+        self.assertIn("dist/pact.pyz", raw)
+        self.assertIn(
+            "python scripts/release/release_assets.py --output-dir dist --smoke", raw
+        )
+        for version in ("3.11", "3.12", "3.13"):
+            self.assertIn(version, raw)
+        for runner in ("windows-latest", "macos-latest", "ubuntu-latest"):
+            self.assertIn(runner, raw)
+
     def test_cli_classify_and_gates_remain_verifiable_offline(self):
         with tempfile.TemporaryDirectory() as td:
             folder = pathlib.Path(td)
