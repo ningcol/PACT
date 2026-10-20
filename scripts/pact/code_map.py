@@ -8,6 +8,7 @@ import ast
 import json
 import pathlib
 import re
+import sys
 
 from cache import atomic_write_json, cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
@@ -218,15 +219,76 @@ def parse_python(path: pathlib.Path) -> tuple[list[str], list[tuple[str, int]]]:
     return sorted(set(symbols)), imports
 
 
+def js_code_positions(text: str) -> bytearray:
+    """Mark JS/TS/Vue code outside comments and quoted literals.
+
+    This is a lexical noise guard, not a full JavaScript parser. In particular,
+    template interpolations are treated conservatively as string content.
+    Import specifier strings remain available to JS_IMPORT: a match is trusted
+    only when its *keyword* begins in a code position.
+    """
+    visible = bytearray(b"\x01") * len(text)
+    state: str | None = None
+    i = 0
+    while i < len(text):
+        char = text[i]
+        follow = text[i + 1] if i + 1 < len(text) else ""
+        if state in {"'", '"', "`"}:
+            visible[i] = 0
+            if char == "\\" and i + 1 < len(text):
+                visible[i + 1] = 0
+                i += 2
+                continue
+            if char == state:
+                state = None
+            i += 1
+            continue
+        if state == "line-comment":
+            visible[i] = 0
+            if char == "\n":
+                state = None
+            i += 1
+            continue
+        if state == "block-comment":
+            visible[i] = 0
+            if char == "*" and follow == "/":
+                visible[i + 1] = 0
+                state = None
+                i += 2
+            else:
+                i += 1
+            continue
+        if char == "/" and follow in {"/", "*"}:
+            visible[i] = visible[i + 1] = 0
+            state = "line-comment" if follow == "/" else "block-comment"
+            i += 2
+            continue
+        if char in {"'", '"', "`"}:
+            visible[i] = 0
+            state = char
+        i += 1
+    return visible
+
+
 def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return [], []
 
-    imports = JS_IMPORT.findall(text)
+    code = js_code_positions(text)
+    imports = [
+        match.group(1)
+        for match in JS_IMPORT.finditer(text)
+        if code[match.start()]
+    ]
     symbols = []
     for match in JS_SYMBOL.finditer(text):
+        keyword = match.start()
+        while keyword < match.end() and text[keyword].isspace():
+            keyword += 1
+        if keyword >= match.end() or not code[keyword]:
+            continue
         symbol = next((group for group in match.groups() if group), None)
         if symbol:
             symbols.append(symbol)
@@ -452,7 +514,8 @@ def build_code_map(
 
 
 def valid_code_index(
-    data: dict, *, schema: dict, expected_paths: set[str]
+    data: dict, *, schema: dict, expected_paths: set[str],
+    root: pathlib.Path, paths: list[pathlib.Path],
 ) -> bool:
     """Reuse only a complete, schema-valid index over current source paths."""
     if data.get("root") != "." or validate_instance(data, schema):
@@ -481,10 +544,18 @@ def valid_code_index(
         (edge["from"], edge["to"], edge["kind"], edge["confidence"])
         for edge in data["edges"]
     }
-    return (
-        len(observed_edges) == len(data["edges"])
-        and observed_edges == expected_edges
-    )
+    if len(observed_edges) != len(data["edges"]) or observed_edges != expected_edges:
+        return False
+
+    # Cache file digests, valid schemas and self-checksums do not authenticate
+    # lexical metadata. Reparse source once before declaring a cache hit so a
+    # forged symbol/import/identifier cannot redirect Agent navigation.
+    authoritative = {
+        rel(path, root): parse_source(path, root)
+        for path in paths
+    }
+    canonical = build_code_map(root, paths, authoritative, data["source_fingerprint"])
+    return data["files"] == canonical["files"] and data["edges"] == canonical["edges"]
 
 
 def main() -> int:
@@ -504,59 +575,102 @@ def main() -> int:
     if not output.is_absolute():
         output = root / output
 
-    paths, enumeration_mode = discover_files(root)
-    source_fingerprint = fingerprint_files(root, paths)
-
     schema_path = root / ".pact" / "schema" / "code-map.schema.json"
     try:
         schema = load_schema(schema_path)
     except Exception as exc:
-        print(f"PACT code-map: cannot load schema: {exc}")
+        print(f"PACT code-map: cannot load schema: {exc}", file=sys.stderr)
         return 2
 
-    expected_paths = {rel(path, root) for path in paths}
-    if args.ensure and cache_is_fresh(
-        output,
-        format_version=FORMAT_VERSION,
-        source_fingerprint=source_fingerprint,
-        validator=lambda data: valid_code_index(
-            data, schema=schema, expected_paths=expected_paths
-        ),
-    ):
-        print(f"PACT code-map: fresh -> {output}")
-        return 0
+    # Source files are not part of the atomic JSON publication. Re-enumerate
+    # and re-hash the COMPLETE code source set after parsing/building, including
+    # the healthy-cache path, so no mixed-generation index is published.
+    for attempt in range(3):
+        try:
+            paths, enumeration_mode = discover_files(root)
+            source_fingerprint = fingerprint_files(root, paths)
+            expected_paths = {rel(path, root) for path in paths}
 
-    parse_cache_path = root / ".pact" / "cache" / "code-file-cache.json"
-    parsed_sources, stats = parse_with_cache(
-        root=root,
-        paths=paths,
-        cache_path=parse_cache_path,
-        cache_version=PARSE_CACHE_VERSION,
-        parser=lambda path: parse_source(path, root),
-    )
+            fresh = args.ensure and cache_is_fresh(
+                output,
+                format_version=FORMAT_VERSION,
+                source_fingerprint=source_fingerprint,
+                validator=lambda data: valid_code_index(
+                    data, schema=schema, expected_paths=expected_paths,
+                    root=root, paths=paths,
+                ),
+            )
+            if not fresh:
+                parse_cache_path = root / ".pact" / "cache" / "code-file-cache.json"
+                parsed_sources, stats = parse_with_cache(
+                    root=root,
+                    paths=paths,
+                    cache_path=parse_cache_path,
+                    cache_version=PARSE_CACHE_VERSION,
+                    parser=lambda path: parse_source(path, root),
+                )
+                if set(parsed_sources) != expected_paths:
+                    raise OSError("code source set changed while parsing")
 
-    data = build_code_map(
-        root,
-        paths,
-        parsed_sources,
-        source_fingerprint,
-    )
+                # Parsing caches are disposable and not a source of truth.
+                # Reparse even if a cache writer recomputed its own checksum.
+                for path in paths:
+                    relative = rel(path, root)
+                    canonical = parse_source(path, root)
+                    if parsed_sources[relative] != canonical:
+                        parsed_sources[relative] = canonical
 
-    errors = validate_instance(data, schema)
-    if errors:
-        for error in errors:
-            print(f"PACT code-map schema error: {error}")
-        return 2
+                data = build_code_map(
+                    root, paths, parsed_sources, source_fingerprint,
+                )
 
-    atomic_write_json(output, data)
+            updated_paths, updated_mode = discover_files(root)
+            if (
+                [rel(path, root) for path in updated_paths]
+                != [rel(path, root) for path in paths]
+                or updated_mode != enumeration_mode
+                or fingerprint_files(root, updated_paths) != source_fingerprint
+            ):
+                raise OSError("source files changed during Code Map scan")
 
-    print(
-        f"PACT code-map: {len(data['files'])} source file(s), "
-        f"{len(data['edges'])} resolved local import edge(s) "
-        f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
-        f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
-    )
-    return 0
+            if fresh:
+                print(f"PACT code-map: fresh -> {output}")
+                return 0
+
+            errors = validate_instance(data, schema)
+            if errors:
+                for error in errors:
+                    print(f"PACT code-map schema error: {error}", file=sys.stderr)
+                return 2
+
+            # Recheck once more after graph generation/validation and before
+            # publication, not just after parsing the last source file.
+            final_paths, final_mode = discover_files(root)
+            if (
+                [rel(path, root) for path in final_paths]
+                != [rel(path, root) for path in paths]
+                or final_mode != enumeration_mode
+                or fingerprint_files(root, final_paths) != source_fingerprint
+            ):
+                raise OSError("source files changed before Code Map publication")
+
+            atomic_write_json(output, data)
+            print(
+                f"PACT code-map: {len(data['files'])} source file(s), "
+                f"{len(data['edges'])} resolved local import edge(s) "
+                f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
+                f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
+            )
+            return 0
+        except OSError as exc:
+            if attempt == 2:
+                print(
+                    f"PACT code-map: unstable source snapshot after 3 attempts: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
+
+    return 2
 
 
 if __name__ == "__main__":

@@ -42,6 +42,8 @@ from task import (
     read_task_manifest,
     validate_finish_manifest,
     write_json,
+    task_generation_lock,
+    assert_same_task_generation,
 )
 
 
@@ -196,8 +198,14 @@ def draft(args) -> int:
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
         # Task finish holds this primary per-task lock. Acquire it first,
         # then retain the legacy bundle lock for other compatible writers.
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
-            manifest, _, checked_bundle = _prepared(args.task_id)
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
+            checked_manifest, _, checked_bundle = _prepared(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before draft lock")
             evidence_path = bundle / "evidence.json"
@@ -351,10 +359,16 @@ def verify(args) -> int:
         receipt_path = run_dir / f"verify-{uuid.uuid4().hex}.json"
 
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
             # A verifier started before finish must not append claims to
             # already-completed Evidence after waiting for the primary lock.
-            manifest, contract, checked_bundle = _prepared(args.task_id)
+            checked_manifest, contract, checked_bundle = _prepared(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before verify lock")
             if not set(criteria) <= {item["id"] for item in contract["acceptance_criteria"]}:

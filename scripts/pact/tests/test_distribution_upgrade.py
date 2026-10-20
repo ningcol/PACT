@@ -22,6 +22,7 @@ NEXT_VERSION = "9.9.9-test"
 
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "pact"))
 import upgrade as upgrade_runtime
+import init as init_runtime
 
 
 class DistributionUpgradeTests(unittest.TestCase):
@@ -126,6 +127,83 @@ class DistributionUpgradeTests(unittest.TestCase):
             encoding="utf-8",
         )
         return destination
+
+    def test_init_atomic_publish_never_replaces_concurrently_created_file(self) -> None:
+        self.target.mkdir()
+        original_link = init_runtime.os.link
+        planted = []
+        def concurrent_create(source, destination, *args, **kwargs):
+            destination = pathlib.Path(destination)
+            if destination.name == "pact.py" and not planted:
+                destination.write_text("concurrent project file\n", encoding="utf-8")
+                planted.append(destination)
+            return original_link(source, destination, *args, **kwargs)
+
+        with mock.patch.object(init_runtime.os, "link",
+                               side_effect=concurrent_create):
+            with self.assertRaises(RuntimeError):
+                init_runtime.apply(self.target, init_runtime.plan(self.target))
+        self.assertEqual(len(planted), 1)
+        self.assertEqual(
+            (self.target / "pact.py").read_text(encoding="utf-8"),
+            "concurrent project file\n",
+        )
+        self.assertFalse((self.target / ".pact/install.json").exists())
+
+    def test_init_rollback_preserves_file_replaced_by_other_writer(self) -> None:
+        self.target.mkdir()
+        original_link = init_runtime.os.link
+        created_file = []
+        attempts = []
+
+        def concurrent_replace(source, destination, *args, **kwargs):
+            destination = pathlib.Path(destination)
+            attempts.append(destination)
+            if len(attempts) == 2:
+                self.assertTrue(created_file)
+                outside = created_file[0]
+                temporary = outside.parent / "new-owner-write.tmp"
+                temporary.write_text("other writer\n", encoding="utf-8")
+                os.replace(temporary, outside)
+                raise OSError("simulated third-party concurrent write")
+            original_link(source, destination, *args, **kwargs)
+            created_file.append(destination)
+
+        with mock.patch.object(init_runtime.os, "link",
+                               side_effect=concurrent_replace):
+            with self.assertRaises(OSError):
+                init_runtime.apply(self.target, init_runtime.plan(self.target))
+        self.assertEqual(created_file[0].read_text(encoding="utf-8"), "other writer\n")
+        self.assertFalse((self.target / ".pact/install.json").exists())
+
+    def test_init_does_not_adopt_concurrent_framework_replacement(self) -> None:
+        self.target.mkdir()
+        real_manifest_builder = init_runtime.build_install_manifest
+        injected = []
+
+        def concurrent_modify(target, operations, created_paths):
+            runtime_entry = target / "pact.py"
+            self.assertTrue(runtime_entry.exists())
+            replacement = target / "other-writer.tmp"
+            replacement.write_text("# concurrent altered runtime\\n", encoding="utf-8")
+            os.replace(replacement, runtime_entry)
+            injected.append(True)
+            return real_manifest_builder(target, operations, created_paths)
+
+        with mock.patch.object(
+            init_runtime, "build_install_manifest", side_effect=concurrent_modify
+        ):
+            with self.assertRaisesRegex(RuntimeError, "changed during init"):
+                init_runtime.apply(self.target, init_runtime.plan(self.target))
+
+        self.assertEqual(injected, [True])
+        self.assertEqual(
+            (self.target / "pact.py").read_text(encoding="utf-8"),
+            "# concurrent altered runtime\\n",
+        )
+        self.assertFalse((self.target / ".pact/install.json").exists())
+        # Rollback removes only transaction-owned files, never the outsider's.
+        self.assertFalse((self.target / ".pact/pact.pyz").exists())
 
     def test_mid_init_failure_rolls_back_created_files_and_manifest(self) -> None:
         self.target.mkdir(parents=True)

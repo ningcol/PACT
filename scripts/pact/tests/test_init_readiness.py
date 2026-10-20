@@ -45,6 +45,32 @@ class InitReadinessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.target.exists())
 
+    def test_pre_manifest_legacy_yaml_cannot_be_reinitialized(self) -> None:
+        legacy = self.target / ".pact" / "config.yaml"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("version: 1\nowner:\n  language: zh-CN\n", encoding="utf-8")
+        original = legacy.read_bytes()
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pre-manifest", result.stderr)
+        self.assertEqual(legacy.read_bytes(), original)
+        self.assertFalse((self.target / ".pact/config.toml").exists())
+        self.assertFalse((self.target / ".pact/install.json").exists())
+        self.assertFalse((self.target / "pact.py").exists())
+
+    def test_pre_manifest_runtime_version_cannot_be_reinitialized(self) -> None:
+        legacy = self.target / ".pact" / "VERSION"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("0.2.0\n", encoding="utf-8")
+
+        result = self.run_init("--apply")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pre-manifest", result.stderr)
+        self.assertEqual(legacy.read_text(encoding="utf-8"), "0.2.0\n")
+        self.assertFalse((self.target / ".pact/config.toml").exists())
+        self.assertFalse((self.target / ".pact/install.json").exists())
+
     def test_apply_creates_toml_foundation_valid_not_ready(self) -> None:
         result = self.run_init("--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

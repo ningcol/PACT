@@ -27,6 +27,19 @@ class TaskStateAtomicityTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def test_task_generation_identity_is_not_just_contract_content(self) -> None:
+        before = {
+            "task_id": "TASK-SAME", "created_at": "2026-10-20T10:00:00Z",
+            "contract_sha256": "a" * 64, "context_sha256": "b" * 64,
+        }
+        pact_task.assert_same_task_generation(before, dict(before))
+        after = {**before, "created_at": "2026-10-20T10:00:01Z"}
+        with self.assertRaisesRegex(ValueError, "re-prepared"):
+            pact_task.assert_same_task_generation(before, after)
+        after = {**before, "context_sha256": "c" * 64}
+        with self.assertRaisesRegex(ValueError, "re-prepared"):
+            pact_task.assert_same_task_generation(before, after)
+
     def test_confined_child_rejects_internal_symlink_alias(self) -> None:
         real = self.tasks / "TASK-REAL"
         real.mkdir()

@@ -241,6 +241,63 @@ class CachePublishingSafetyTests(unittest.TestCase):
         self.assertEqual(repaired["edges"], initial["edges"])
         self.assertNotIn("fresh ->", log)
 
+    def test_code_map_forged_symbols_cannot_override_source(self) -> None:
+        original, _ = self.run_builder("code_map")
+        injected = copy.deepcopy(original)
+        item = next(row for row in injected["files"] if row["path"] == "src/app.py")
+        item["symbols"] = ["silently_skip_owner_approval"]
+        self.code_path.write_text(json.dumps(injected) + "\n", encoding="utf-8")
+
+        restored, output = self.run_builder("code_map")
+        self.assertNotIn("fresh ->", output)
+        self.assertEqual(restored["files"], original["files"])
+        self.assertEqual(restored["edges"], original["edges"])
+
+    def test_code_parse_cache_forged_payload_and_digest_cannot_launder(self) -> None:
+        original, _ = self.run_builder("code_map")
+        cache_file = self.root / ".pact" / "cache" / "code-file-cache.json"
+        cache = json.loads(cache_file.read_text(encoding="utf-8"))
+        forged = cache["entries"]["src/app.py"]
+        forged["parsed"]["symbols"] = ["skip_decision_gate"]
+        forged["parsed_sha256"] = parse_runtime.parsed_digest(forged["parsed"])
+        cache_file.write_text(json.dumps(cache) + "\n", encoding="utf-8")
+        self.code_path.unlink()
+
+        restored, _ = self.run_builder("code_map")
+        self.assertEqual(restored["files"], original["files"])
+        self.assertEqual(restored["edges"], original["edges"])
+
+    def test_code_map_retries_if_source_changes_after_parse(self) -> None:
+        # Simulate an editor updating an earlier file after per-file parsing,
+        # but before the Code Map is published. A mixed index is never valid.
+        old_source = self.root / "src" / "app.py"
+        canonical_parser = code_index.parse_with_cache
+        calls = []
+
+        def mutate_after_parse(**kwargs):
+            result = canonical_parser(**kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                old_source.write_text(
+                    "import src.helper\n\ndef updated_symbol():\n    return 9\n",
+                    encoding="utf-8",
+                )
+            return result
+
+        with mock.patch.object(code_index, "parse_with_cache",
+                               side_effect=mutate_after_parse):
+            self.assertEqual(self.run_in_process("code_map"), 0)
+        self.assertGreaterEqual(len(calls), 2)
+        indexed = json.loads(self.code_path.read_text(encoding="utf-8"))
+        item = next(row for row in indexed["files"] if row["path"] == "src/app.py")
+        self.assertIn("updated_symbol", item["symbols"])
+        self.assertNotIn("target_function", item["symbols"])
+        paths, _ = code_index.discover_files(self.root)
+        self.assertEqual(
+            indexed["source_fingerprint"],
+            cache_runtime.fingerprint_files(self.root, paths),
+        )
+
     def test_code_map_wrong_repository_root_metadata_must_rebuild(self) -> None:
         initial, _ = self.run_builder("code_map")
         damaged = copy.deepcopy(initial)

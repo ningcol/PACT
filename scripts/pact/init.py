@@ -7,6 +7,7 @@ Dry-run is the default. --apply writes only missing files and never overwrites.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -20,6 +21,7 @@ from distribution import (
     runtime_version,
     source_manifest,
     read_install_manifest,
+    sha256_file,
 )
 from runtime_bundle import ensure_runtime_bundle
 
@@ -155,6 +157,37 @@ def path_present(path: pathlib.Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
+# A pre-manifest PACT is not a fresh project. Creating default TOML files
+# next to its original YAML would shadow user-owned Owner/Decision settings.
+_PRE_MANIFEST_MARKERS = (
+    ".pact/VERSION",
+    ".pact/pact.pyz",
+    ".pact/config.yaml",
+    ".pact/baseline.yaml",
+    ".pact/fitness.yaml",
+    ".pact/AGENT_BOOTSTRAP.md",
+    "pact.py",
+)
+
+
+def require_fresh_or_tracked_init(target: pathlib.Path) -> None:
+    if read_install_manifest(target) is not None:
+        return
+    existing = [
+        relative
+        for relative in _PRE_MANIFEST_MARKERS
+        if path_present(safe_init_target(target, relative))
+    ]
+    if existing:
+        raise RuntimeError(
+            "pre-manifest PACT state detected ("
+            + ", ".join(existing)
+            + "); init cannot invent historical ownership or shadow legacy "
+            "Owner/Decision data. Preserve the original project and manually "
+            "reconcile/migrate in an isolated copy before a tracked install."
+        )
+
+
 def safe_init_target(target: pathlib.Path, relative: str) -> pathlib.Path:
     """Return an init destination without following a parent symlink outside target."""
     pure = pathlib.PurePosixPath(relative)
@@ -269,6 +302,33 @@ def build_install_manifest(
     }
 
 
+def assert_created_init_file_unchanged(
+    target: pathlib.Path, relative: str, expected: tuple[int, int, str],
+) -> None:
+    """Bind install provenance to our published inode and staged content.
+
+    Concurrent writers may overwrite, relink or modify a new file after we
+    atomically created it. Neither a newly-computed installed_sha256 nor a
+    freshly valid manifest is evidence that our intended bytes were installed.
+    """
+    destination = safe_init_target(target, relative)
+    try:
+        current = destination.lstat()
+        if (
+            destination.is_symlink()
+            or not destination.is_file()
+            or (current.st_dev, current.st_ino) != expected[:2]
+            or sha256_file(destination) != expected[2]
+        ):
+            raise RuntimeError(
+                f"created init file changed during init: {relative}"
+            )
+    except OSError as exc:
+        raise RuntimeError(
+            f"created init file changed during init: {relative}: {exc}"
+        ) from exc
+
+
 def cleanup_empty_parents(path: pathlib.Path, stop: pathlib.Path) -> None:
     stop = stop.resolve()
     current = path.resolve()
@@ -317,6 +377,11 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
         if manifest_existed
         else None
     )
+    original_manifest_sha = (
+        hashlib.sha256(manifest_backup).hexdigest()
+        if manifest_backup is not None
+        else None
+    )
 
     with tempfile.TemporaryDirectory(
         prefix=".pact-init-txn-",
@@ -334,18 +399,25 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             )
 
         created: list[str] = []
+        created_identity: dict[str, tuple[int, int, str]] = {}
+        manifest_written_identity: tuple[int, int, str] | None = None
         fail_after_raw = os.environ.get("PACT_TEST_FAIL_INIT_AFTER_CREATE")
         fail_after = int(fail_after_raw) if fail_after_raw else None
 
         try:
+            # Recheck directly before first target write: pre-manifest state
+            # may have appeared while the scaffold was being staged.
+            require_fresh_or_tracked_init(target)
             target.mkdir(parents=True, exist_ok=True)
             for op in create_ops:
                 relative = op["path"]
                 destination = safe_init_target(target, relative)
                 if path_present(destination):
-                    # Re-check at publish time to preserve no-overwrite semantics
-                    # if another process created the path after planning.
-                    continue
+                    # A planned missing framework path appeared concurrently.
+                    # Skipping it would publish a misleading partial install.
+                    raise RuntimeError(
+                        f"init target appeared after planning: {relative}"
+                    )
 
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 staged = stage_root / pathlib.Path(relative)
@@ -357,10 +429,23 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 temp_destination = pathlib.Path(temp_name)
                 try:
                     shutil.copy2(staged, temp_destination)
-                    os.replace(temp_destination, destination)
+                    staged_stat = temp_destination.stat()
+                    identity = (
+                        staged_stat.st_dev, staged_stat.st_ino,
+                        sha256_file(temp_destination),
+                    )
+                    try:
+                        # Atomic create-if-absent: os.replace would overwrite
+                        # another process's file after our existence check.
+                        os.link(temp_destination, destination)
+                    except FileExistsError as exc:
+                        raise RuntimeError(
+                            f"init target appeared during atomic create: {relative}"
+                        ) from exc
+                    created.append(relative)
+                    created_identity[relative] = identity
                 finally:
                     temp_destination.unlink(missing_ok=True)
-                created.append(relative)
 
                 if fail_after is not None and len(created) >= fail_after:
                     raise RuntimeError(
@@ -368,21 +453,50 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                     )
 
             created_set = set(created)
+            for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
             manifest = build_install_manifest(
                 target,
                 operations,
                 created_set,
             )
+            # A writer can modify a file between provenance collection and
+            # manifest serialization; never certify the altered bytes.
+            for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
             staged_manifest = txn / "install.json"
             staged_manifest.write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staged_manifest, manifest_path)
+            staged_stat = staged_manifest.stat()
+            manifest_written_identity = (
+                staged_stat.st_dev, staged_stat.st_ino,
+                sha256_file(staged_manifest),
+            )
+            if manifest_existed:
+                if (
+                    manifest_path.is_symlink()
+                    or not manifest_path.is_file()
+                    or sha256_file(manifest_path) != original_manifest_sha
+                ):
+                    raise RuntimeError("init install manifest changed during preparation")
+                os.replace(staged_manifest, manifest_path)
+            else:
+                # Do not overwrite a manifest another initializer just wrote.
+                os.link(staged_manifest, manifest_path)
 
-            # Validate the final recorded hashes after manifest commit.
+            # Validate both the expected transaction identity and recorded
+            # hashes after manifest commit.
             for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
                 record = manifest["files"].get(relative)
                 destination = safe_init_target(target, relative)
                 if not record or not destination.is_file():
@@ -403,28 +517,51 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
             return created_set
 
         except Exception:
-            # Manifest was committed last, so rollback only removes files this
-            # transaction created and restores the prior manifest if any.
+            # Only remove our own published inode *and* unchanged bytes.
+            # If another writer replaced/modified it, preserve their work.
             for relative in reversed(created):
                 destination = safe_init_target(target, relative)
+                expected = created_identity[relative]
                 try:
-                    if destination.is_file() or destination.is_symlink():
-                        destination.unlink()
+                    if not path_present(destination):
+                        continue
+                    current = destination.lstat()
+                    if (
+                        destination.is_symlink()
+                        or (current.st_dev, current.st_ino) != expected[:2]
+                        or not destination.is_file()
+                        or sha256_file(destination) != expected[2]
+                    ):
+                        continue
+                    destination.unlink()
                     cleanup_empty_parents(destination.parent, target)
                 except OSError:
                     pass
 
-            try:
-                if manifest_existed and manifest_backup is not None:
-                    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-                    restore = txn / "restore-install.json"
-                    restore.write_bytes(manifest_backup)
-                    os.replace(restore, manifest_path)
-                elif path_present(manifest_path):
-                    manifest_path.unlink()
-                    cleanup_empty_parents(manifest_path.parent, target)
-            except OSError:
-                pass
+            # A failed commit must not delete/restore another writer's
+            # install.json. Restore only if the exact inode/bytes we published
+            # are still present; otherwise preserve the newer manifest.
+            if manifest_written_identity is not None:
+                try:
+                    if path_present(manifest_path) and not manifest_path.is_symlink():
+                        current = manifest_path.lstat()
+                        same = (
+                            (current.st_dev, current.st_ino)
+                            == manifest_written_identity[:2]
+                            and manifest_path.is_file()
+                            and sha256_file(manifest_path)
+                            == manifest_written_identity[2]
+                        )
+                        if same:
+                            if manifest_existed and manifest_backup is not None:
+                                restore = txn / "restore-install.json"
+                                restore.write_bytes(manifest_backup)
+                                os.replace(restore, manifest_path)
+                            else:
+                                manifest_path.unlink()
+                                cleanup_empty_parents(manifest_path.parent, target)
+                except OSError:
+                    pass
 
             # Remove an empty target created only by this transaction.
             try:
@@ -456,6 +593,7 @@ def main() -> int:
         if manifest_path.is_symlink():
             raise ValueError("invalid .pact/install.json: path must not be a symlink")
         existing_manifest = read_install_manifest(target)
+        require_fresh_or_tracked_init(target)
         operations = plan(target, github_actions=args.github_actions)
     except (ValueError, RuntimeError) as exc:
         print(f"PACT init: {exc}", file=sys.stderr)

@@ -26,6 +26,8 @@ from report import OWNER_SCHEMA, validate as validate_owner
 from task import (
     ROOT, TASK_ROOT, completion_bundle_path, read_status_contract,
     read_task_manifest, validate_finish_manifest, write_json,
+    task_generation_lock,
+    assert_same_task_generation,
 )
 from task_workflow import (
     RUN_ROOT, _existing_evidence, _exclusive_bundle, _prepared,
@@ -479,20 +481,25 @@ def _snapshot(task_id: str):
         manifest, contract, context, evidence, convergence, owner, task_change,
         errors, gaps,
     )
-    return diagnosis, bundle, owner
+    return diagnosis, bundle, owner, manifest
 
 
 def assist(args) -> int:
     try:
-        result, bundle, owner = _snapshot(args.task_id)
+        result, bundle, owner, observed_manifest = _snapshot(args.task_id)
         result["draft_written"] = False
         if args.write_draft:
             # Finish/verify/draft/checkpoint also take the task primary lock.
             # Re-read under BOTH locks to prevent a completed task from
             # receiving new generated Owner data.
             task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-            with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
-                result, _, owner = _snapshot(args.task_id)
+            with (
+                _exclusive_bundle(task_generation_lock(args.task_id)),
+                _exclusive_bundle(task_dir),
+                _exclusive_bundle(bundle),
+            ):
+                result, _, owner, checked_manifest = _snapshot(args.task_id)
+                assert_same_task_generation(observed_manifest, checked_manifest)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
                 if owner is None:
@@ -607,8 +614,14 @@ def export(args) -> int:
         # Share the task-level lock with finish, then acquire the existing
         # Evidence-bundle lock in a consistent global order.
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
-            manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
+            checked_manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed during evidence export")
             errors, gaps, stats = provenance_review(evidence, ROOT)
