@@ -127,8 +127,8 @@ def review(
     # A truncated list cannot be certified complete.
     deferred_decision_paths: set[str] = set()
     hint_fields = (
-        ("nonfunctional_decision_hints", "Nonfunctional", "--nonfunctional"),
-        ("weak_decision_hints", "Weak lexical", "--full-decisions"),
+        ("nonfunctional_decision_hints", "Nonfunctional", "without --nonfunctional"),
+        ("weak_decision_hints", "Weak lexical", "with --full-decisions"),
     )
     for field, label, rerun_flag in hint_fields:
         deferred = context.get(field)
@@ -145,7 +145,7 @@ def review(
         ):
             errors.append(
                 f"{label} Context has unlisted or inconsistent Decision "
-                f"candidates; rerun without {rerun_flag} and inspect all "
+                f"candidates; rerun {rerun_flag} and inspect all "
                 "original Decision sources before finishing"
             )
         if not isinstance(items, list):
