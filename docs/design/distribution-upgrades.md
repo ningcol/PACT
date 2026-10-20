@@ -99,6 +99,54 @@ The install Manifest is written last. PACT refuses to overwrite a concurrently a
 
 This is an **optimistic fail-closed check**, not a cross-process lock or a proof that every race is impossible. Non-cooperating writers can still change a file between the final comparison and an OS-level operation. Stronger protection would require coordination or platform-specific atomic conditional operations; do not claim that this phase provides either.
 
+## Historical PACT 0.1/0.2/0.3 upgrades (explicit, no data loss)
+
+Old PACT 0.1/0.2 project seeds were YAML; 0.3 added TOML but could
+continue consuming old YAML. The current compact 0.4 runtime is TOML-only.
+Simply installing a new empty config or leaving an old YAML Decision
+unchanged could otherwise erase *effective* Owner intent while preserving
+the original bytes. The upgrader now scans legacy YAML seeds and
+PACT-marked authoritative Markdown *before* any writes.
+
+- Run `upgrade` with no flags for a dry-run; if legacy sources exist,
+  ordinary `upgrade --apply` **refuses** instead of shadowing them.
+- Use `upgrade --migrate-legacy` for an explicit **migration preview**.
+  Only after reviewing its operations/conflicts, use
+  `upgrade --migrate-legacy --apply`.
+- The narrow, standard-library YAML converter is migration-only; runtime
+  support for arbitrary legacy YAML does not return. It preserves the old
+  `.pact/*.yaml` files, creates modern project-owned TOML seeds, and
+  modifies only verified TOML-front-matter conversions in historical
+  project-owned Markdown. The authoritative Markdown *body is unchanged*.
+- Original Owner preferences, baseline reviews and supported Fitness
+  checks must round-trip into the exact current schema. Old 0.2 did
+  not record an `agent_bootstrap` review: it becomes **pending**, never
+  invented as reviewed. Retired default path/risk/discovery/convergence
+  settings are ignored only when equal to original historic defaults;
+  custom legacy semantics are a hard conflict requiring Owner review.
+- A historical Decision without an existing stable `DEC-*` ID and
+  lifecycle status is a **manual conflict**. The converter never invents
+  Decision identity, demotes Rule authority, reconstructs lost rationale,
+  or promotes tentative business truth.
+- Historical incomplete `.pact/tasks/*/task.json` state blocks upgrading
+  until its state is genuinely completed or archived outside the project.
+  No old Evidence/Convergence/Task Contract is silently reinterpreted by
+  the newer trust contract.
+- A pre-manifest install (no `.pact/install.json`) cannot use automatic
+  tracked upgrade: preserve the old project and its documents, establish
+  provenance by an explicit new installation in an isolated copy, then
+  reconcile its project-owned notes manually.
+- The old YAML files may remain after a successful migration as archive
+  material; only TOML is active. Verify `owner --strict`,
+  `readiness`, `check` and exact-ID `discover` of important
+  Decisions after upgrading.
+
+The new TOML seeds and authority metadata conversion are staged/backed
+up/committed within the **existing upgrade transaction**. Any failure
+rolls back bytes and the old install manifest where safe. This protects
+the configured Owner meanings; it does not prove a real Agent will obey
+them, or that every historical nonstandard YAML syntax is supported.
+
 ## Transactional apply
 
 Automatic framework upgrade uses:
