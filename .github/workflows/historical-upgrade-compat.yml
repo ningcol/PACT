@@ -1,0 +1,240 @@
+name: PACT Pinned Historical Install Upgrade (0.1 0.2 0.3)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/historical-upgrade-compat.yml"
+      - "scripts/pact/legacy_upgrade.py"
+      - "scripts/pact/upgrade.py"
+      - "scripts/pact/tests/test_legacy_upgrade_compat.py"
+      - "scripts/pact/distribution.py"
+      - "bootstrap.py"
+      - "docs/evaluation/historical-upgrade-compatibility-*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-history-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - expected: "0.1.0"
+            commit: 101ccb91e1b312b3e061c012b1c167003260c749
+          - expected: "0.2.0"
+            commit: 8ef8228340cd22e668e898128b33bafde5b047d7
+          - expected: "0.3.0"
+            commit: f8690a64f7d6bc448092919cfb71411567041fc5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout evaluated PACT source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert head identity
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+
+      - name: Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Prepare disposable pinned historical PACT checkout
+        shell: bash
+        env:
+          PIN: ${{ matrix.commit }}
+          VERSION: ${{ matrix.expected }}
+        run: |
+          set -euo pipefail
+          ORIGIN="$RUNNER_TEMP/pact-historical-original"
+          TARGET="$RUNNER_TEMP/pact-historical-adopted"
+          echo "OLD_PACT_SOURCE=$ORIGIN" >> "$GITHUB_ENV"
+          echo "OLD_PACT_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/ningcol/PACT.git "$ORIGIN"
+          git -C "$ORIGIN" checkout --detach --quiet "$PIN"
+          test "$(git -C "$ORIGIN" rev-parse HEAD)" = "$PIN"
+          test "$(tr -d '[:space:]' < "$ORIGIN/.pact/VERSION")" = "$VERSION"
+          test -z "$(git -C "$ORIGIN" status --porcelain --untracked-files=no)"
+          python "$ORIGIN/scripts/pact/init.py" --target "$TARGET" --apply
+          test -f "$TARGET/.pact/install.json"
+          test "$(tr -d '[:space:]' < "$TARGET/.pact/VERSION")" = "$VERSION"
+
+      - name: Set documented Owner preference and historical Decision source
+        shell: bash
+        env:
+          VERSION: ${{ matrix.expected }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import hashlib
+          from pathlib import Path
+
+          target = Path(os.environ["OLD_PACT_TARGET"])
+          legacy = os.environ["VERSION"] in {"0.1.0", "0.2.0"}
+          config = target / ".pact" / ("config.yaml" if legacy else "config.toml")
+          contents = config.read_text(encoding="utf-8")
+          before = "language: auto" if legacy else 'language = "auto"'
+          after = "language: zh-CN" if legacy else 'language = "zh-CN"'
+          assert contents.count(before) == 1, (config, contents[:400])
+          config.write_text(contents.replace(before, after), encoding="utf-8")
+          baseline = target / ".pact" / ("baseline.yaml" if legacy else "baseline.toml")
+          base = baseline.read_text(encoding="utf-8")
+          old = "vocabulary: pending" if legacy else 'vocabulary = "pending"'
+          new = "vocabulary: reviewed" if legacy else 'vocabulary = "reviewed"'
+          assert base.count(old) == 1
+          baseline.write_text(base.replace(old, new), encoding="utf-8")
+          doc = target / ".agents/decisions/implemented/historical-owner-approval.md"
+          doc.parent.mkdir(parents=True, exist_ok=True)
+          doc.write_text(
+              "---\n"
+              "pact:\n"
+              "  type: decision\n"
+              "  id: DEC-PF-UPGRADE-001\n"
+              "  status: implemented\n"
+              "  aliases:\n"
+              "    - owner approval boundary\n"
+              "---\n\n"
+              "# Original Owner decision must survive\n\n"
+              "Do not silently change authorization without Owner approval.\n",
+              encoding="utf-8",
+          )
+          tracked = {
+              name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for name, path in {
+                  "config": config, "baseline": baseline, "decision": doc,
+              }.items()
+          }
+          proof = {
+              "historical_version": os.environ["VERSION"],
+              "historical_commit": os.environ.get("PIN"),
+              "old_sha256": tracked,
+              "original_decision_body": doc.read_text().split("---\n", 2)[2],
+              "legacy_source": legacy,
+          }
+          (Path(os.environ["RUNNER_TEMP"]) / "old-upgrade-before.json").write_text(
+              json.dumps(proof, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Original upgrade refuses legacy metadata without explicit opt-in
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pact/upgrade.py \
+            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
+            --json > "$RUNNER_TEMP/legacy-blocked.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-blocked.json").read_text())
+          assert d["conflicts"], "Legacy Decision must block a silent upgrade"
+          assert not d["mode"] == "apply"
+          PY
+
+      - name: Explicit migration preview then transactional upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pact/upgrade.py \
+            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
+            --migrate-legacy --json > "$RUNNER_TEMP/legacy-plan.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-plan.json").read_text())
+          assert not d["conflicts"], d["conflicts"]
+          assert any(o["action"] == "migrate-legacy-metadata" for o in d["operations"])
+          PY
+          python scripts/pact/upgrade.py \
+            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
+            --migrate-legacy --apply --json \
+            > "$RUNNER_TEMP/legacy-applied.json"
+
+      - name: Verify migration, historical authority, manifest and fresh PACT runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os, tomllib
+          from pathlib import Path
+          root = Path(os.environ["OLD_PACT_TARGET"])
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          previous = json.loads((scratch / "old-upgrade-before.json").read_text())
+          applied = json.loads((scratch / "legacy-applied.json").read_text())
+          assert applied["applied"] and not applied["rolled_back"], applied
+          new_version = (Path(os.environ["GITHUB_WORKSPACE"]) / ".pact/VERSION").read_text().strip()
+          manifest = json.loads((root / ".pact/install.json").read_text())
+          assert manifest["runtime_version"] == new_version
+          assert (root / ".pact/VERSION").read_text().strip() == new_version
+          config = tomllib.loads((root / ".pact/config.toml").read_text())
+          baseline = tomllib.loads((root / ".pact/baseline.toml").read_text())
+          assert config["owner"]["language"] == "zh-CN"
+          assert baseline["reviews"]["vocabulary"] == "reviewed"
+          if previous["legacy_source"]:
+              assert baseline["reviews"]["agent_bootstrap"] == "pending"
+              for name in ("config", "baseline"):
+                  old = root / (".pact/" + name + ".yaml")
+                  assert hashlib.sha256(old.read_bytes()).hexdigest() == previous["old_sha256"][name]
+          doc = root / ".agents/decisions/implemented/historical-owner-approval.md"
+          raw = doc.read_text()
+          assert raw.startswith("+++\n[pact]\n")
+          assert raw.split("+++\n", 2)[2] == previous["original_decision_body"]
+          assert "DEC-PF-UPGRADE-001" in raw
+          for name in ("config", "baseline"):
+              assert manifest["files"][".pact/" + name + ".toml"]["management"] == "seed"
+          assert ".agents/decisions/implemented/historical-owner-approval.md" not in manifest["files"]
+          print(json.dumps({
+              "historical": previous["historical_version"],
+              "new_version": new_version,
+              "decision_bytes_preserved": True,
+              "owner_config_preserved": True,
+              "review_status_preserved": True,
+              "pre_release_no_agent": True,
+          }, indent=2))
+          PY
+          python "$OLD_PACT_TARGET/pact.py" doctor --strict --json \
+            > "$RUNNER_TEMP/legacy-doctor.json"
+          python "$OLD_PACT_TARGET/pact.py" owner --strict --json \
+            > "$RUNNER_TEMP/legacy-owner.json"
+          python "$OLD_PACT_TARGET/pact.py" discover DEC-PF-UPGRADE-001 --json \
+            > "$RUNNER_TEMP/legacy-discover.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          d = json.loads((scratch / "legacy-discover.json").read_text())
+          assert any(x.get("id") == "DEC-PF-UPGRADE-001"
+                     and x.get("artifact_type") == "decision"
+                     for x in d["results"]), d["results"][:3]
+          print("Original Decision remains typed and retrievable, not just a Markdown file")
+          PY
+
+      - name: Preserve full historical upgrade receipts including failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pact-historical-upgrade-${{ matrix.expected }}
+          path: |
+            ${{ runner.temp }}/old-upgrade-before.json
+            ${{ runner.temp }}/legacy-blocked.json
+            ${{ runner.temp }}/legacy-plan.json
+            ${{ runner.temp }}/legacy-applied.json
+            ${{ runner.temp }}/legacy-doctor.json
+            ${{ runner.temp }}/legacy-owner.json
+            ${{ runner.temp }}/legacy-discover.json
+          if-no-files-found: warn
+          retention-days: 14
