@@ -98,6 +98,10 @@ class SourceCorroborationTests(unittest.TestCase):
                     generic, "Replace screen-reader cues with a visual-only status indicator",
                 ))
                 self.assertFalse(context._weak_source_unconfirmed(
+                    generic,
+                    "Remove screen reader accommodations from the rendered Architecture Decision Records",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
                     {**generic, "title": "Unattended session safety"},
                     "Change unattended sessions so requests run without human approval",
                 ))
