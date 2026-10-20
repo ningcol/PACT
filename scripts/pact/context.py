@@ -26,6 +26,7 @@ SELECTION_STRATEGY = "authority-aware-soft-token-budget-v1"
 TOKEN_ESTIMATION_STRATEGY = "utf8-bytes-div-4"
 CODE_CANDIDATE_HINT_LIMIT = 5
 NONFUNCTIONAL_DECISION_HINT_LIMIT = 5
+WEAK_DECISION_SCORE_MAX = 16  # At most two 8-point body-only matches
 MODULE_README_HINT_LIMIT = 3
 MODULE_README_CODE_CANDIDATES = 24
 MODULE_README_SIZE_LIMIT = 128 * 1024
@@ -522,6 +523,31 @@ def split_nonfunctional_decisions(
     return materialize, deferred
 
 
+def split_weak_lexical_decisions(
+    knowledge: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Default: avoid materializing *only* uncorroborated 8/16-point hits.
+
+    Source-scored single-query evidence only. No task-text classifier and no
+    inference of Decision applicability; deferred sources remain mandatory
+    Convergence review candidates in prepared tasks.
+    """
+    materialize: list[dict] = []
+    deferred: list[dict] = []
+    for item in knowledge:
+        if (
+            item.get("artifact_type") == "decision"
+            and item.get("status") == "implemented"
+            and type(item.get("score")) is int
+            and 0 < item["score"] <= WEAK_DECISION_SCORE_MAX
+            and item.get("reasons") == []
+        ):
+            deferred.append(item)
+        else:
+            materialize.append(item)
+    return materialize, deferred
+
+
 def nonfunctional_decision_hints(deferred: list[dict]) -> dict:
     """Return only source-bound, bounded Decision metadata."""
     candidates = []
@@ -595,12 +621,18 @@ def main() -> int:
         "--nonfunctional", action="store_true",
         help="opt-in low-risk no-behavior-change work: defer implicit Decision bodies to source-bound hints",
     )
+    parser.add_argument(
+        "--full-decisions", action="store_true",
+        help="safety escape hatch: materialize weak Decision matches with original Context behavior",
+    )
     parser.add_argument("--require-rule", dest="required_rules", action="append", default=[], help="require a confirmed RULE-* artifact in selected Context")
     parser.add_argument("--output")
     args = parser.parse_args()
 
     if args.token_budget is not None and args.token_budget < 0:
         parser.error("--token-budget must be >= 0")
+    if args.nonfunctional and args.full_decisions:
+        parser.error("--nonfunctional cannot combine with --full-decisions")
     if args.nonfunctional and (
         args.risk != "low" or args.intent in {"decision", "history"}
         or args.scope_first
@@ -833,6 +865,7 @@ def main() -> int:
             ]
 
     deferred_decision_hints = None
+    weak_decision_hints = None
     if args.nonfunctional:
         candidate_results, deferred = split_nonfunctional_decisions(candidate_results)
         try:
@@ -841,6 +874,23 @@ def main() -> int:
             print(f"PACT context: cannot verify deferred Decision sources: {exc}",
                   file=sys.stderr)
             return 2
+    elif (
+        not args.full_decisions
+        and args.risk != "high"
+        and args.intent not in {"decision", "history"}
+        and not args.scope_first
+        and len(queries) == 1
+    ):
+        # Never use fused RRF scores as the raw 8-point lexical source score.
+        # Unscoped weak hits are a navigation hint, not normative truth.
+        candidate_results, weak = split_weak_lexical_decisions(candidate_results)
+        if weak:
+            try:
+                weak_decision_hints = nonfunctional_decision_hints(weak)
+            except (ValueError, OSError) as exc:
+                print(f"PACT context: cannot verify weak Decision sources: {exc}",
+                      file=sys.stderr)
+                return 2
 
     results, code_results, budget = select_context_candidates(
         candidate_results,
@@ -933,6 +983,21 @@ def main() -> int:
     ]
 
     unknowns: list[str] = governance_path_hints()
+    if weak_decision_hints is not None:
+        unknowns.append(
+            "Source-scored 8/16-point body-only Decision matches were deferred "
+            f"({weak_decision_hints['total_candidates']} candidates), NOT "
+            "judged inapplicable. Review the source-hashed weak_decision_hints "
+            "before implementation if they can affect behavior; prepared tasks "
+            "require explicit Convergence review. Rerun with --full-decisions "
+            "for complete original Context, or with --risk high when unsure."
+        )
+        if weak_decision_hints["truncated_candidates"]:
+            unknowns.append(
+                "Weak Decision navigation hints were truncated; the task "
+                "cannot finish under this Context. Rerun with --full-decisions "
+                "to inspect all original source candidates."
+            )
     if deferred_decision_hints is not None:
         unknowns.append(
             "Explicit --nonfunctional only defers weak lexical Decision bodies "
@@ -996,8 +1061,9 @@ def main() -> int:
             "candidate rules before treating them as applicable normative truth."
         )
     if not candidate_results and not (
-        deferred_decision_hints is not None
-        and deferred_decision_hints["total_candidates"] > 0
+        (deferred_decision_hints is not None
+         and deferred_decision_hints["total_candidates"] > 0)
+        or weak_decision_hints is not None
     ):
         unknowns.append(
             "Project Discovery found no matching knowledge artifact; expand search semantically."
@@ -1120,6 +1186,8 @@ def main() -> int:
         envelope["code_candidate_hints"] = code_candidate_hints
     if deferred_decision_hints is not None:
         envelope["nonfunctional_decision_hints"] = deferred_decision_hints
+    if weak_decision_hints is not None:
+        envelope["weak_decision_hints"] = weak_decision_hints
     if scope_route is not None:
         envelope["scope_route"] = scope_route
         # Final post-materialization check: do not publish a packet combining
@@ -1150,12 +1218,12 @@ def main() -> int:
                   file=sys.stderr)
             return 2
 
-    if deferred_decision_hints is not None:
-        # Hints do not confer authority, but a stale source digest would still
-        # mislead navigation. Fail closed on a changed/deleted source.
-        if any(
+    # Neither opt-in nor automatic Decision hints may publish a stale source
+    # digest after a concurrent repository edit.
+    for hint_group in (deferred_decision_hints, weak_decision_hints):
+        if hint_group is not None and any(
             artifact_sha256(hint["path"]) != hint["sha256"]
-            for hint in deferred_decision_hints["candidates"]
+            for hint in hint_group["candidates"]
         ):
             print(
                 "PACT context: deferred Decision source changed before "
