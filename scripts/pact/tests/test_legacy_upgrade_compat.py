@@ -129,6 +129,13 @@ class LegacyUpgradeTests(unittest.TestCase):
                 "source_sha256": h, "installed_sha256": h,
             }
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        # The actual PACT 0.1/0.2 generated Agent bootstrap referenced
+        # baseline.yaml; a modern synthetic init must reproduce that fact.
+        (self.project / "AGENTS.md").write_text(
+            "# Historical project Agent guide\n"
+            "Read .pact/baseline.yaml before making changes.\n",
+            encoding="utf-8",
+        )
         if notes:
             target = self.project / ".agents/decisions/implemented/approval.md"
             target.parent.mkdir(parents=True, exist_ok=True)
