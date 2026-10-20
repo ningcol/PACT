@@ -9,7 +9,41 @@ permissions:
   contents: read
 
 jobs:
+  classify:
+    name: Validate immutable release tag and choose approval channel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.version.outputs.channel }}
+      environment: ${{ steps.version.outputs.environment }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Validate tag version, exact main SHA and channel
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
+          python scripts/release/release_policy.py classify \
+            --tag "$GITHUB_REF_NAME" \
+            --version-file .pact/VERSION \
+            --github-output "$GITHUB_OUTPUT"
+          TAG_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          test "$TAG_SHA" = "$MAIN_SHA" || {
+            echo "Release HOLD: tag is not the current reviewed main commit"
+            exit 1
+          }
+
   portability:
+    needs: classify
     name: portability (${{ matrix.os }}, py${{ matrix.python }})
     strategy:
       fail-fast: false
@@ -52,20 +86,29 @@ jobs:
 
   release:
     needs:
+      - classify
       - portability
     runs-on: ubuntu-latest
-    # Configure required reviewers for this protected Environment in GitHub
-    # Settings. An unconfigured environment cannot bypass the explicit
-    # fail-closed GO and exact-commit evidence gates below.
-    environment: pact-release-approval
+    # Different required-reviewer environments for experimental RC and stable.
+    # An environment without real reviewer history fails closed in the policy
+    # step even if repository variables were manually set.
+    environment: ${{ needs.classify.outputs.environment }}
     permissions:
+      actions: read
       contents: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Fail closed until independently authorized Owner/Agent release gates
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Fail closed without real GitHub environment reviewer, GO and exact-main green CI
         env:
+          GH_TOKEN: ${{ github.token }}
+          PACT_RC_RELEASE_GO: ${{ vars.PACT_RC_RELEASE_GO }}
+          PACT_RC_RELEASE_APPROVED_SHA: ${{ vars.PACT_RC_RELEASE_APPROVED_SHA }}
           PACT_RELEASE_GO: ${{ vars.PACT_RELEASE_GO }}
           PACT_RELEASE_APPROVED_SHA: ${{ vars.PACT_RELEASE_APPROVED_SHA }}
           PACT_AGENT_OWNER_GATES_APPROVED: ${{ vars.PACT_AGENT_OWNER_GATES_APPROVED }}
@@ -74,49 +117,26 @@ jobs:
           set -euo pipefail
           TAG_SHA="$(git rev-parse HEAD)"
           MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
-          test "$TAG_SHA" = "$MAIN_SHA" || {
-            echo "Release HOLD: tag must identify the currently reviewed main HEAD"
-            exit 1
-          }
-          test "${PACT_RELEASE_GO:-}" = "GO" || {
-            echo "Release HOLD: missing explicit protected-environment GO"
-            exit 1
-          }
-          test "${PACT_AGENT_OWNER_GATES_APPROVED:-}" = "true" || {
-            echo "Release HOLD: real Agent/Owner acceptance is not approved"
-            exit 1
-          }
-          test "${PACT_RELEASE_APPROVED_SHA:-}" = "$TAG_SHA" || {
-            echo "Release HOLD: explicit approval must bind the exact tag commit"
-            exit 1
-          }
+          test "$GITHUB_REF_TYPE" = "tag"
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
+          # GET responses come from this exact GitHub Actions run, not files
+          # authored by the Agent, a repository note or the tag's commit.
+          # An unconfigured/unprotected Environment yields no approved human
+          # review; an empty/failed API response can never publish a release.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
+            > "$RUNNER_TEMP/pact-release-approvals.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA&per_page=100" \
+            > "$RUNNER_TEMP/pact-release-check-runs.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA&per_page=100" \
+            > "$RUNNER_TEMP/pact-release-matrix-runs.json"
 
-      - name: Verify tag matches runtime version and classify release
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          RUNTIME_VERSION="$(tr -d '[:space:]' < .pact/VERSION)"
-          echo "tag=$TAG_VERSION runtime=$RUNTIME_VERSION"
-          test "$TAG_VERSION" = "$RUNTIME_VERSION"
-
-          python - "$TAG_VERSION" >> "$GITHUB_OUTPUT" <<'PY'
-          import re
-          import sys
-
-          version = sys.argv[1]
-          if not re.fullmatch(
-              r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?",
-              version,
-          ):
-              raise SystemExit(f"unsupported release version: {version}")
-          print(f"prerelease={'true' if '-' in version else 'false'}")
-          PY
+          python scripts/release/release_policy.py gate \
+            --tag "$GITHUB_REF_NAME" --version-file .pact/VERSION \
+            --tag-sha "$TAG_SHA" --main-sha "$MAIN_SHA" \
+            --event "$GITHUB_EVENT_NAME" \
+            --approvals-file "$RUNNER_TEMP/pact-release-approvals.json" \
+            --check-runs-file "$RUNNER_TEMP/pact-release-check-runs.json" \
+            --matrix-runs-file "$RUNNER_TEMP/pact-release-matrix-runs.json"
 
       - name: Validate release source
         shell: bash
@@ -130,16 +150,23 @@ jobs:
       - name: Build and smoke-test release assets
         run: python scripts/release/release_assets.py --output-dir dist --smoke
 
-      - name: Publish GitHub Release
+      - name: Publish approved RC or stable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          IS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          IS_PRERELEASE: ${{ needs.classify.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
+          TAG_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          test "$TAG_SHA" = "$MAIN_SHA" || {
+            echo "Release HOLD: main HEAD changed after approval/build"
+            exit 1
+          }
           EXTRA_ARGS=()
           if [ "$IS_PRERELEASE" = "true" ]; then
-            EXTRA_ARGS+=(--prerelease)
+            EXTRA_ARGS+=(--prerelease --latest=false)
+            EXTRA_ARGS+=(--notes "EXPERIMENTAL RC FOR REAL-PROJECT PILOTS ONLY. No independently verified coding-Agent obedience, Owner benefit, or stable-release approval is claimed. Treat historical YAML/Decision migration as opt-in and review all reported conflicts; see docs/releasing.md and Issue #63.")
           fi
 
           gh release create "$GITHUB_REF_NAME" \
