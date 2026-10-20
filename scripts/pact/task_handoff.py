@@ -22,6 +22,7 @@ from task import (
     ROOT, TASK_ROOT, read_task_manifest, read_status_contract,
     validate_finish_manifest, write_json,
     task_generation_lock,
+    assert_same_task_generation,
 )
 from task_workflow import _exclusive_bundle, _existing_evidence, _prepared
 from workspace import task_changed_files, workspace_snapshot
@@ -175,7 +176,9 @@ def checkpoint(args) -> int:
             _exclusive_bundle(task_dir),
             _exclusive_bundle(bundle),
         ):
-            manifest, _, checked_bundle = _prepared(args.task_id)
+            checked_manifest, _, checked_bundle = _prepared(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before checkpoint lock")
             folder, _ = _task_dir_manifest(args.task_id)
