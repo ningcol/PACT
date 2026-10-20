@@ -335,6 +335,48 @@ def verify_installed_probe_sources(
     return failures
 
 
+def verify_weak_decision_hints(
+    target: pathlib.Path, cards: dict, envelope: dict,
+) -> list[str]:
+    """Authenticate deferred navigation metadata against original source."""
+    group = envelope.get("weak_decision_hints")
+    if group is None:
+        return []
+    errs: list[str] = []
+    if not isinstance(group, dict):
+        return ["Weak Context hint metadata is not an object"]
+    candidates = group.get("candidates")
+    total, truncated = group.get("total_candidates"), group.get("truncated_candidates")
+    if (not isinstance(candidates, list)
+            or type(total) is not int or type(truncated) is not int
+            or total < 0 or truncated < 0 or total != len(candidates) + truncated
+            or len(candidates) > 5):
+        return ["Weak Context hint count and truncation are inconsistent"]
+    known = {doc["id"]: doc for doc in cards["upstream_docs"]}
+    paths = projected_decision_paths(cards)
+    seen = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            errs.append("Weak Context hint is not an object")
+            continue
+        ident, relative = item.get("id"), item.get("path")
+        doc = known.get(ident)
+        if (doc is None or paths.get(ident) != relative
+                or item.get("status") != doc["status"]
+                or relative in seen):
+            errs.append("Weak Context hint lacks original Decision source identity")
+            continue
+        seen.add(relative)
+        try:
+            file = m0.safe_file(target, relative)
+            if (file.is_symlink() or not file.is_file()
+                    or m0.digest_file(file) != item.get("sha256")):
+                raise ValueError("source hash mismatch")
+        except (ValueError, OSError) as exc:
+            errs.append(f"Weak Context hint source invalid: {relative!r}: {exc}")
+    return errs
+
+
 def probe(
     target: pathlib.Path, cards: dict, result: list[dict] | None = None,
     *, in_flight: dict | None = None,
@@ -408,6 +450,9 @@ def probe(
         context_schema_errors.extend(
             x for x in source_errors if x.startswith("Context ")
         )
+        context_schema_errors.extend(
+            verify_weak_decision_hints(target, cards, envelope)
+        )
         result.append({
             "id": case["id"], "task": task, "kind": case["kind"],
             "discovery": {
@@ -439,6 +484,8 @@ def probe(
                     for x in selected if isinstance(x, dict)
                 ],
                 "current_decision_ids": envelope.get("decisions") or [],
+                **({"weak_decision_hints": envelope["weak_decision_hints"]}
+                   if "weak_decision_hints" in envelope else {}),
                 "applicable_rule_ids": envelope.get("applicable_rules") or [],
                 "selected_knowledge_files": len(selected),
                 "estimated_selected_tokens": budget.get("selected_estimated_tokens"),

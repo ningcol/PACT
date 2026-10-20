@@ -258,7 +258,8 @@ def run_arm(
                  by_id[x["id"]]["status"] if x.get("id") in by_id else None
              ),
              "artifact_type":x.get("artifact_type"), "sha256":x.get("sha256"),
-             "estimated_tokens":x.get("estimated_tokens")}
+             "score":x.get("score"), "reasons":x.get("reasons"),
+             "title":x.get("title"), "estimated_tokens":x.get("estimated_tokens")}
             for x in items if isinstance(x, dict)
         ]
         trusted_current_ids: set[str] = set()
@@ -276,36 +277,42 @@ def run_arm(
             except (ValueError, OSError):
                 pass
         hints = e.get("nonfunctional_decision_hints")
+        weak_hints = e.get("weak_decision_hints")
         if context["returncode"] == 0 and context_options and (
-            "--nonfunctional" in context_options
-            and not isinstance(hints, dict)
+            "--nonfunctional" in context_options and not isinstance(hints, dict)
         ):
             errs.append("requested nonfunctional Context lacks source-bound hints")
-        if isinstance(hints, dict):
-            # A compacted or truncated receipt must not disguise actual hints.
-            rows = hints.get("candidates", [])
+        for name, payload in (
+            ("nonfunctional", hints),
+            ("weak lexical", weak_hints),
+        ):
+            if payload is None:
+                continue
+            if not isinstance(payload, dict):
+                errs.append(f"{name} hints are not an object")
+                continue
+            rows = payload.get("candidates", [])
             if (not isinstance(rows, list)
-                    or type(hints.get("total_candidates")) is not int
-                    or type(hints.get("truncated_candidates")) is not int
-                    or len(rows) + hints["truncated_candidates"] != hints["total_candidates"]
+                    or type(payload.get("total_candidates")) is not int
+                    or type(payload.get("truncated_candidates")) is not int
+                    or len(rows) + payload["truncated_candidates"] != payload["total_candidates"]
                     or len(rows) > 5):
-                errs.append("nonfunctional hint totals/limit are inconsistent")
+                errs.append(f"{name} hint totals/limit are inconsistent")
                 rows = rows if isinstance(rows, list) else []
-            # Source-authenticate non-materialized navigation metadata, too.
             for hint in rows:
                 if not isinstance(hint, dict):
-                    errs.append("nonfunctional hint is not an object")
+                    errs.append(f"{name} hint is not an object")
                     continue
                 source = by_id.get(hint.get("id"))
                 if (source is None or target_path(source) != hint.get("path")
                         or hint.get("status") != source["status"]):
-                    errs.append("nonfunctional hint lacks pinned source identity")
+                    errs.append(f"{name} hint lacks pinned source identity")
                     continue
                 try:
                     if m0.digest_file(safe_source(target, hint["path"])) != hint.get("sha256"):
-                        errs.append("nonfunctional hint has invalid source digest")
+                        errs.append(f"{name} hint has invalid source digest")
                 except (ValueError, OSError) as exc:
-                    errs.append(f"missing nonfunctional hint source: {exc}")
+                    errs.append(f"missing {name} hint source: {exc}")
         claimed = e.get("decisions")
         if context["returncode"] == 0 and (
             not isinstance(claimed, list)
@@ -329,7 +336,8 @@ def run_arm(
             "discover_stderr": discover["stderr"], "discover_ms": discover["elapsed_ms"],
             "discover_hits": [
                 {"id":x.get("id"), "path":x.get("path"),
-                 "status":x.get("status"), "type":x.get("artifact_type")}
+                 "status":x.get("status"), "type":x.get("artifact_type"),
+                 "score":x.get("score"), "reasons":x.get("reasons")}
                 for x in hits if isinstance(x, dict)
             ],
             "context_command":context["command"],
@@ -343,6 +351,8 @@ def run_arm(
             **({"nonfunctional_decision_hints": hints}
                if context_options and "--nonfunctional" in context_options
                else {}),
+            **({"weak_decision_hints": weak_hints}
+               if weak_hints is not None else {}),
             "schema_and_source_errors":errs,
         })
         if in_flight is not None:

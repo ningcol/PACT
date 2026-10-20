@@ -6,6 +6,7 @@ on:
       - ".github/workflows/privacyfence-brownfield-pilot.yml"
       - "scripts/benchmark/privacyfence_pilot.py"
       - "scripts/benchmark/privacyfence_nonfunctional_probe.py"
+      - "scripts/benchmark/default_weak_decision_gate.py"
       - "scripts/benchmark/brownfield_adr_viewer.py"
       - "scripts/benchmark/decision_memory_m0.py"
       - "scripts/pact/**"
@@ -120,6 +121,14 @@ jobs:
           print("Failures:", data["failures"])
           PY
           test "$exit_code" -eq 0
+
+      - name: Gate frozen source-backed positive recall and weak-hit routine reduction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/benchmark/default_weak_decision_gate.py \
+            --project privacyfence \
+            --input "$RUNNER_TEMP/pact-privacyfence-pilot.json"
 
       - name: Preserve developer-only source retrieval receipts
         if: always()
