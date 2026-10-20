@@ -34,6 +34,18 @@ COMPLETION_ROOT = ROOT / ".pact" / "completions"
 TMP_ROOT = ROOT / ".pact" / "tmp"
 
 
+def task_generation_lock(task_id: str) -> pathlib.Path:
+    """Stable lock outside a replaceable task directory.
+
+    A force reprepare swaps .pact/tasks/<id>, so that directory's inode
+    cannot serialize across generations. Keep this lock under .locks/<id>,
+    which is never moved during reprepare.
+    """
+    validate_task_id(task_id)
+    lock_dir = TASK_ROOT / ".locks" / task_id
+    return confined_state_root(ROOT, lock_dir, field="task generation lock")
+
+
 def generated_task_id(task: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     suffix = hashlib.sha256(task.encode("utf-8")).hexdigest()[:8].upper()
@@ -205,6 +217,20 @@ def prepare(args) -> int:
         print(f"PACT task prepare: invalid task state: {exc}", file=sys.stderr)
         return 2
 
+    # Serialize the entire preparation, including --force directory swaps,
+    # against finish/verify/draft/checkpoint/assist/export in all generations.
+    try:
+        from task_workflow import _exclusive_bundle
+        with _exclusive_bundle(task_generation_lock(task_id)):
+            return _prepare_locked(args, task_id, task_dir, completion_dir)
+    except (OSError, ValueError) as exc:
+        print(f"PACT task prepare: {exc}", file=sys.stderr)
+        return 2
+
+
+def _prepare_locked(
+    args, task_id: str, task_dir: pathlib.Path, completion_dir: pathlib.Path,
+) -> int:
     if (task_dir.exists() or completion_dir.exists()) and not args.force:
         existing = task_dir if task_dir.exists() else completion_dir
         print(
@@ -543,7 +569,7 @@ def finish(args) -> int:
             raise ValueError("task was not prepared")
         # Import lazily: task_workflow imports task's prepared-state helpers.
         from task_workflow import _exclusive_bundle
-        with _exclusive_bundle(task_dir):
+        with _exclusive_bundle(task_generation_lock(args.task_id)), _exclusive_bundle(task_dir):
             return _finish_locked(args)
     except (OSError, ValueError) as exc:
         print(f"PACT task finish: {exc}", file=sys.stderr)
