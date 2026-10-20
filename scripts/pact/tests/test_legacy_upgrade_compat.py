@@ -223,6 +223,40 @@ class LegacyUpgradeTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Owner-added", path.read_text())
 
+    def test_custom_historical_fitness_checks_preserve_exact_command_and_severity(self):
+        self.old(notes=False)
+        original = (
+            "version: 1\nchecks:\n"
+            "  - id: no-ui-import\n"
+            "    description: Domain must not import UI modules\n"
+            "    command:\n"
+            "      - python\n"
+            "      - scripts/architecture/check_no_ui.py\n"
+            "    severity: error\n"
+            "    timeout_seconds: 120\n"
+            "  - id: report-imports\n"
+            "    description: Report import risk\n"
+            "    command:\n"
+            "      - python\n"
+            "      - scripts/architecture/report_imports.py\n"
+            "    severity: warn\n"
+        )
+        path = self.project / ".pact/fitness.yaml"
+        path.write_text(original, encoding="utf-8")
+        result = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        from formats import load_toml
+        imported = load_toml(self.project / ".pact/fitness.toml")["checks"]
+        self.assertEqual(len(imported), 2)
+        self.assertEqual(imported[0]["id"], "no-ui-import")
+        self.assertEqual(imported[0]["command"], [
+            "python", "scripts/architecture/check_no_ui.py",
+        ])
+        self.assertEqual(imported[0]["severity"], "error")
+        self.assertEqual(imported[0]["timeout_seconds"], 120)
+        self.assertEqual(imported[1]["severity"], "warn")
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+
     def test_custom_retired_config_fails_closed(self):
         self.old()
         path = self.project / ".pact/config.yaml"
