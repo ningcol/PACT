@@ -206,6 +206,7 @@ class InstalledDefaultWeakTests(unittest.TestCase):
             ("--risk", "low", "--intent", "history"),
             ("--risk", "low", "--intent", "decision"),
             ("--risk", "low", "--query", self.TASK, "--query", "CSV"),
+            ("--risk", "low", "--query", "Rename"),
             ("--risk", "low", "--scope-first"),
         ]
         for flags in modes:
