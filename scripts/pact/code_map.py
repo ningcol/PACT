@@ -452,7 +452,8 @@ def build_code_map(
 
 
 def valid_code_index(
-    data: dict, *, schema: dict, expected_paths: set[str]
+    data: dict, *, schema: dict, expected_paths: set[str],
+    root: pathlib.Path, paths: list[pathlib.Path],
 ) -> bool:
     """Reuse only a complete, schema-valid index over current source paths."""
     if data.get("root") != "." or validate_instance(data, schema):
@@ -481,10 +482,18 @@ def valid_code_index(
         (edge["from"], edge["to"], edge["kind"], edge["confidence"])
         for edge in data["edges"]
     }
-    return (
-        len(observed_edges) == len(data["edges"])
-        and observed_edges == expected_edges
-    )
+    if len(observed_edges) != len(data["edges"]) or observed_edges != expected_edges:
+        return False
+
+    # Cache file digests, valid schemas and self-checksums do not authenticate
+    # lexical metadata. Reparse source once before declaring a cache hit so a
+    # forged symbol/import/identifier cannot redirect Agent navigation.
+    authoritative = {
+        rel(path, root): parse_source(path, root)
+        for path in paths
+    }
+    canonical = build_code_map(root, paths, authoritative, data["source_fingerprint"])
+    return data["files"] == canonical["files"] and data["edges"] == canonical["edges"]
 
 
 def main() -> int:
@@ -520,7 +529,8 @@ def main() -> int:
         format_version=FORMAT_VERSION,
         source_fingerprint=source_fingerprint,
         validator=lambda data: valid_code_index(
-            data, schema=schema, expected_paths=expected_paths
+            data, schema=schema, expected_paths=expected_paths,
+            root=root, paths=paths,
         ),
     ):
         print(f"PACT code-map: fresh -> {output}")
@@ -534,6 +544,15 @@ def main() -> int:
         cache_version=PARSE_CACHE_VERSION,
         parser=lambda path: parse_source(path, root),
     )
+
+    # Parse-cache checksums prevent accidental corruption, but a writer can
+    # forge both cached data and its checksum. Never publish source-derived
+    # navigation fields until they have been checked against the real source.
+    for path in paths:
+        relative = rel(path, root)
+        canonical = parse_source(path, root)
+        if parsed_sources[relative] != canonical:
+            parsed_sources[relative] = canonical
 
     data = build_code_map(
         root,
