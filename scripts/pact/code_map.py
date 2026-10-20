@@ -219,15 +219,76 @@ def parse_python(path: pathlib.Path) -> tuple[list[str], list[tuple[str, int]]]:
     return sorted(set(symbols)), imports
 
 
+def js_code_positions(text: str) -> bytearray:
+    """Mark JS/TS/Vue code outside comments and quoted literals.
+
+    This is a lexical noise guard, not a full JavaScript parser. In particular,
+    template interpolations are treated conservatively as string content.
+    Import specifier strings remain available to JS_IMPORT: a match is trusted
+    only when its *keyword* begins in a code position.
+    """
+    visible = bytearray(b"\x01") * len(text)
+    state: str | None = None
+    i = 0
+    while i < len(text):
+        char = text[i]
+        follow = text[i + 1] if i + 1 < len(text) else ""
+        if state in {"'", '"', "`"}:
+            visible[i] = 0
+            if char == "\\" and i + 1 < len(text):
+                visible[i + 1] = 0
+                i += 2
+                continue
+            if char == state:
+                state = None
+            i += 1
+            continue
+        if state == "line-comment":
+            visible[i] = 0
+            if char == "\n":
+                state = None
+            i += 1
+            continue
+        if state == "block-comment":
+            visible[i] = 0
+            if char == "*" and follow == "/":
+                visible[i + 1] = 0
+                state = None
+                i += 2
+            else:
+                i += 1
+            continue
+        if char == "/" and follow in {"/", "*"}:
+            visible[i] = visible[i + 1] = 0
+            state = "line-comment" if follow == "/" else "block-comment"
+            i += 2
+            continue
+        if char in {"'", '"', "`"}:
+            visible[i] = 0
+            state = char
+        i += 1
+    return visible
+
+
 def parse_js_like(path: pathlib.Path) -> tuple[list[str], list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return [], []
 
-    imports = JS_IMPORT.findall(text)
+    code = js_code_positions(text)
+    imports = [
+        match.group(1)
+        for match in JS_IMPORT.finditer(text)
+        if code[match.start()]
+    ]
     symbols = []
     for match in JS_SYMBOL.finditer(text):
+        keyword = match.start()
+        while keyword < match.end() and text[keyword].isspace():
+            keyword += 1
+        if keyword >= match.end() or not code[keyword]:
+            continue
         symbol = next((group for group in match.groups() if group), None)
         if symbol:
             symbols.append(symbol)
