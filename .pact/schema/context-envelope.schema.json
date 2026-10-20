@@ -400,6 +400,30 @@
         }
       }
     },
+    "weak_decision_hints": {
+      "type": "object",
+      "required": ["total_candidates", "truncated_candidates", "candidates"],
+      "additionalProperties": false,
+      "properties": {
+        "total_candidates": {"type": "integer", "minimum": 0},
+        "truncated_candidates": {"type": "integer", "minimum": 0},
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "title", "status", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "pattern": "^DEC-[A-Z0-9-]+$"},
+              "path": {"type": "string", "minLength": 1},
+              "title": {"type": "string", "minLength": 1},
+              "status": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+            }
+          }
+        }
+      }
+    },
     "code_candidate_hints": {
       "type": "array",
       "items": {
