@@ -42,15 +42,17 @@ class WeakLexicalScoringTests(unittest.TestCase):
             self.hit("RULE-GOOD", 8, kind="rule", status="confirmed"),
             self.hit("DOC-GUIDE", 8, kind="document"),
         ]
-        material, weak = context.split_weak_lexical_decisions(rows)
-        self.assertEqual([x["id"] for x in weak], ["DEC-ONE", "DEC-TWO"])
+        material, weak = context.split_weak_lexical_decisions(
+            rows, "Rename a local variable in tests without changing behavior",
+        )
+        self.assertEqual([x["id"] for x in weak], ["DEC-ONE", "DEC-TWO", "DEC-THREE"])
         self.assertEqual(
             [x["id"] for x in material],
-            ["DEC-THREE", "DEC-EXPLICIT", "DEC-TITLE", "DEC-FUSED",
+            ["DEC-EXPLICIT", "DEC-TITLE", "DEC-FUSED",
              "DEC-PAST", "RULE-GOOD", "DOC-GUIDE"],
         )
         self.assertEqual(len(rows), 9)
-        self.assertEqual(context.WEAK_DECISION_SCORE_MAX, 16)
+        self.assertTrue(all(x["reasons"] == [] for x in weak))
 
     def test_malformed_and_fused_metadata_never_qualifies(self):
         bad = [
@@ -61,9 +63,55 @@ class WeakLexicalScoringTests(unittest.TestCase):
             self.hit("DEC-NO-REASONS", 8, ["body contains query"]),
             self.hit("DEC-UNKNOWN", 8, status="candidate"),
         ]
-        keep, defer = context.split_weak_lexical_decisions(bad)
+        keep, defer = context.split_weak_lexical_decisions(
+            bad, "Rename a local variable in tests without changing behavior",
+        )
         self.assertEqual(keep, bad)
         self.assertEqual(defer, [])
+
+
+class SourceCorroborationTests(unittest.TestCase):
+    def test_title_and_exact_source_compounds_protect_opaque_decisions(self):
+        with tempfile.TemporaryDirectory(prefix="pact-anchor-evidence-") as td:
+            root = pathlib.Path(td)
+            rel = ".agents/decisions/implemented/opaque.md"
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "# Undescriptive\n\nThe source prohibits auto_accept_rules "
+                "and insists on a usable screen reader.\n",
+                encoding="utf-8",
+            )
+            generic = {
+                "path": rel, "artifact_type": "decision",
+                "status": "implemented", "title": "Undescriptive",
+                "score": 56, "reasons": [],
+            }
+            with patch.object(context, "ROOT", root):
+                self.assertTrue(context._weak_source_unconfirmed(
+                    generic, "Rename a local test variable without changing production behavior",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Change startup logic to silently migrate auto_accept_rules from old installs",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Replace screen-reader cues with a visual-only status indicator",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    {**generic, "title": "Unattended session safety"},
+                    "Change unattended sessions so requests run without human approval",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "登录认证流程修改，不改变目前会话行为",
+                ))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Change policy",
+                ))
+                path.unlink()
+                # Unverifiable provenance never grants an automatic omission.
+                self.assertFalse(context._weak_source_unconfirmed(
+                    generic, "Change startup logic to silently migrate auto_accept_rules from old installs",
+                ))
 
 
 class InstalledDefaultWeakTests(unittest.TestCase):
