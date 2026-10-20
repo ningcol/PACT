@@ -211,12 +211,13 @@ use `--intent work|decision|history` (available on `discover`,
 
 ### Default weak Decision search (source-bound, conservative)
 
-In a single-query low/medium risk task, ordinary Context now materializes
-implemented Decision records when a generic body match lacks stronger
-source corroboration. Unreasoned Decision candidates with no task term in
-their original title or exact distinctive source phrase become
-up to five source-hashed `weak_decision_hints` with total/truncated counts,
-not silently dropped and **not** marked as inapplicable authority.
+For a single-query, low/medium-risk task, ordinary Context now **defers
+the body of an implemented Decision** when its generic keyword match lacks
+stronger source corroboration. Unreasoned Decision candidates with no
+meaningful task term in their original title or matching distinctive source
+phrase become up to five source-hashed `weak_decision_hints` with
+total/truncated counts. These candidates are not silently dropped or marked
+as inapplicable authority.
 
 This changes Context materialization, **not** the indexed source, Discover
 ranking or Product Rule precedence. A prepared task **must** review deferred
