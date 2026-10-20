@@ -53,7 +53,32 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 The formal release decision stays under Issue #63.
 
 
-## 0.4.0-rc.1 (release candidate; validation pending) — 2026-10-15
+## 0.4.0-rc.1 (experimental pilot candidate; not yet published) — 2026-10-20
+
+### Pre-release decision-memory, upgrade and publication safety
+
+- Source-corroborated default Context narrowing from [PR #231](https://github.com/ningcol/PACT/pull/231):
+  weakly matching implemented Decision bodies are deferred to source-hashed
+  review hints, never silently deleted or declared inapplicable; full Decision
+  recall is always available via `--full-decisions` and in high-risk work.
+  Pinned developer-labelled PrivacyFence and adr-viewer regression cases
+  retained all stated positive targets; this is **not** proof that a real
+  independent coding Agent will honor an Owner decision.
+- Explicit legacy 0.1/0.2/0.3 upgrade migration from
+  [PR #232](https://github.com/ningcol/PACT/pull/232): strict YAML-to-TOML
+  conversion for unambiguous project-owned seeds and source-identified
+  Decisions, preserving original old YAML/Decision prose and failing closed
+  for custom retired policy, missing IDs or unfinished historical tasks.
+  Three public pinned historical install/upgrade engineering tests passed.
+- Separate experimental RC and stable release approval channels: an RC
+  requires a protected GitHub environment's **actual human review** plus
+  Owner GO bound to exact reviewed main SHA, main/portable/full unit CI,
+  and validated checksummed assets. Stable still requires independently
+  accepted real Agent/Owner gates. No environment/GO approvals, tag, GitHub
+  Release, independent model trial or Owner benefit are claimed by this
+  code change. RC artifacts must be labelled for pilot use only.
+
+
 
 ### Semantic Knowledge Gardening
 
