@@ -545,6 +545,20 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
     if len(terms) < 3:
         return False
 
+    # Never defer an unverified Decision source, even when the task contains
+    # no long or compound term that would otherwise trigger source reading.
+    # Symlink/oversize/unreadable records remain fully visible in Context.
+    relative = str(item.get("path") or "")
+    lexical_path = ROOT / relative
+    path = repo_file(relative)
+    if path is None or lexical_path.is_symlink():
+        return False
+    try:
+        if path.stat().st_size > 128 * 1024:
+            return False
+    except (OSError, ValueError):
+        return False
+
     # Project-authored title is much better evidence than generic body words.
     title = str(item.get("title") or "")
     if any(document_term_matches(term, title) for term in terms):
@@ -567,14 +581,7 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
         and units[i + 1] not in DOCUMENT_STOPWORDS
     )
     if source_terms:
-        relative = str(item.get("path") or "")
-        lexical_path = ROOT / relative
-        path = repo_file(relative)
-        if (path is None or lexical_path.is_symlink()):
-            return False
         try:
-            if path.stat().st_size > 128 * 1024:
-                return False
             body = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
             return False
