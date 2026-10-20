@@ -354,7 +354,7 @@ def scan(
     # A current-format 0.4 task must not prevent a routine 0.4 upgrade.
     if not installed_version.startswith("0.4."):
         if tasks.is_symlink():
-        conflicts.append({"path": ".pact/tasks", "reason": "symlinked task state"})
+            conflicts.append({"path": ".pact/tasks", "reason": "symlinked task state"})
         elif tasks.is_dir():
             for task in sorted(tasks.glob("*/task.json")):
                 rel = task.relative_to(target).as_posix()
@@ -371,4 +371,4 @@ def scan(
                         })
                 except (OSError, ValueError) as exc:
                     conflicts.append({"path": rel, "reason": f"task state review required: {exc}"})
-        return {"operations": operations, "conflicts": conflicts, "notices": notices}
+    return {"operations": operations, "conflicts": conflicts, "notices": notices}
