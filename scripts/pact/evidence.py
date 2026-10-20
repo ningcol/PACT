@@ -290,6 +290,11 @@ def provenance_review(
 
 def readiness(receipt: dict, policy_gaps: list[str] | None = None) -> str:
     required = [c for c in receipt.get("claims", []) if c.get("required")]
+    # Vacuous truth is not verification: an empty or optional-only receipt
+    # must not be described as ready by the low-level Evidence/Complete CLI.
+    # Task Contract acceptance checks are an additional, separate gate.
+    if not required:
+        return "incomplete"
     if any(c.get("status") == "fail" for c in required):
         return "failed"
     if any(c.get("status") == "unverified" for c in required):
