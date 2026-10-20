@@ -356,7 +356,11 @@ def verify(args) -> int:
         receipt_path = run_dir / f"verify-{uuid.uuid4().hex}.json"
 
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
             # A verifier started before finish must not append claims to
             # already-completed Evidence after waiting for the primary lock.
             manifest, contract, checked_bundle = _prepared(args.task_id)
