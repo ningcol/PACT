@@ -269,7 +269,10 @@ def render(root: pathlib.Path, target: pathlib.Path, op: dict) -> bytes:
     return transformed
 
 
-def scan(root: pathlib.Path, target: pathlib.Path, tracked: dict, migrate: bool) -> dict:
+def scan(
+    root: pathlib.Path, target: pathlib.Path, tracked: dict,
+    migrate: bool, *, installed_version: str = "unknown",
+) -> dict:
     """Pure plan of source-bound operations and blockers; never edits target."""
     operations, conflicts, notices = [], [], []
 
@@ -347,22 +350,25 @@ def scan(root: pathlib.Path, target: pathlib.Path, tracked: dict, migrate: bool)
                 conflicts.append({"path": rel, "reason": f"manual authority review required: {exc}"})
 
     tasks = target / ".pact" / "tasks"
-    if tasks.is_symlink():
+    # Only historical prepared tasks have a different trust/provenance format.
+    # A current-format 0.4 task must not prevent a routine 0.4 upgrade.
+    if not installed_version.startswith("0.4."):
+        if tasks.is_symlink():
         conflicts.append({"path": ".pact/tasks", "reason": "symlinked task state"})
-    elif tasks.is_dir():
-        for task in sorted(tasks.glob("*/task.json")):
-            rel = task.relative_to(target).as_posix()
-            try:
-                if task.is_symlink() or task.parent.is_symlink():
-                    raise LegacyUpgradeError("task state is a symlink")
-                status = json.loads(task.read_text(encoding="utf-8"))
-                if not isinstance(status, dict) or status.get("status") != "completed":
-                    conflicts.append({
-                        "path": rel, "reason": (
-                            "incomplete historical task cannot safely use the new completion "
-                            "contract; finish or archive under old runtime first"
-                        ),
-                    })
-            except (OSError, ValueError) as exc:
-                conflicts.append({"path": rel, "reason": f"task state review required: {exc}"})
-    return {"operations": operations, "conflicts": conflicts, "notices": notices}
+        elif tasks.is_dir():
+            for task in sorted(tasks.glob("*/task.json")):
+                rel = task.relative_to(target).as_posix()
+                try:
+                    if task.is_symlink() or task.parent.is_symlink():
+                        raise LegacyUpgradeError("task state is a symlink")
+                    status = json.loads(task.read_text(encoding="utf-8"))
+                    if not isinstance(status, dict) or status.get("status") != "completed":
+                        conflicts.append({
+                            "path": rel, "reason": (
+                                "incomplete historical task cannot safely use the new completion "
+                                "contract; finish or archive under old runtime first"
+                            ),
+                        })
+                except (OSError, ValueError) as exc:
+                    conflicts.append({"path": rel, "reason": f"task state review required: {exc}"})
+        return {"operations": operations, "conflicts": conflicts, "notices": notices}
