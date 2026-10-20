@@ -8,6 +8,7 @@ import ast
 import json
 import pathlib
 import re
+import sys
 
 from cache import atomic_write_json, cache_is_fresh, fingerprint_files, git_head
 from distribution import discovery_excluded_paths
@@ -513,69 +514,102 @@ def main() -> int:
     if not output.is_absolute():
         output = root / output
 
-    paths, enumeration_mode = discover_files(root)
-    source_fingerprint = fingerprint_files(root, paths)
-
     schema_path = root / ".pact" / "schema" / "code-map.schema.json"
     try:
         schema = load_schema(schema_path)
     except Exception as exc:
-        print(f"PACT code-map: cannot load schema: {exc}")
+        print(f"PACT code-map: cannot load schema: {exc}", file=sys.stderr)
         return 2
 
-    expected_paths = {rel(path, root) for path in paths}
-    if args.ensure and cache_is_fresh(
-        output,
-        format_version=FORMAT_VERSION,
-        source_fingerprint=source_fingerprint,
-        validator=lambda data: valid_code_index(
-            data, schema=schema, expected_paths=expected_paths,
-            root=root, paths=paths,
-        ),
-    ):
-        print(f"PACT code-map: fresh -> {output}")
-        return 0
+    # Source files are not part of the atomic JSON publication. Re-enumerate
+    # and re-hash the COMPLETE code source set after parsing/building, including
+    # the healthy-cache path, so no mixed-generation index is published.
+    for attempt in range(3):
+        try:
+            paths, enumeration_mode = discover_files(root)
+            source_fingerprint = fingerprint_files(root, paths)
+            expected_paths = {rel(path, root) for path in paths}
 
-    parse_cache_path = root / ".pact" / "cache" / "code-file-cache.json"
-    parsed_sources, stats = parse_with_cache(
-        root=root,
-        paths=paths,
-        cache_path=parse_cache_path,
-        cache_version=PARSE_CACHE_VERSION,
-        parser=lambda path: parse_source(path, root),
-    )
+            fresh = args.ensure and cache_is_fresh(
+                output,
+                format_version=FORMAT_VERSION,
+                source_fingerprint=source_fingerprint,
+                validator=lambda data: valid_code_index(
+                    data, schema=schema, expected_paths=expected_paths,
+                    root=root, paths=paths,
+                ),
+            )
+            if not fresh:
+                parse_cache_path = root / ".pact" / "cache" / "code-file-cache.json"
+                parsed_sources, stats = parse_with_cache(
+                    root=root,
+                    paths=paths,
+                    cache_path=parse_cache_path,
+                    cache_version=PARSE_CACHE_VERSION,
+                    parser=lambda path: parse_source(path, root),
+                )
+                if set(parsed_sources) != expected_paths:
+                    raise OSError("code source set changed while parsing")
 
-    # Parse-cache checksums prevent accidental corruption, but a writer can
-    # forge both cached data and its checksum. Never publish source-derived
-    # navigation fields until they have been checked against the real source.
-    for path in paths:
-        relative = rel(path, root)
-        canonical = parse_source(path, root)
-        if parsed_sources[relative] != canonical:
-            parsed_sources[relative] = canonical
+                # Parsing caches are disposable and not a source of truth.
+                # Reparse even if a cache writer recomputed its own checksum.
+                for path in paths:
+                    relative = rel(path, root)
+                    canonical = parse_source(path, root)
+                    if parsed_sources[relative] != canonical:
+                        parsed_sources[relative] = canonical
 
-    data = build_code_map(
-        root,
-        paths,
-        parsed_sources,
-        source_fingerprint,
-    )
+                data = build_code_map(
+                    root, paths, parsed_sources, source_fingerprint,
+                )
 
-    errors = validate_instance(data, schema)
-    if errors:
-        for error in errors:
-            print(f"PACT code-map schema error: {error}")
-        return 2
+            updated_paths, updated_mode = discover_files(root)
+            if (
+                [rel(path, root) for path in updated_paths]
+                != [rel(path, root) for path in paths]
+                or updated_mode != enumeration_mode
+                or fingerprint_files(root, updated_paths) != source_fingerprint
+            ):
+                raise OSError("source files changed during Code Map scan")
 
-    atomic_write_json(output, data)
+            if fresh:
+                print(f"PACT code-map: fresh -> {output}")
+                return 0
 
-    print(
-        f"PACT code-map: {len(data['files'])} source file(s), "
-        f"{len(data['edges'])} resolved local import edge(s) "
-        f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
-        f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
-    )
-    return 0
+            errors = validate_instance(data, schema)
+            if errors:
+                for error in errors:
+                    print(f"PACT code-map schema error: {error}", file=sys.stderr)
+                return 2
+
+            # Recheck once more after graph generation/validation and before
+            # publication, not just after parsing the last source file.
+            final_paths, final_mode = discover_files(root)
+            if (
+                [rel(path, root) for path in final_paths]
+                != [rel(path, root) for path in paths]
+                or final_mode != enumeration_mode
+                or fingerprint_files(root, final_paths) != source_fingerprint
+            ):
+                raise OSError("source files changed before Code Map publication")
+
+            atomic_write_json(output, data)
+            print(
+                f"PACT code-map: {len(data['files'])} source file(s), "
+                f"{len(data['edges'])} resolved local import edge(s) "
+                f"[enumeration={enumeration_mode}, parsed={stats['parsed']}, "
+                f"reused={stats['reused']}, removed={stats['removed']}] -> {output}"
+            )
+            return 0
+        except OSError as exc:
+            if attempt == 2:
+                print(
+                    f"PACT code-map: unstable source snapshot after 3 attempts: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
+
+    return 2
 
 
 if __name__ == "__main__":
