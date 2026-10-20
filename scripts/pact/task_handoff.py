@@ -21,6 +21,7 @@ from schema_validate import load_schema, validate_instance
 from task import (
     ROOT, TASK_ROOT, read_task_manifest, read_status_contract,
     validate_finish_manifest, write_json,
+    task_generation_lock,
 )
 from task_workflow import _exclusive_bundle, _existing_evidence, _prepared
 from workspace import task_changed_files, workspace_snapshot
@@ -169,7 +170,11 @@ def checkpoint(args) -> int:
     try:
         manifest, _, bundle = _prepared(args.task_id)
         task_dir = confined_child(TASK_ROOT, args.task_id, repository_root=ROOT)
-        with _exclusive_bundle(task_dir), _exclusive_bundle(bundle):
+        with (
+            _exclusive_bundle(task_generation_lock(args.task_id)),
+            _exclusive_bundle(task_dir),
+            _exclusive_bundle(bundle),
+        ):
             manifest, _, checked_bundle = _prepared(args.task_id)
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed before checkpoint lock")
