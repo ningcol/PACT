@@ -302,6 +302,33 @@ def build_install_manifest(
     }
 
 
+def assert_created_init_file_unchanged(
+    target: pathlib.Path, relative: str, expected: tuple[int, int, str],
+) -> None:
+    """Bind install provenance to our published inode and staged content.
+
+    Concurrent writers may overwrite, relink or modify a new file after we
+    atomically created it. Neither a newly-computed installed_sha256 nor a
+    freshly valid manifest is evidence that our intended bytes were installed.
+    """
+    destination = safe_init_target(target, relative)
+    try:
+        current = destination.lstat()
+        if (
+            destination.is_symlink()
+            or not destination.is_file()
+            or (current.st_dev, current.st_ino) != expected[:2]
+            or sha256_file(destination) != expected[2]
+        ):
+            raise RuntimeError(
+                f"created init file changed during init: {relative}"
+            )
+    except OSError as exc:
+        raise RuntimeError(
+            f"created init file changed during init: {relative}: {exc}"
+        ) from exc
+
+
 def cleanup_empty_parents(path: pathlib.Path, stop: pathlib.Path) -> None:
     stop = stop.resolve()
     current = path.resolve()
@@ -426,11 +453,21 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                     )
 
             created_set = set(created)
+            for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
             manifest = build_install_manifest(
                 target,
                 operations,
                 created_set,
             )
+            # A writer can modify a file between provenance collection and
+            # manifest serialization; never certify the altered bytes.
+            for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
             staged_manifest = txn / "install.json"
             staged_manifest.write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
@@ -454,8 +491,12 @@ def apply(target: pathlib.Path, operations: list[dict]) -> set[str]:
                 # Do not overwrite a manifest another initializer just wrote.
                 os.link(staged_manifest, manifest_path)
 
-            # Validate the final recorded hashes after manifest commit.
+            # Validate both the expected transaction identity and recorded
+            # hashes after manifest commit.
             for relative in created:
+                assert_created_init_file_unchanged(
+                    target, relative, created_identity[relative],
+                )
                 record = manifest["files"].get(relative)
                 destination = safe_init_target(target, relative)
                 if not record or not destination.is_file():
