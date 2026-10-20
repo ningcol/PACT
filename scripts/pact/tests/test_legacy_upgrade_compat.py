@@ -234,18 +234,18 @@ class LegacyUpgradeTests(unittest.TestCase):
         rel = "docs/product/rules/old-framework-example.md"
         file = self.project / rel
         file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text("# Original framework-provided example\\n")
+        file.write_text("# Original framework-provided example\n")
         source_hash = hashlib.sha256(file.read_bytes()).hexdigest()
         manifest["files"][rel] = {
             "management": "framework", "source_path": rel,
             "source_sha256": source_hash, "installed_sha256": source_hash,
         }
         (self.project / ".pact/install.json").write_text(
-            json.dumps(manifest, indent=2) + "\\n"
+            json.dumps(manifest, indent=2) + "\n"
         )
         file.write_text(
-            "---\\npact:\\n  type: rule\\n  id: RULE-OWNER-SAFETY\\n"
-            "  status: confirmed\\n---\\n# User modified this rule\\n"
+            "---\npact:\n  type: rule\n  id: RULE-OWNER-SAFETY\n"
+            "  status: confirmed\n---\n# User modified this rule\n"
         )
         before = file.read_bytes()
         result = self.run_upgrade("--migrate-legacy", "--apply")
