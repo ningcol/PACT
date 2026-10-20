@@ -76,7 +76,11 @@ def scalar(value: str):
             return out
         raise LegacyUpgradeError("unsupported YAML flow list")
     if (
-        not v or v in {"null", "Null", "~"}
+        not v or v.casefold() in {"null", "none", "yes", "no", "on", "off"}
+        or v == "~"
+        or (v.startswith('"') != v.endswith('"'))
+        or (v.startswith("'") != v.endswith("'"))
+        or ": " in v
         or v.startswith(("{", "[", "!", "&", "*", "|", ">", "%"))
         or re.search(r"\s+#", v) or "\t" in v or "\r" in v
     ):
@@ -290,6 +294,28 @@ def scan(
         if not path.exists() and not path.is_symlink():
             continue
         if new_path.exists() or new_path.is_symlink():
+            # The 0.1/0.2 runtime used YAML as Owner truth, even if someone
+            # separately created a TOML default. Do not silently switch to
+            # the new TOML when its values disagree with the real old source.
+            if installed_version.startswith(("0.1.", "0.2.")):
+                try:
+                    if path.is_symlink() or new_path.is_symlink():
+                        raise LegacyUpgradeError("ambiguous symlinked legacy/current seed")
+                    converted = seed_bytes(root, kind, path.read_bytes())
+                    expected = tomllib.loads(converted.decode("utf-8"))
+                    actual = tomllib.loads(new_path.read_text(encoding="utf-8"))
+                    if actual != expected:
+                        raise LegacyUpgradeError(
+                            "old runtime used YAML but current TOML differs; "
+                            "manually reconcile the Owner settings and do not "
+                            "overwrite either project-owned file"
+                        )
+                except (OSError, UnicodeError, ValueError, tomllib.TOMLDecodeError) as exc:
+                    conflicts.append({
+                        "path": legacy_rel,
+                        "reason": f"ambiguous historical YAML/TOML settings: {exc}",
+                    })
+                    continue
             notices.append({
                 "kind": "archived-YAML-seed", "path": legacy_rel,
                 "reason": f"existing {new_rel} is authoritative; historical YAML is not read by 0.4",
