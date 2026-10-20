@@ -537,7 +537,7 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
             or type(item.get("score")) is not int
             or item["score"] <= 0):
         return False
-    raw_terms = re.findall(r"[\\w\\-]+", task, flags=re.UNICODE)
+    raw_terms = re.findall(r"[\w\-]+", task, flags=re.UNICODE)
     terms = list(dict.fromkeys(
         term for term in raw_terms
         if term.casefold() not in DOCUMENT_STOPWORDS
