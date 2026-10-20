@@ -27,6 +27,7 @@ from task import (
     ROOT, TASK_ROOT, completion_bundle_path, read_status_contract,
     read_task_manifest, validate_finish_manifest, write_json,
     task_generation_lock,
+    assert_same_task_generation,
 )
 from task_workflow import (
     RUN_ROOT, _existing_evidence, _exclusive_bundle, _prepared,
@@ -497,6 +498,13 @@ def assist(args) -> int:
                 _exclusive_bundle(task_dir),
                 _exclusive_bundle(bundle),
             ):
+                current_manifest = read_task_manifest(task_dir / "task.json")
+                previous_manifest = read_task_manifest(task_dir / "task.json")
+                # The first diagnostic may have observed a previous task
+                # generation. Preserve its binding for safe comparison.
+                if (result.get("contract_sha256") != current_manifest.get("contract_sha256")
+                        or result.get("context_sha256") != current_manifest.get("context_sha256")):
+                    raise ValueError("task generation changed before Owner draft lock")
                 result, _, owner = _snapshot(args.task_id)
                 result["draft_written"] = False
                 result["retracted_generated_acceptance"] = []
@@ -617,7 +625,9 @@ def export(args) -> int:
             _exclusive_bundle(task_dir),
             _exclusive_bundle(bundle),
         ):
-            manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
+            checked_manifest, evidence, checked_bundle = _export_prepared_or_completed(args.task_id)
+            assert_same_task_generation(manifest, checked_manifest)
+            manifest = checked_manifest
             if checked_bundle != bundle:
                 raise ValueError("completion bundle changed during evidence export")
             errors, gaps, stats = provenance_review(evidence, ROOT)
