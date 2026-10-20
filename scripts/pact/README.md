@@ -212,8 +212,9 @@ use `--intent work|decision|history` (available on `discover`,
 ### Default weak Decision search (source-bound, conservative)
 
 In a single-query low/medium risk task, ordinary Context now materializes
-implemented Decision records only when retrieval has more than a weak
-one/two-term body match. Source-scored 8/16-point, no-reason Decisions become
+implemented Decision records when a generic body match lacks stronger
+source corroboration. Unreasoned Decision candidates with no task term in
+their original title or exact distinctive source phrase become
 up to five source-hashed `weak_decision_hints` with total/truncated counts,
 not silently dropped and **not** marked as inapplicable authority.
 
