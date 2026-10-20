@@ -349,8 +349,23 @@ def scan(
             if count > 6000:
                 conflicts.append({"path": rel_dir, "reason": "authority audit limit exceeded"})
                 break
+            # READMEs and templates are normally non-authoritative, but a
+            # project may have placed real PACT metadata there. Skip only
+            # when no PACT authority header is present; unchanged historical
+            # framework templates are handled by the source-hash rule below.
             if path.name in {"README.md", "TEMPLATE.md"}:
-                continue
+                try:
+                    if not re.search(
+                        rb"(?m)^pact:\s*(?:\r?\n|$)",
+                        path.read_bytes()[:256 * 1024],
+                    ):
+                        continue
+                except OSError as exc:
+                    conflicts.append({
+                        "path": rel,
+                        "reason": f"cannot inspect historical authority page: {exc}",
+                    })
+                    continue
             record = tracked.get(rel, {})
             if record.get("management") == "framework":
                 # Old full-profile installs managed governance/doc examples.
