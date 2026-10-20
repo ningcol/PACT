@@ -16,6 +16,7 @@ import release_policy as policy
 
 SHA = "a" * 40
 DIFFERENT_SHA = "b" * 40
+UNSET = object()
 
 
 def checked_ci(sha: str = SHA) -> dict:
@@ -60,13 +61,12 @@ def stable_vars() -> dict:
 
 class ReleaseApprovalTests(unittest.TestCase):
     def gate(self, channel="rc", sha=SHA, main=SHA, env=None,
-             approvals=None, ci=None, event="push"):
+             approvals=UNSET, ci=None, event="push"):
         return policy.require_release_approval(
             channel, sha, main,
             env=env if env is not None else rc_vars(),
-            approvals=approvals if approvals is not None else approved(
-                policy.ENVIRONMENT[channel]
-            ),
+            approvals=approved(policy.ENVIRONMENT[channel])
+            if approvals is UNSET else approvals,
             ci_reports=ci if ci is not None else checked_ci(),
             event=event,
         )
