@@ -43,11 +43,11 @@ PACT is not an exhaustive project knowledge base, a general-purpose Agent orches
 
 Distinguish the change being proposed:
 
-- **Bug, security, compatibility or routine refactor:** fix with proportionate reproduction and regression evidence. No extra product approval or complexity-review ceremony.
+- **Bug, security, compatibility or routine refactor:** fix with proportionate reproduction and regression evidence, without extra scope-review ceremony **when existing Owner decision boundaries are unchanged**.
 - **Opt-in experiment:** keep it bounded, reversible and clearly non-default. A testable benefit hypothesis is enough to experiment; do not claim measured benefit before evaluation.
 - **New default capability or mandatory step:** use the **existing PR description** to state the observed problem, why simpler reuse is insufficient, expected effects on decision recall/obedience, retrieval noise and Owner/context/maintenance cost, and the evidence and rollback supporting default adoption. Do not treat extra checks, notes or tokens as free.
 
-A change to confirmed product meaning or Owner decision authority requires the appropriate explicit Owner decision; Agents remain autonomous on implementation details. Prefer reducing or removing ineffective mechanisms after evidence-based review. Do **not** add a new PR form, check, approval gate, schema or task step to enforce this guidance.
+A change crossing the existing [Owner decision boundary](docs/governance/decision-authority.md)—including product meaning, permissions/policy or material risk/cost acceptance—requires an explicit Owner decision; Agents remain autonomous on implementation details. Prefer reducing or removing ineffective mechanisms after evidence-based review. Do **not** add a new PR form, check, approval gate, schema or task step to enforce this guidance.
 
 ## Tests
 
