@@ -2,6 +2,8 @@
 
 PACT is the project-level AI control plane for this repository.
 
+When evolving PACT itself, follow the [core-focus and feature-scope guidance](CONTRIBUTING.md#core-focus-and-feature-scope); it is not an extra approval or task step for projects using PACT.
+
 ## Constitution
 
 1. Preserve confirmed product truth.
