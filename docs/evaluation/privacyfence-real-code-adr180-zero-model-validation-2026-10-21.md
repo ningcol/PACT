@@ -83,6 +83,48 @@ unchanged. Positive public PrivacyFence/ADR-viewer targets must not regress.
 old developer-authored positive/negative corpus is not an independent
 unseen holdout or evidence of a coding Agent obeying Decision rationale.
 
+## Source-first audit of remaining candidate cost (2026-10-21)
+
+Follow-up to [Issue #221](https://github.com/ningcol/PACT/issues/221).
+The verified no-model [PrivacyFence run](https://github.com/ningcol/PACT/actions/runs/39598827008)
+at PACT `d3c2d183` retained **10/10 developer-labelled target Decisions**,
+with **10 additional source-authenticated current-Decision selections** and
+**0/2 routine current-Decision injections**. Reading the case-by-case
+`selected[]` receipts gives **21,599 estimated tokens** (UTF-8 bytes / 4)
+across those 10 additional selections: **39.7% of B's 54,422 selected
+estimated tokens**. Two additional selections of ADR 0008 alone contribute
+**10,344** estimated tokens (2 × 5,172). The source-A estimate was 43,640;
+the B–A initial Context difference was +10,782 (+24.7%), **not** provider
+billing, incremental Agent context usage or a provable savings opportunity.
+Some additional selections may be necessary safety context.
+
+Representative original-source findings:
+
+- PrivacyFence [ADR 0008](https://github.com/privacyfence/privacyfence/blob/6a03856a6e1819b2eacd3963154ebc7d02923296/docs/adr/0008-one-principal-per-os-user.md)
+  governs OS-user isolation and MCP tokens; its status explicitly says
+  *implemented in part*. It is not automatically irrelevant to login or
+  personal-settings changes merely because the developer oracle named another
+  primary target.
+- PrivacyFence [ADR 0014](https://github.com/privacyfence/privacyfence/blob/6a03856a6e1819b2eacd3963154ebc7d02923296/docs/adr/0014-every-bespoke-route-is-classified-or-the-app-refuses-to-start.md)
+  explicitly links original ADR 0013 and addresses settings POST approval
+  gates; cross-task selections can be real authority to inspect, not junk.
+- adr-viewer [ADR 0005](https://github.com/mrwilson/adr-viewer/blob/a25f1c71e031bdaa63fe3175f969f197139f2044/doc/adr/0005-distinguish-amendments-to-records-with-colour.md)
+  explicitly **amends** [ADR 0004](https://github.com/mrwilson/adr-viewer/blob/a25f1c71e031bdaa63fe3175f969f197139f2044/doc/adr/0004-distinguish-superseded-records-with-colour.md);
+  its appearance on a status-colour task cannot safely be called a proven
+  false positive. The original accessibility ADR 0006 is also related to
+  interpreting records without relying solely on colour.
+
+**Decision:** no automatic default ranking/filter or mandatory note is
+introduced from these developer-oracle extras. Existing source-bound
+`selected[]` receipts already contain ID, SHA and estimated file cost.
+The existing PrivacyFence engineering scorer now adds an **advisory,
+source-verified accounting field** for the same 10 extra slots and their
+estimated selected bytes/4. A malformed, missing or duplicate extra-source
+receipt fails the cost attribution instead of quietly manufacturing a lower
+estimate. This is cost *attribution*, not a semantic relevance verdict or
+predicted money/token savings. The frozen cases and oracle are unchanged.
+Only actual exact-PR-head GitHub runs can confirm the emitted field.
+
 ## What these outcomes establish — and do not
 
 - Engineering evidence: original source pinned; Decision navigation works
