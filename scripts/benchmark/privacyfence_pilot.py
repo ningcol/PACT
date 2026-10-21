@@ -383,11 +383,34 @@ def score(report: dict, cases: dict) -> dict:
         raise ValueError("A/B cases were not executed in identical order")
     hits, extra, routine_noise = 0, 0, 0
     a_raw_target_hits = 0
+    extra_cost_by_case: dict[str, int] = {}
     for x,y in zip(a,b):
         wanted = set(expected[y["id"]])
         got = set(y.get("source_verified_decisions", []))
         hits += len(wanted & got)
-        extra += len(got - wanted)
+        extra_ids = got - wanted
+        extra += len(extra_ids)
+        # Source-backed selected file sizes, not billed tokens or semantic
+        # irrelevance. An additional Decision may still constrain the task.
+        selected_extra = [
+            item for item in y["selected"] if item.get("id") in extra_ids
+        ]
+        if (len(selected_extra) != len(extra_ids)
+                or {item.get("id") for item in selected_extra} != extra_ids
+                or any(
+                    type(item.get("estimated_tokens")) is not int
+                    or item["estimated_tokens"] < 0 for item in selected_extra
+                )):
+            raise ValueError(
+                "cannot attribute extra Decision cost to unique source-bound Context"
+            )
+        extra_cost_by_case[y["id"]] = sum(
+            item["estimated_tokens"] for item in selected_extra
+        )
+        selected_total = y["budget"].get("selected_estimated_tokens")
+        if (type(selected_total) is not int
+                or extra_cost_by_case[y["id"]] > selected_total):
+            raise ValueError("extra Decision cost exceeds recorded selected Context")
         if y["kind"] == "routine-negative" and got:
             routine_noise += 1
         paths = {d["source"] for d in cases["source_docs"] if d["id"] in wanted}
@@ -397,6 +420,7 @@ def score(report: dict, cases: dict) -> dict:
         "A_original_adr_document_target_hits":a_raw_target_hits,
         "B_current_decision_target_hits":hits,
         "B_extra_current_decision_slots":extra,
+        "B_oracle_extraneous_selected_estimated_tokens":sum(extra_cost_by_case.values()),
         "B_routine_cases_with_selected_decisions":routine_noise,
         "routine_case_count":2,
         "total_estimated_context_tokens":{
@@ -415,7 +439,8 @@ def score(report: dict, cases: dict) -> dict:
              "B_source_verified_decisions":y["source_verified_decisions"],
              "target_hit":bool(set(expected[y["id"]]) & set(y["source_verified_decisions"])),
              "B_extraneous":[id for id in y["source_verified_decisions"]
-                              if id not in expected[y["id"]]]}
+                              if id not in expected[y["id"]]],
+             "B_oracle_extraneous_selected_estimated_tokens":extra_cost_by_case[y["id"]]}
             for i,y in enumerate(b)
         ],
     }
