@@ -407,6 +407,10 @@ def score(report: dict, cases: dict) -> dict:
         extra_cost_by_case[y["id"]] = sum(
             item["estimated_tokens"] for item in selected_extra
         )
+        selected_total = y["budget"].get("selected_estimated_tokens")
+        if (type(selected_total) is not int
+                or extra_cost_by_case[y["id"]] > selected_total):
+            raise ValueError("extra Decision cost exceeds recorded selected Context")
         if y["kind"] == "routine-negative" and got:
             routine_noise += 1
         paths = {d["source"] for d in cases["source_docs"] if d["id"] in wanted}
