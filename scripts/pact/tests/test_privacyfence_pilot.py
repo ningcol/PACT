@@ -210,6 +210,7 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
                 ident, tokens = extra[row["id"]]
                 row["source_verified_decisions"] = [*row["source_verified_decisions"], ident]
                 row["selected"] = [{"id": ident, "estimated_tokens": tokens}]
+                row["budget"] = {"selected_estimated_tokens": max(4096, tokens)}
         report = {"arms": {"A_unadapted": a, "B_source_projection": b}}
         scored = pilot.score(report, cards)
         self.assertEqual(scored["B_current_decision_target_hits"], 10)
@@ -232,6 +233,10 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
         b[1]["selected"][0]["estimated_tokens"] = 5172
         with self.assertRaisesRegex(ValueError, "unique source-bound Context"):
             b[1]["selected"].append(dict(b[1]["selected"][0]))
+            pilot.score(report, cards)
+        b[1]["selected"].pop()
+        with self.assertRaisesRegex(ValueError, "exceeds recorded selected Context"):
+            b[1]["budget"]["selected_estimated_tokens"] = 1
             pilot.score(report, cards)
 
     def test_real_context_omits_status_but_source_verified_id_counts(self):
