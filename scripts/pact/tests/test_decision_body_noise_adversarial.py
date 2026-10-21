@@ -117,7 +117,13 @@ class FullBodyCoincidenceTests(unittest.TestCase):
         )
         matches = [row for row in old["artifacts"] if row.get("id") == OLD_ID]
         self.assertEqual(len(matches), 1, old)
-        self.assertEqual(matches[0]["status"], "superseded")
+        # Context Envelope v1 exposes ID/path/score/source SHA, not a
+        # mutable lifecycle label. Confirm historical status from source.
+        self.assertEqual(matches[0]["path"], OLD_REL)
+        self.assertIn(
+            'status = "superseded"',
+            (self.root / OLD_REL).read_text(encoding="utf-8"),
+        )
         self.assertNotIn(OLD_ID, old["decisions"])
 
         active = self.pact(
