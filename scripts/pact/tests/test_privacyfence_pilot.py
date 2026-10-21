@@ -187,6 +187,53 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
 
 
 
+    def test_extra_decision_cost_is_source_bound_and_not_false_savings(self):
+        cards = json.loads(pilot.CASES.read_text(encoding="utf-8"))
+        oracle = json.loads(pilot.ORACLE.read_text(encoding="utf-8"))
+        a, b = [], []
+        for task in cards["tasks"]:
+            case_id = task["id"]
+            row = {
+                "id": case_id, "kind": task["kind"], "selected": [],
+                "budget": {"selected_estimated_tokens": 4096},
+                "context_ms": 1, "decisions": [],
+                "source_verified_decisions": list(oracle["expected_current"][case_id]),
+            }
+            a.append(dict(row))
+            b.append(dict(row))
+        extra = {
+            "mcp-signin": ("DEC-PF-0008", 5172),
+            "route-gating": ("DEC-PF-0195", 1065),
+        }
+        for row in b:
+            if row["id"] in extra:
+                ident, tokens = extra[row["id"]]
+                row["source_verified_decisions"] = [*row["source_verified_decisions"], ident]
+                row["selected"] = [{"id": ident, "estimated_tokens": tokens}]
+        report = {"arms": {"A_unadapted": a, "B_source_projection": b}}
+        scored = pilot.score(report, cards)
+        self.assertEqual(scored["B_current_decision_target_hits"], 10)
+        self.assertEqual(scored["B_extra_current_decision_slots"], 2)
+        self.assertEqual(scored["B_oracle_extraneous_selected_estimated_tokens"], 6237)
+        by_case = {item["id"]: item for item in scored["per_case"]}
+        self.assertEqual(
+            by_case["mcp-signin"]["B_oracle_extraneous_selected_estimated_tokens"], 5172
+        )
+        self.assertEqual(
+            by_case["route-gating"]["B_oracle_extraneous_selected_estimated_tokens"], 1065
+        )
+        self.assertEqual(
+            by_case["signed-serial"]["B_oracle_extraneous_selected_estimated_tokens"], 0
+        )
+        self.assertNotIn("irrelevant", str(scored).lower())
+        with self.assertRaisesRegex(ValueError, "unique source-bound Context"):
+            b[1]["selected"][0]["estimated_tokens"] = True
+            pilot.score(report, cards)
+        b[1]["selected"][0]["estimated_tokens"] = 5172
+        with self.assertRaisesRegex(ValueError, "unique source-bound Context"):
+            b[1]["selected"].append(dict(b[1]["selected"][0]))
+            pilot.score(report, cards)
+
     def test_real_context_omits_status_but_source_verified_id_counts(self):
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td)
