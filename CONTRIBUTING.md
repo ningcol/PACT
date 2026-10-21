@@ -2,6 +2,8 @@
 
 PACT should get **smaller, more trustworthy, and easier to operate** as it evolves.
 
+**Core promise:** With minimal durable memory and operating cost, help agents recover important decisions *and their reasons*, find the relevant Product Truth and code, preserve Owner-confirmed behavior across tasks, and substantiate completion with evidence.
+
 Before adding a new command, schema, metadata field, language adapter, or workflow, ask whether an existing primitive can solve the same problem.
 
 ## Development requirements
@@ -34,6 +36,18 @@ Preserve these boundaries:
 6. New orchestration must not remove low-level primitives or unnecessarily constrain stronger future agents.
 7. Runtime schema constraints must be enforced by the stdlib validator; `schema-lint` must reject unsupported keywords.
 8. Do not add runtime dependencies merely for convenience without demonstrating that stdlib implementation is materially insufficient.
+
+## Core focus and feature scope
+
+PACT is not an exhaustive project knowledge base, a general-purpose Agent orchestrator, or an extra approval process for routine engineering. Improve or simplify an existing primitive before introducing a new default obligation. Keep long-term Decision records subject to the [existing two-condition admission rule](.agents/decisions/README.md); a completed PR alone never justifies a new Decision.
+
+Distinguish the change being proposed:
+
+- **Bug, security, compatibility or routine refactor:** fix with proportionate reproduction and regression evidence. No extra product approval or complexity-review ceremony.
+- **Opt-in experiment:** keep it bounded, reversible and clearly non-default. A testable benefit hypothesis is enough to experiment; do not claim measured benefit before evaluation.
+- **New default capability or mandatory step:** use the **existing PR description** to state the observed problem, why simpler reuse is insufficient, expected effects on decision recall/obedience, retrieval noise and Owner/context/maintenance cost, and the evidence and rollback supporting default adoption. Do not treat extra checks, notes or tokens as free.
+
+A change to confirmed product meaning or Owner decision authority requires the appropriate explicit Owner decision; Agents remain autonomous on implementation details. Prefer reducing or removing ineffective mechanisms after evidence-based review. Do **not** add a new PR form, check, approval gate, schema or task step to enforce this guidance.
 
 ## Tests
 
