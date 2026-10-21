@@ -98,6 +98,27 @@ the B–A initial Context difference was +10,782 (+24.7%), **not** provider
 billing, incremental Agent context usage or a provable savings opportunity.
 Some additional selections may be necessary safety context.
 
+Recorded extra-current selections by frozen case (developer-oracle-relative,
+**not confirmed irrelevant**):
+
+| Source / task | Extra Decision IDs (selected, not merely hinted) | CLI estimated tokens |
+| --- | --- | ---: |
+| PrivacyFence / `mcp-signin` | 0008, 0014 | 6,665 |
+| PrivacyFence / `route-gating` | 0195 | 1,065 |
+| PrivacyFence / `legacy-settings` | 0014, 0195 | 2,558 |
+| PrivacyFence / `csv-formulas` | 0191 | 1,310 |
+| PrivacyFence / `salesforce-batch` | 0013 | 1,520 |
+| PrivacyFence / `personal-import` | 0008, 0014 | 6,665 |
+| PrivacyFence / `signed-serial` | 0041 | 1,816 |
+| adr-viewer / `uniform-status-headers` | 0005 | not independently cost-adjudicated |
+| adr-viewer / `amendment-as-supersession` | 0001 | not independently cost-adjudicated |
+| adr-viewer / `remove-screen-reader` | 0001, 0004, 0005 | not independently cost-adjudicated |
+
+The first seven rows total 10 extra PrivacyFence slots and 21,599
+estimated tokens. The last three total five additional adr-viewer
+slots. All other frozen cases selected no developer-oracle-extra
+current Decision. Counts retain their original frozen task denominator.
+
 Representative original-source findings:
 
 - PrivacyFence [ADR 0008](https://github.com/privacyfence/privacyfence/blob/6a03856a6e1819b2eacd3963154ebc7d02923296/docs/adr/0008-one-principal-per-os-user.md)
