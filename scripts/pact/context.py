@@ -531,7 +531,17 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
     pathless Decisions. Unreadable/huge/symlinked source keeps full Context.
     Return True only for the weakest evidence, still as a mandatory hint.
     """
-    if (item.get("reasons") != []
+    # The source scorer's "body contains query" and "all query terms
+    # matched" describe lexical overlap, not a title/ID/alias or a verified
+    # governing Decision. Treat them like an unreasoned body hit, then apply
+    # the existing source-authenticated title/phrase safeguards below.
+    # Preserve any other explicit scorer reason and reject malformed/fused
+    # metadata rather than implicitly weakening high-authority matches.
+    reasons = item.get("reasons")
+    generic_body_reasons = {"body contains query", "all query terms matched"}
+    if (not isinstance(reasons, list)
+            or any(type(reason) is not str or reason not in generic_body_reasons
+                   for reason in reasons)
             or has_unspaced_script(task)
             or type(item.get("score")) is not int
             or item["score"] <= 0):

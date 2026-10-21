@@ -57,6 +57,32 @@ claiming success in advance. No new CI job, benchmark runner, default flag,
 CLI interface, Schema, mandatory knowledge artifact or decision record is
 added for this validation.
 
+## Follow-up: lexical full-body Decision bait (2026-10-21)
+
+A separate assistant-authored, frozen-before-fix negative source test
+(`test_decision_body_noise_adversarial.py`) exposed another default
+Context-noise path. The no-ID routine query `Adjust code test fixtures`
+appears as generic checklist prose inside an unrelated implemented database
+transaction Decision. On the **unfixed** PACT branch
+[`533400f`](https://github.com/ningcol/PACT/commit/533400f390d6829ffdfdc70d00537c79752ed63b),
+the direct source scorer emitted **97 points** and the two lexical labels
+`body contains query` and `all query terms matched`; the original
+Context incorrectly materialized that current Decision. The frozen RED
+Core Matrix log has two substantive retrieval failures and one *test-only*
+Context Schema misunderstanding (status is not an Envelope v1 field).
+
+PR [#237](https://github.com/ningcol/PACT/pull/237) changes only the
+Context weak-body guard: those two generic scorer labels no longer certify
+applicability by themselves. The existing original-source checks for
+title, exact ID/alias, long source identifier and meaningful spaced
+phrase still prevent deferral; all deferred hits remain source-SHA-backed,
+mandatory-to-review hints rather than silently dismissed Decisions.
+Explicit `--full-decisions`, high-risk and historical lookup must remain
+unchanged. Positive public PrivacyFence/ADR-viewer targets must not regress.
+**Any GREEN or benefit conclusion requires actual final-head CI**; the
+old developer-authored positive/negative corpus is not an independent
+unseen holdout or evidence of a coding Agent obeying Decision rationale.
+
 ## What these outcomes establish — and do not
 
 - Engineering evidence: original source pinned; Decision navigation works
