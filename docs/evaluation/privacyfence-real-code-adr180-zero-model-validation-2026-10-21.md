@@ -146,6 +146,45 @@ estimate. This is cost *attribution*, not a semantic relevance verdict or
 predicted money/token savings. The frozen cases and oracle are unchanged.
 Only actual exact-PR-head GitHub runs can confirm the emitted field.
 
+## 2026-10-23 proposed no-model downstream staged-source-read experiment
+
+**Study status: developer-informed, unblinded engineering diagnostic, NOT Agent
+efficiency evidence.** No upstream/code/Decision/oracle modifications, new
+default behavior or external model. Both pinned public repositories retain
+their pre-existing, developer-authored task text and source-hashed answers:
+PrivacyFence `6a03856a6e1819b2eacd3963154ebc7d02923296` (10 positives,
+2 routine negatives); adr-viewer
+`a25f1c71e031bdaa63fe3175f969f197139f2044` (4 positives,
+8 routine negatives). The developer has already inspected earlier scores and
+several selected-source orders. The study is **not a new blinded holdout**.
+
+Before opening a case's developer oracle, an instrument operating on the
+**installed PACT Context Envelope** records the ranked list of current
+Decision source IDs, paths and SHA-256, then physically reads the complete
+file bytes in a source-hash-verified local copy. The **full** counterfactual
+exposes all selected current Decision bodies; the **first-only** counterfactual
+exposes just the earliest selected current Decision source, while retaining
+the metadata for the other candidates. Neither treatment modifies what PACT
+selects, Convergence obligations, or the original project source. The
+instrument also records source bytes and the same bytes/4 estimator used by
+PACT. It does not measure internal index/discovery I/O, a model context window,
+elapsed coding-Agent time, actual provider tokens, or real Owner attention.
+Reading all bytes to verify each candidate is **measurement instrumentation**,
+not a claim that first-only used less physical test-runner I/O.
+
+Only **after** candidate order and source hashes are fixed may the frozen
+developer oracle be used to score how many original *primary* targets were
+present in first-only versus all-selected. The two routine negatives must
+select zero current Decisions. **Stop rule:** any first-only target miss,
+source/hash/identity failure, historical-as-current promotion, new routine
+injection or lost original all-selected positive is an immediate **NO-GO for
+default first-only**, regardless of estimated downstream byte reduction.
+Even if first-only finds every developer-labelled primary, safety still needs
+independent evaluation of cross-domain constraints, partial supersession,
+semantic obedience and Owner impact; therefore no default rollout is
+authorized by these no-model trials. Existing `--full-decisions` and
+Task Convergence must remain available/mandatory where applicable.
+
 ## What these outcomes establish — and do not
 
 - Engineering evidence: original source pinned; Decision navigation works
