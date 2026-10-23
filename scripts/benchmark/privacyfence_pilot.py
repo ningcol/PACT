@@ -574,11 +574,11 @@ def trial(target: pathlib.Path) -> dict:
                 raise ValueError(
                     "staged reading requires authentic, source-verified Decision selection"
                 )
-            staged = staged.staged_source_read_receipt(
+            source_receipt = staged.staged_source_read_receipt(
                 target, receipt["selected"], receipt["source_verified_decisions"],
             )
             report["staged_current_source_reads_B"].append({
-                "id": receipt["id"], **staged,
+                "id": receipt["id"], **source_receipt,
             })
         report["stage"] = "verify-proposed-status"
         proposed = m0.run_json(target,[
