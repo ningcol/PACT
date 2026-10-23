@@ -20,6 +20,7 @@ import traceback
 
 import brownfield_adr_viewer as pilot
 import decision_memory_m0 as m0
+import staged_source_read_probe as staged
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
@@ -573,7 +574,7 @@ def trial(target: pathlib.Path) -> dict:
                 raise ValueError(
                     "staged reading requires authentic, source-verified Decision selection"
                 )
-            staged = m0.staged_source_read_receipt(
+            staged = staged.staged_source_read_receipt(
                 target, receipt["selected"], receipt["source_verified_decisions"],
             )
             report["staged_current_source_reads_B"].append({
@@ -615,7 +616,7 @@ def trial(target: pathlib.Path) -> dict:
             item["id"]: item["developer_expected"]
             for item in report["developer_scoring"]["per_case"]
         }
-        report["staged_read_scoring"] = m0.score_staged_source_reads(
+        report["staged_read_scoring"] = staged.score_staged_source_reads(
             report["staged_current_source_reads_B"], targets,
         )
         failures = report["integrity_failures"]
