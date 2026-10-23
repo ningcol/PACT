@@ -62,8 +62,7 @@ class StagedSourceReadTests(unittest.TestCase):
         self.assertEqual(result["unread_in_first_only"], ["DEC-SECOND"])
         self.assertEqual(
             result["all_current_source_bytes"],
-            self.first["estimated_tokens"] * 0
-            + len((self.root / self.first["path"]).read_bytes())
+            len((self.root / self.first["path"]).read_bytes())
             + len((self.root / self.second["path"]).read_bytes()),
         )
         self.assertEqual(
