@@ -229,6 +229,18 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
     progress["B_scored"] = []
     extract_scored_discover(target, cases, progress["B_scored"])
     annotate_lexical_evidence(target, cases, progress["B_scored"])
+    progress["stage"] = "staged-source-reads-before-oracle"
+    progress["staged_current_source_reads_B"] = [
+        {
+            "id": record["id"],
+            **m0.staged_source_read_receipt(
+                target,
+                record["context"]["selected_artifacts"],
+                record["context"]["current_decision_ids"],
+            ),
+        }
+        for record in progress["B"]
+    ]
     progress["stage"] = "verify-no-unintended-knowledge-changes"
     progress["knowledge_after"] = pilot.source_snapshot(target)
     progress["original_adr_blobs_after"] = {
@@ -339,6 +351,14 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
             "B_scored_hits": b_scored["hits"],
             "agent_behavior_observed": False,
         })
+    staged_reads = progress.get("staged_current_source_reads_B")
+    staged_grade = None
+    if staged_reads is not None:
+        staged_grade = m0.score_staged_source_reads(
+            staged_reads, oracle["expected_current"],
+        )
+        if staged_grade["all_selected_primary_hits"] != matched_targets:
+            failure.append("staged full-source grade disagrees with installed Context")
     return {
         "kind": "real pinned public source; developer-authored synthetic lexical-noise diagnostic",
         "baseline_source_sha": FROZEN_PACT_BASELINE,
@@ -353,6 +373,8 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
         "routine_cases_with_extra_current_decisions": no_target_with_noise,
         "positive_target_decisions": positive_targets,
         "positive_target_hits": matched_targets,
+        **({"staged_read_scoring": staged_grade}
+           if staged_grade is not None else {}),
         "oracle_extraneous_current_candidates": all_extra,
         "total_current_decision_candidates": all_current,
         "context_estimated_tokens_A_total": total_est_a,
