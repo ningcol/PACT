@@ -563,6 +563,22 @@ def trial(target: pathlib.Path) -> dict:
             result=report["arms"]["B_source_projection"],
             in_flight=report["in_flight_probe"],
         )
+        report["stage"] = "staged-source-reads-before-oracle"
+        report["staged_current_source_reads_B"] = []
+        for receipt in report["arms"]["B_source_projection"]:
+            if (receipt["schema_and_source_errors"]
+                    or set(receipt["decisions"]) != set(
+                        receipt["source_verified_decisions"]
+                    )):
+                raise ValueError(
+                    "staged reading requires authentic, source-verified Decision selection"
+                )
+            staged = m0.staged_source_read_receipt(
+                target, receipt["selected"], receipt["source_verified_decisions"],
+            )
+            report["staged_current_source_reads_B"].append({
+                "id": receipt["id"], **staged,
+            })
         report["stage"] = "verify-proposed-status"
         proposed = m0.run_json(target,[
             "context", "DEC-PF-0005", "--success",
@@ -593,7 +609,23 @@ def trial(target: pathlib.Path) -> dict:
         )
         report["stage"] = "score-after-both-arms"
         report["developer_scoring"] = score(report,cards)
+        # The scorer above unseals the precommitted developer oracle AFTER
+        # the source-read order and SHA receipts have been captured.
+        targets = {
+            item["id"]: item["developer_expected"]
+            for item in report["developer_scoring"]["per_case"]
+        }
+        report["staged_read_scoring"] = m0.score_staged_source_reads(
+            report["staged_current_source_reads_B"], targets,
+        )
         failures = report["integrity_failures"]
+        if (
+            report["staged_read_scoring"]["all_selected_primary_hits"]
+            != report["developer_scoring"]["B_current_decision_target_hits"]
+            or report["staged_read_scoring"]["author_labelled_primary_target_count"]
+            != report["developer_scoring"]["developer_target_count"]
+        ):
+            failures.append("staged-source primary grades differ from full installed Context")
         if check.returncode != 0:
             failures.append("source projection failed installed pact check")
         for label,records in report["arms"].items():
