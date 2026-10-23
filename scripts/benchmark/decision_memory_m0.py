@@ -43,6 +43,83 @@ def safe_file(root: pathlib.Path, relative: str) -> pathlib.Path:
     return result
 
 
+
+def staged_source_read_receipt(
+    target: pathlib.Path, selected: list[dict], current_ids: list[str],
+) -> dict:
+    """Measure source-verified downstream first-only vs all-Decision reads.
+
+    The Context-selected ordering is frozen BEFORE any benchmark oracle is
+    consulted. Physically inspect *all* selected sources to authenticate the
+    counterfactual costs; do not claim this reduces benchmark-runner disk I/O.
+    This is not semantic relevance, agent obedience or actual model tokens.
+    """
+    if (not isinstance(selected, list) or not isinstance(current_ids, list)
+            or any(not isinstance(x, str) or not x.startswith("DEC-")
+                   for x in current_ids)
+            or len(set(current_ids)) != len(current_ids)):
+        raise ValueError("staged read requires distinct current Decision IDs")
+    current = set(current_ids)
+    records: list[dict] = []
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    for item in selected:
+        if not isinstance(item, dict):
+            raise ValueError("staged read contains malformed Context artifact")
+        ident = item.get("id")
+        if ident not in current:
+            continue
+        relative = item.get("path")
+        digest = item.get("sha256")
+        if (item.get("artifact_type") != "decision"
+                or not isinstance(relative, str)
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or ident in seen_ids or relative in seen_paths):
+            raise ValueError("staged Decision source identity or digest invalid")
+        path = safe_file(target, relative)
+        if not path.is_file():
+            raise ValueError("staged Decision source is absent")
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError("staged Decision source changed after Context")
+        # This is the exact same file-size-based estimator as installed Context.
+        estimate = max((len(data) + 3) // 4, 1)
+        supplied_estimate = item.get("estimated_tokens")
+        if (supplied_estimate is not None
+                and (type(supplied_estimate) is not int
+                     or supplied_estimate != estimate)):
+            raise ValueError("staged Decision source estimate differs from actual file")
+        seen_ids.add(ident)
+        seen_paths.add(relative)
+        records.append({
+            "id": ident, "path": relative, "sha256": digest,
+            "read_source_bytes": len(data),
+            "estimated_tokens_utf8_bytes_div4": estimate,
+        })
+    if seen_ids != current:
+        raise ValueError("staged Context omitted a current Decision source")
+    first = records[0] if records else None
+    return {
+        "policy": "first-current-Decision-only-vs-all-current-Decisions",
+        "selected_current_ids_in_context_order": [x["id"] for x in records],
+        "source_digest_verified": True,
+        "all_current_source_bytes": sum(x["read_source_bytes"] for x in records),
+        "first_only_source_bytes": first["read_source_bytes"] if first else 0,
+        "all_current_estimated_tokens": sum(
+            x["estimated_tokens_utf8_bytes_div4"] for x in records
+        ),
+        "first_only_estimated_tokens": (
+            first["estimated_tokens_utf8_bytes_div4"] if first else 0
+        ),
+        "first_only_id": first["id"] if first else None,
+        "unread_in_first_only": [x["id"] for x in records[1:]],
+        "source_read_receipts": records,
+        "model_calls": 0,
+        "counterfactual_downstream_exposure_only": True,
+    }
+
+
 def run_json(target: pathlib.Path, command: list[str]) -> dict:
     """Call the INSTALLED pact.py loader, not source scripts or imported scorers."""
     argv = [sys.executable, str(target / "pact.py"), *command]
