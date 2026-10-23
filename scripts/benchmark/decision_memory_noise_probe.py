@@ -16,6 +16,7 @@ import sys
 
 import brownfield_adr_viewer as pilot
 import decision_memory_m0 as m0
+import staged_source_read_probe as staged
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -233,7 +234,7 @@ def evaluate(target: pathlib.Path, progress: dict) -> dict:
     progress["staged_current_source_reads_B"] = [
         {
             "id": record["id"],
-            **m0.staged_source_read_receipt(
+            **staged.staged_source_read_receipt(
                 target,
                 record["context"]["selected_artifacts"],
                 record["context"]["current_decision_ids"],
@@ -354,7 +355,7 @@ def score(progress: dict, cases: dict, oracle: dict) -> dict:
     staged_reads = progress.get("staged_current_source_reads_B")
     staged_grade = None
     if staged_reads is not None:
-        staged_grade = m0.score_staged_source_reads(
+        staged_grade = staged.score_staged_source_reads(
             staged_reads, oracle["expected_current"],
         )
         if staged_grade["all_selected_primary_hits"] != matched_targets:
