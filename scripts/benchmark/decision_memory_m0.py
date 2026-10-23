@@ -120,6 +120,67 @@ def staged_source_read_receipt(
     }
 
 
+
+def score_staged_source_reads(reads: list[dict], expected: dict[str, list[str]]) -> dict:
+    """Post-collection grade of frozen author-labelled primary retrieval only.
+
+    Never use these labels to choose the first source. Even a clean 100% result
+    cannot authorize omitting linked/cross-domain authority or Convergence.
+    """
+    if (len(reads) != len(expected)
+            or len({row.get("id") for row in reads}) != len(reads)
+            or set(row.get("id") for row in reads) != set(expected)):
+        raise ValueError("staged source read denominator differs from frozen tasks")
+    cases = []
+    full_hits = first_hits = full_bytes = first_bytes = 0
+    full_est = first_est = positives = negatives = 0
+    for row in reads:
+        ids = row.get("selected_current_ids_in_context_order")
+        if (not isinstance(ids, list) or len(ids) != len(set(ids))
+                or row.get("source_digest_verified") is not True
+                or row.get("first_only_id") != (ids[0] if ids else None)):
+            raise ValueError("staged read source order or integrity is invalid")
+        want = expected[row["id"]]
+        if not isinstance(want, list) or not all(isinstance(x, str) for x in want):
+            raise ValueError("invalid staged author-labelled Decision target")
+        full_found = set(want) & set(ids)
+        first_found = set(want) & set(ids[:1])
+        positives += len(want)
+        negatives += not want
+        full_hits += len(full_found)
+        first_hits += len(first_found)
+        full_bytes += row["all_current_source_bytes"]
+        first_bytes += row["first_only_source_bytes"]
+        full_est += row["all_current_estimated_tokens"]
+        first_est += row["first_only_estimated_tokens"]
+        cases.append({
+            "id": row["id"], "target_count": len(want),
+            "full_primary_hits": len(full_found),
+            "first_primary_hits": len(first_found),
+            "first_only_id": row["first_only_id"],
+            "all_selected_decision_ids": ids,
+            "unread_in_first_only": row["unread_in_first_only"],
+            "full_source_bytes": row["all_current_source_bytes"],
+            "first_source_bytes": row["first_only_source_bytes"],
+        })
+    return {
+        "first_only_primary_hits": first_hits,
+        "all_selected_primary_hits": full_hits,
+        "author_labelled_primary_target_count": positives,
+        "negative_case_count": negatives,
+        "all_current_source_bytes": full_bytes,
+        "first_only_source_bytes": first_bytes,
+        "all_current_estimated_tokens": full_est,
+        "first_only_estimated_tokens": first_est,
+        "counterfactual_exposure_bytes_difference": full_bytes - first_bytes,
+        "counterfactual_estimated_tokens_difference": full_est - first_est,
+        "first_only_default": "NO-GO",
+        "release_gate": "HOLD",
+        "real_agent_evidence": False,
+        "cases": cases,
+    }
+
+
 def run_json(target: pathlib.Path, command: list[str]) -> dict:
     """Call the INSTALLED pact.py loader, not source scripts or imported scorers."""
     argv = [sys.executable, str(target / "pact.py"), *command]
