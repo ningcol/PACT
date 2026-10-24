@@ -190,6 +190,80 @@ class NoModelAdversarialReview(unittest.TestCase):
         self.assertEqual(stats["evidence_verified"], 0)
         self.assertEqual(evidence_readiness(evidence), "incomplete")
 
+    def test_unrelated_documents_over_count_limit_do_not_block(self):
+        records = []
+        for index in (1, 2):
+            rel = f"docs/ordinary-{index}.md"
+            self.put(rel, f"# Regular reference {index}\n")
+            records.append({
+                "path": rel, "id": None, "artifact_type": "document",
+                "status": None, "score": 100-index,
+            })
+        with patch.object(pact_context, "ROOT", self.root):
+            chosen, _, budget = pact_context.select_context_candidates(
+                records, [], token_budget=0, knowledge_limit=1, code_limit=1)
+        self.assertEqual(budget["dropped_for_count_limit"], 1)
+        self.assertEqual(budget["authority_candidates_dropped"], 0)
+        selected = chosen[0]["path"]
+        ctx = {"artifacts": [{
+            "path": selected,
+            "sha256": hashlib.sha256(
+                (self.root / selected).read_bytes()).hexdigest(),
+        }], "context_budget": budget}
+        ctx_path = self.put("context.json", json.dumps(ctx))
+        digest = hashlib.sha256(ctx_path.read_bytes()).hexdigest()
+        report = {"context_sha256": digest, "findings": [], "coverage": [
+            {"path": selected, "disposition": "aligned",
+             "rationale": "Reviewed selected ordinary document"}
+        ]}
+        errors, _ = review_coverage(ctx, report, root=self.root,
+                                    context_path=ctx_path,
+                                    expected_context_sha256=digest)
+        self.assertEqual(errors, [], errors)
+
+    def test_invalid_authority_omission_counter_fails_closed(self):
+        from convergence_coverage import authority_count_limit_gaps
+        for value in ("0", True, -1, None):
+            with self.subTest(value=value):
+                errors = authority_count_limit_gaps({
+                    "context_budget": {"authority_candidates_dropped": value},
+                })
+                self.assertTrue(errors)
+        self.assertEqual(
+            authority_count_limit_gaps(
+                {"context_budget": {"authority_candidates_dropped": 0}}
+            ), [],
+        )
+
+    def test_assist_does_not_draft_owner_acceptance_on_authority_omission(self):
+        from task_review import _diagnose
+        result = _diagnose(
+            {
+                "task_id": "TASK-COUNT", "status": "prepared",
+                "risk_level": "low", "contract_sha256": "a" * 64,
+                "context_sha256": "b" * 64,
+            },
+            {"acceptance_criteria": [{"id": "AC-1", "text": "Verify policy"}]},
+            {
+                "artifacts": [],
+                "context_budget": {"authority_candidates_dropped": 1},
+            },
+            {"claims": [{
+                "id": "EV-1", "claim": "Local checks pass",
+                "required": True, "status": "pass", "criteria": ["AC-1"],
+                "evidence": [],
+            }]},
+            {"coverage": []},
+            {"acceptance": []},
+            {"supported": True, "changed_files": []},
+            [], [],
+        )
+        self.assertTrue(any(
+            "authority count limit omitted" in gap
+            for gap in result["policy_gaps"]
+        ), result)
+        self.assertEqual(result["safe_mechanical_acceptance"], [])
+
     def test_known_count_omitted_authority_must_block_completion(self):
         """A missing current authority candidate requires widened Context."""
         records = []

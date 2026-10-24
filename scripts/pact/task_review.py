@@ -15,6 +15,7 @@ import re
 import sys
 
 from converge import validate as validate_convergence
+from convergence_coverage import authority_count_limit_gaps
 from evidence import (
     provenance_review, resolve_ref as resolve_evidence_ref,
 )
@@ -265,7 +266,10 @@ def _diagnose(
         not task_change.get("supported")
         and manifest.get("risk_level") in {"medium", "high"}
     )
-    effective_policy_gaps = [*policy_gaps, *scope_integrity_gaps, *deferred_integrity_gaps]
+    effective_policy_gaps = [
+        *policy_gaps, *scope_integrity_gaps, *deferred_integrity_gaps,
+        *authority_count_limit_gaps(context),
+    ]
     passing_claims = [
         claim for claim in evidence["claims"]
         if claim.get("required") and claim.get("status") == "pass"

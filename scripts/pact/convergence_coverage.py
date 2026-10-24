@@ -20,6 +20,33 @@ def sha256_file(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def authority_count_limit_gaps(context: dict) -> list[str]:
+    """Known count-omitted Rule/Decision candidates cannot be silently skipped.
+
+    The candidate list is not proof of applicability. Require a wider
+    prepared Context, rather than promoting lexical matches into authority.
+    Legacy low-level Context without a budget keeps its prior contract.
+    """
+    budget = context.get("context_budget")
+    if budget is None:
+        return []
+    if not isinstance(budget, dict):
+        return ["Task Context authority count-limit metadata invalid; reprepare the task"]
+    dropped = budget.get("authority_candidates_dropped")
+    if type(dropped) is not int or dropped < 0:
+        return ["Task Context authority count-limit counter invalid; reprepare the task"]
+    if not dropped:
+        return []
+    return [
+        "Task Context authority count limit omitted "
+        f"{dropped} confirmed Rule/implemented Decision candidate(s); "
+        "Convergence cannot certify unreviewed source candidates. "
+        "Reprepare with a larger task prepare --limit (use --force for the same "
+        "task ID) and review relevant sources before finishing; lexical "
+        "matches do not prove applicability."
+    ]
+
+
 def review(
     context: dict,
     convergence: dict,
@@ -29,6 +56,7 @@ def review(
     expected_context_sha256: str | None = None,
 ) -> tuple[list[str], dict]:
     errors: list[str] = []
+    errors.extend(authority_count_limit_gaps(context))
 
     current_context_sha256 = sha256_file(context_path)
     recorded_context_sha256 = convergence.get("context_sha256")
