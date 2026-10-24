@@ -146,6 +146,96 @@ estimate. This is cost *attribution*, not a semantic relevance verdict or
 predicted money/token savings. The frozen cases and oracle are unchanged.
 Only actual exact-PR-head GitHub runs can confirm the emitted field.
 
+## 2026-10-23 proposed no-model downstream staged-source-read experiment
+
+**Study status: developer-informed, unblinded engineering diagnostic, NOT Agent
+efficiency evidence.** No upstream/code/Decision/oracle modifications, new
+default behavior or external model. Both pinned public repositories retain
+their pre-existing, developer-authored task text and source-hashed answers:
+PrivacyFence `6a03856a6e1819b2eacd3963154ebc7d02923296` (10 positives,
+2 routine negatives); adr-viewer
+`a25f1c71e031bdaa63fe3175f969f197139f2044` (4 positives,
+8 routine negatives). The developer has already inspected earlier scores and
+several selected-source orders. The study is **not a new blinded holdout**.
+
+Before opening a case's developer oracle, an instrument operating on the
+**installed PACT Context Envelope** records the ranked list of current
+Decision source IDs, paths and SHA-256, then physically reads the complete
+file bytes in a source-hash-verified local copy. The **full** counterfactual
+exposes all selected current Decision bodies; the **first-only** counterfactual
+exposes just the earliest selected current Decision source, while retaining
+the metadata for the other candidates. Neither treatment modifies what PACT
+selects, Convergence obligations, or the original project source. The
+instrument also records source bytes and the same bytes/4 estimator used by
+PACT. It does not measure internal index/discovery I/O, a model context window,
+elapsed coding-Agent time, actual provider tokens, or real Owner attention.
+Reading all bytes to verify each candidate is **measurement instrumentation**,
+not a claim that first-only used less physical test-runner I/O.
+
+Only **after** candidate order and source hashes are fixed may the frozen
+developer oracle be used to score how many original *primary* targets were
+present in first-only versus all-selected. The two routine negatives must
+select zero current Decisions. **Stop rule:** any first-only target miss,
+source/hash/identity failure, historical-as-current promotion, new routine
+injection or lost original all-selected positive is an immediate **NO-GO for
+default first-only**, regardless of estimated downstream byte reduction.
+Even if first-only finds every developer-labelled primary, safety still needs
+independent evaluation of cross-domain constraints, partial supersession,
+semantic obedience and Owner impact; therefore no default rollout is
+authorized by these no-model trials. Existing `--full-decisions` and
+Task Convergence must remain available/mandatory where applicable.
+
+## 2026-10-23 measured staged-reading outcome — exact source-rebuilt PACT
+
+The frozen no-model protocol above was executed on installed PACT commit
+`6b860e5494515e705d73f56d33a186de2d72dc30`, using byte-for-byte
+verified original public source files and original developer-authored
+task/oracle hashes. Source order was recorded before consulting oracle.
+The experiment physically read **all** selected source files for SHA-256
+verification; these figures represent *counterfactual downstream exposure*
+under different read policies, not reduced CI I/O or observed model tokens.
+
+| Public pinned source | Original selected primary targets found, all-current | First-current-only primary targets found | All-current Decision full-source bytes | First-current-only full-source bytes | Bytes not exposed under first-only |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| [PrivacyFence run](https://github.com/ningcol/PACT/actions/runs/39912371648) | **10/10** | **10/10** | 152,662 | 66,278 | 86,384 (56.6%) |
+| [adr-viewer run](https://github.com/ningcol/PACT/actions/runs/39912371557) | **4/4** | **2/4** | 9,783 | 4,089 | 5,694 (58.2%) |
+
+For PrivacyFence, the selected-current Decision bytes/4 estimates were
+38,172 versus 16,573. The two routine negative tasks selected no current
+Decisions, and source-verified positive recall was unchanged.
+For adr-viewer, estimates were 2,448 versus 1,023, with eight routine
+negatives selecting no current Decisions. On the positive
+`amendment-as-supersession` case the first source was `DEC-ADR-0001`,
+while the primary target `DEC-ADR-0005` was also selected but not first.
+On `remove-screen-reader`, the first was `DEC-ADR-0001`, whereas
+`DEC-ADR-0006` was the original primary accessibility target.
+Both are actual **primary Decision misses under first-only**, independently
+of any judgement about cross-domain obligations in the other selected records.
+
+**Conclusion: first-current-only as a PACT default is NO-GO.** A higher
+estimated byte reduction cannot compensate for losing preserved decisions.
+The first-only policy was never enabled in runtime; existing `discover`,
+`context`, bounded source-hash hints, explicit history/full source lookup and
+Task Convergence remain unchanged. Metadata-first navigation followed by
+selective, **adequately complete** source reading remains available through
+existing interfaces, but this study does not establish any general
+downstream read policy as semantically sufficient. No new Decision summary
+files, LLM requests, default command, schema or Agent/Owner approval workflow
+were added. Frozen M0 benchmark code retains its original Git blob after an
+initial experiment-isolation failure was corrected. New experiment code
+lives in benchmark-only support, not the installed runtime.
+
+The pre-final attempt [PACT Check run](https://github.com/ningcol/PACT/actions/runs/39910996718)
+failed because newly added instrumentation modified the frozen M0 fixture
+builder, **not** because a PACT installed runtime behavior regressed;
+the M0 source was restored byte-for-byte. An intermediate PrivacyFence run
+also failed on an experiment-local Python module name shadowing error, fixed
+without changing public tasks or answer key. The final experiment SHA's
+PACT Check had **619/619** passing tests and
+[real-source code E2E](https://github.com/ningcol/PACT/actions/runs/39912371519)
+passed. Final merge eligibility still requires exact-head CI and review;
+no claim of merge or main CI is made by this research paragraph.
+
 ## What these outcomes establish — and do not
 
 - Engineering evidence: original source pinned; Decision navigation works

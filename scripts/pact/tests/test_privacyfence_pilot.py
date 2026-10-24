@@ -388,6 +388,50 @@ class PinnedPrivacyFenceTests(unittest.TestCase):
         self.assertEqual(in_flight["arm"],"B")
         self.assertEqual(in_flight["command"][0:2],["pact.py","discover"])
 
+    def test_trial_invokes_staged_source_probe_without_name_shadowing(self):
+        """Functional wiring guard: no source/model access in this unit test."""
+        def collect(target, cards, label, *, result, in_flight):
+            if label == "B_source_projection":
+                result.append({
+                    "id": "source-check", "schema_and_source_errors": [],
+                    "decisions": ["DEC-PF-0008"],
+                    "source_verified_decisions": ["DEC-PF-0008"],
+                    "selected": [],
+                })
+            return result
+
+        with tempfile.TemporaryDirectory(prefix="pact-staged-wiring-") as td:
+            with (
+                mock.patch.object(pilot, "verify_freeze", return_value={}),
+                mock.patch.object(pilot.pilot, "install_pact", return_value={}),
+                mock.patch.object(pilot, "project_sources", return_value={}),
+                mock.patch.object(pilot, "run_arm", side_effect=collect),
+                mock.patch.object(
+                    pilot.subprocess, "run",
+                    return_value=subprocess.CompletedProcess(["pact"], 0, "", ""),
+                ),
+                mock.patch.object(
+                    pilot.staged, "staged_source_read_receipt",
+                    return_value={"source_digest_verified": True},
+                ) as staged_read,
+                mock.patch.object(
+                    pilot.m0, "run_json",
+                    side_effect=RuntimeError("EXPECTED_STOP_AFTER_STAGED_READ"),
+                ),
+            ):
+                observed = pilot.trial(pathlib.Path(td))
+
+        staged_read.assert_called_once()
+        self.assertEqual(observed["stage"], "verify-proposed-status")
+        self.assertTrue(observed["staged_current_source_reads_B"])
+        self.assertIn(
+            "EXPECTED_STOP_AFTER_STAGED_READ",
+            " ".join(observed["integrity_failures"]),
+        )
+        self.assertFalse(any(
+            "UnboundLocalError" in x for x in observed["integrity_failures"]
+        ))
+
     def test_trial_preserves_partial_results_and_failing_command(self):
         def fail_late(target,cards,label,*,result,in_flight):
             result.append({"id":"first","kind":"routine-negative",
