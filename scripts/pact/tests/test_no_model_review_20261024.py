@@ -1,7 +1,7 @@
 """PACT-only no-model review probes for Decision/control-plane boundaries.
 
 Developer-authored engineering cases, NOT a blinded Agent/Owner trial.
-An expected failure documents the current known omitted-authority gate gap.
+The count-cap gate is verified on an actual source-bound Context.
 """
 from __future__ import annotations
 
@@ -190,9 +190,8 @@ class NoModelAdversarialReview(unittest.TestCase):
         self.assertEqual(stats["evidence_verified"], 0)
         self.assertEqual(evidence_readiness(evidence), "incomplete")
 
-    @unittest.expectedFailure
     def test_known_count_omitted_authority_must_block_completion(self):
-        """XFAIL: count-dropped confirmed authority is only advisory today."""
+        """A missing current authority candidate requires widened Context."""
         records = []
         for index in (1, 2):
             rel = f"docs/product/rules/policy-{index}.md"
