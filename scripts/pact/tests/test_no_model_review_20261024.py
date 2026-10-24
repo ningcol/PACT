@@ -125,6 +125,71 @@ class NoModelAdversarialReview(unittest.TestCase):
                                     expected_context_sha256=ctx_sha)
         self.assertTrue(any("unlisted or inconsistent" in x for x in errors), errors)
 
+    def test_no_id_task_finds_real_source_titled_decision(self):
+        """A new task names behavior but supplies neither Decision ID nor title."""
+        task = "Protect CSV export when spreadsheet formulas are present"
+        rel = ".agents/decisions/implemented/spreadsheet-export.md"
+        raw = (
+            "# CSV export integrity\n"
+            "Spreadsheet formulas must be escaped before sharing exported rows.\n"
+            "Rationale: prevent untrusted export cells from becoming commands.\n"
+        )
+        self.put(rel, raw)
+        doc = {
+            "id": "DEC-EXPORT-CELLS", "artifact_type": "decision",
+            "status": "implemented", "title": "CSV export integrity",
+            "aliases": [], "domains": [], "text": raw,
+        }
+        score, reasons = discover.score_document(doc, task)
+        self.assertGreater(score, 0)
+        hit = {**doc, "path": rel, "score": score, "reasons": reasons}
+        with patch.object(pact_context, "ROOT", self.root):
+            selected, hints = pact_context.split_weak_lexical_decisions([hit], task)
+        self.assertEqual([x["id"] for x in selected], ["DEC-EXPORT-CELLS"])
+        self.assertEqual(hints, [])
+
+    def test_superseded_rationale_stays_retrievable_without_becoming_current(self):
+        old = {
+            "id": "DEC-OLD-NOTIFY", "artifact_type": "decision",
+            "status": "superseded",
+            "title": "Allow notifications without consent",
+            "aliases": [], "domains": [],
+            "text": "Legacy notifications without consent were once allowed.",
+        }
+        generic_score, generic_reasons = discover.score_document(
+            old, "notifications without consent",
+        )
+        id_score, id_reasons = discover.score_document(old, "DEC-OLD-NOTIFY")
+        self.assertIn("historical decision (not current guidance)", generic_reasons)
+        self.assertIn("exact stable id", id_reasons)
+        self.assertGreater(id_score, generic_score)
+        self.assertFalse(pact_context.knowledge_priority({**old, "score": id_score})[1])
+        active = {**old, "status": "implemented"}
+        self.assertTrue(pact_context.knowledge_priority(active)[1])
+
+    def test_no_required_proof_cannot_satisfy_task_acceptance(self):
+        from evidence import readiness as evidence_readiness
+        from task_contract import acceptance_review
+        contract = {
+            "task_id": "TASK-REVIEW",
+            "acceptance_criteria": [
+                {"id": "AC-1", "kind": "outcome",
+                 "text": "Preserve the original policy"}
+            ],
+        }
+        evidence = {
+            "task_id": "TASK-REVIEW", "risk_level": "low",
+            "claims": [], "limitations": [],
+        }
+        owner = {
+            "task_id": "TASK-REVIEW", "status": "completed",
+            "acceptance": [], "verification": [],
+        }
+        errors, stats = acceptance_review(contract, evidence, owner)
+        self.assertTrue(any("no passing Evidence" in x for x in errors))
+        self.assertEqual(stats["evidence_verified"], 0)
+        self.assertEqual(evidence_readiness(evidence), "incomplete")
+
     @unittest.expectedFailure
     def test_known_count_omitted_authority_must_block_completion(self):
         """XFAIL: count-dropped confirmed authority is only advisory today."""
