@@ -537,6 +537,21 @@ class TaskSurfaceTests(unittest.TestCase):
             },
         )
 
+    def test_task_prepare_forwards_explicit_knowledge_limit(self) -> None:
+        task_id = "TASK-EXPLICIT-LIMIT"
+        prepared = self.pact(
+            "task", "prepare", "inspect password reset behavior",
+            "--success", "Relevant project context is reviewed",
+            "--risk", "low", "--limit", "17",
+            "--task-id", task_id, "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        packet = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / packet["context"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(context["risk_policy"]["knowledge_limit"], 17)
+
     def test_task_prepare_forwards_token_budget(self) -> None:
         task_id = "TASK-TOKEN-BUDGET"
         prepared = self.pact(

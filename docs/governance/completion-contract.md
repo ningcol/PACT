@@ -113,6 +113,8 @@ Completion requires the Convergence Report to:
 - use `removed` only for an actually absent prepared file with valid prior
   digest, without asserting that deleting confirmed knowledge was approved.
 
+When prepared Context explicitly records `context_budget.authority_candidates_dropped > 0`, the hard knowledge count limit omitted confirmed Rule/implemented Decision **candidates**. The task cannot claim complete Convergence coverage yet, even when the selected sources have dispositions. Reprepare using the existing `task prepare --limit N` override (and `--force` when reusing an ID), then review the relevant original sources. This is a guard for **known omissions**, not proof that a lexical candidate applies, a requirement to read everything, or a new Owner approval.
+
 This prevents relevant project knowledge from disappearing between implementation and completion. It does not ask PACT to infer semantic truth from arbitrary prose; the Agent still performs the semantic classification, but omission becomes mechanically visible.
 
 

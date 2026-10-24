@@ -349,6 +349,8 @@ def _prepare_locked(
             context_cmd.extend(["--query", query])
         if args.token_budget is not None:
             context_cmd.extend(["--token-budget", str(args.token_budget)])
+        if args.limit is not None:
+            context_cmd.extend(["--limit", str(args.limit)])
         if args.code is True:
             context_cmd.append("--code")
         elif args.code is False:
@@ -979,6 +981,11 @@ def main() -> int:
         help="additional discovery query; repeat to fuse business/code vocabulary while preserving the task wording",
     )
     prep.add_argument(
+        "--limit",
+        type=int,
+        help="explicit override for Context's knowledge artifact count limit",
+    )
+    prep.add_argument(
         "--token-budget",
         type=int,
         help="override soft estimated materialization token budget",
@@ -1106,6 +1113,8 @@ def main() -> int:
             parser.error("--files and --base are mutually exclusive")
         if args.token_budget is not None and args.token_budget < 0:
             parser.error("--token-budget must be >= 0")
+        if args.limit is not None and args.limit <= 0:
+            parser.error("--limit must be positive")
         return prepare(args)
     if args.command == "finish":
         return finish(args)
