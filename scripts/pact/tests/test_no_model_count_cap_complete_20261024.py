@@ -1,7 +1,7 @@
 """Characterization of known count-cap authority omission at the actual completion CLI.
 
 These are synthetic, no-model PACT-only cases.  No actual Owner/Agent is
-involved, and the failing target is intentionally left unfixed in this PR.
+involved. A known Context authority truncation must block task completion.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from schema_validate import load_schema, validate_instance
 
 
 class OmittedAuthorityCompletionProbe(unittest.TestCase):
-    def test_complete_currently_accepts_known_count_omission_even_when_evidence_passes(self):
+    def test_complete_blocks_known_count_omission_even_when_evidence_passes(self):
         with tempfile.TemporaryDirectory(prefix="pact-count-cap-complete-") as tmp:
             root = pathlib.Path(tmp)
 
@@ -170,12 +170,14 @@ class OmittedAuthorityCompletionProbe(unittest.TestCase):
                 "--expected-risk", "low",
                 "--check-change-coverage", "--json",
             ], capture_output=True, text=True, cwd=root, timeout=90)
-            # Current behavior: CLI reports complete despite a known
-            # omitted, otherwise-eligible authoritative Rule. This is
-            # characterization, NOT an assertion that this is desirable.
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            # The omitted Rule is a candidate, not automatically applicable.
+            # Since its source was never reviewed, mechanical completion must
+            # fail closed and ask for a wider Context (no Owner GO invented).
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             parsed = json.loads(result.stdout)
-            self.assertTrue(parsed["complete"], parsed)
+            self.assertFalse(parsed["complete"], parsed)
+            self.assertTrue(any("authority" in e.lower() and "limit" in e.lower()
+                                for e in parsed["errors"]), parsed)
             self.assertEqual(parsed["convergence_coverage"]["required_artifacts"], 1)
             self.assertEqual(budget["authority_candidates_dropped"], 1)
 
