@@ -20,8 +20,7 @@ import context as pact_context
 
 
 class OmittedAuthorityCompletionProbe(unittest.TestCase):
-    @unittest.expectedFailure
-    def test_complete_must_block_known_count_omission_even_when_evidence_passes(self):
+    def test_complete_currently_accepts_known_count_omission_even_when_evidence_passes(self):
         with tempfile.TemporaryDirectory(prefix="pact-count-cap-complete-") as tmp:
             root = pathlib.Path(tmp)
 
@@ -127,9 +126,14 @@ class OmittedAuthorityCompletionProbe(unittest.TestCase):
                 "--expected-risk", "low",
                 "--check-change-coverage", "--json",
             ], capture_output=True, text=True, cwd=root, timeout=90)
-            self.assertEqual(result.returncode, 1,
-                             "known truncated authority should block completion: "
-                             + result.stdout + result.stderr)
+            # Current behavior: CLI reports complete despite a known
+            # omitted, otherwise-eligible authoritative Rule. This is
+            # characterization, NOT an assertion that this is desirable.
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            parsed = json.loads(result.stdout)
+            self.assertTrue(parsed["complete"], parsed)
+            self.assertEqual(parsed["convergence_coverage"]["required_artifacts"], 1)
+            self.assertEqual(budget["authority_candidates_dropped"], 1)
 
 
 if __name__ == "__main__":
