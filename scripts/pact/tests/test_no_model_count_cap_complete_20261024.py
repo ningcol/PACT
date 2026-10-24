@@ -17,6 +17,8 @@ from unittest.mock import patch
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import context as pact_context
+from discover import score_document
+from map import parse_document
 from schema_validate import load_schema, validate_instance
 
 
@@ -31,18 +33,27 @@ class OmittedAuthorityCompletionProbe(unittest.TestCase):
                 path.write_text(content, encoding="utf-8")
                 return path
 
+            # Parse real TOML-front-matter Markdown rather than inventing
+            # metadata that Discover would never have found.
+            task_query = "Review Rule 1 and Rule 2 applicability"
             records = []
             for n in (1, 2):
                 relative = f"docs/product/rules/rule-{n}.md"
-                save(relative, f"# Rule {n}\n")
-                records.append({
-                    "path": relative,
-                    "id": f"RULE-{n}",
-                    "artifact_type": "rule",
-                    "status": "confirmed",
+                source = save(
+                    relative,
+                    f'+++\n[pact]\ntype = "rule"\nid = "RULE-{n}"\n'
+                    f'status = "confirmed"\n+++\n# Rule {n}\n'
+                    f'This rule controls existing product policy {n}.\n',
+                )
+                doc = parse_document(source, root)
+                score, reasons = score_document(doc, task_query)
+                self.assertGreater(score, 0)
+                doc.update({
                     "mixed_authority": False,
-                    "score": 20-n,
+                    "score": score,
+                    "reasons": reasons,
                 })
+                records.append(doc)
             with patch.object(pact_context, "ROOT", root):
                 selected, _, budget = pact_context.select_context_candidates(
                     records, [], token_budget=0, knowledge_limit=1, code_limit=1,
@@ -67,7 +78,7 @@ class OmittedAuthorityCompletionProbe(unittest.TestCase):
                     "id": selected_source["id"],
                     "artifact_type": "rule", "title": "Rule 1",
                     "score": selected_source["score"],
-                    "reasons": ["project policy source candidate"],
+                    "reasons": selected_source["reasons"],
                     "estimated_tokens": selected_source["estimated_tokens"],
                     "mixed_authority": False,
                 }],
