@@ -17,6 +17,7 @@ from unittest.mock import patch
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import context as pact_context
+from schema_validate import load_schema, validate_instance
 
 
 class OmittedAuthorityCompletionProbe(unittest.TestCase):
@@ -51,11 +52,43 @@ class OmittedAuthorityCompletionProbe(unittest.TestCase):
 
             source_rel = selected[0]["path"]
             source_sha = hashlib.sha256((root / source_rel).read_bytes()).hexdigest()
+            # Reconstruct a schema-valid Context Envelope, not a permissive
+            # hand-written fragment.  This mimics a prepared task source.
+            selected_source = selected[0]
             ctx = {
-                "risk_level": "low",
-                "artifacts": [{"path": source_rel, "sha256": source_sha}],
+                "version": 1, "status": "candidate",
+                "task": "Check project policy without changing code",
+                "goal": "Check project policy without changing code",
+                "observable_success": "Check the project's existing policy",
+                "risk_level": "low", "discovery_query": "project policy",
+                "domains": [],
+                "artifacts": [{
+                    "path": source_rel, "sha256": source_sha,
+                    "id": selected_source["id"],
+                    "artifact_type": "rule", "title": "Rule 1",
+                    "score": selected_source["score"],
+                    "reasons": ["project policy source candidate"],
+                    "estimated_tokens": selected_source["estimated_tokens"],
+                    "mixed_authority": False,
+                }],
+                "applicable_rules": [selected_source["id"]],
+                "decisions": [],
+                "verification_targets": [],
+                "known_unknowns": [
+                    "An otherwise eligible confirmed Rule candidate was "
+                    "omitted by the hard knowledge-count cap."
+                ],
+                "risk_policy": {
+                    "knowledge_limit": 1, "code_context": False,
+                    "code_limit": 1, "completion": [],
+                    "materialization_token_budget": 0,
+                },
                 "context_budget": budget,
             }
+            errors = validate_instance(
+                ctx, load_schema(ROOT / ".pact/schema/context-envelope.schema.json")
+            )
+            self.assertEqual(errors, [], errors)
             ctx_path = save("context.json", json.dumps(ctx))
             ctx_sha = hashlib.sha256(ctx_path.read_bytes()).hexdigest()
 
