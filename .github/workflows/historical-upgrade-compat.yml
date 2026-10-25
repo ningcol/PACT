@@ -285,6 +285,28 @@ jobs:
           print("Original Decision remains typed and retrievable, not just a Markdown file")
           PY
 
+      - name: Pin ZIP SHA256 and smoke real Bootstrap preview/apply entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_ZIP="$RUNNER_TEMP/pact-reviewed-source.zip"
+          git archive --format=zip --prefix=pact-reviewed/ \
+            -o "$SOURCE_ZIP" HEAD
+          SOURCE_SHA="$(sha256sum "$SOURCE_ZIP" | cut -d' ' -f1)"
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          python bootstrap.py upgrade \
+            --target "$OLD_PACT_TARGET" --archive "$SOURCE_ZIP" \
+            --ref "$SOURCE_COMMIT" --sha256 "$SOURCE_SHA" \
+            > "$RUNNER_TEMP/legacy-bootstrap-preview.log" 2>&1
+          python bootstrap.py upgrade \
+            --target "$OLD_PACT_TARGET" --archive "$SOURCE_ZIP" \
+            --ref "$SOURCE_COMMIT" --sha256 "$SOURCE_SHA" --apply \
+            > "$RUNNER_TEMP/legacy-bootstrap-applied.log" 2>&1
+          test "$(tr -d '[:space:]' < "$OLD_PACT_TARGET/.pact/VERSION")" = \
+            "$(tr -d '[:space:]' < .pact/VERSION)"
+          python "$OLD_PACT_TARGET/pact.py" doctor --strict --json \
+            > "$RUNNER_TEMP/legacy-post-bootstrap-doctor.json"
+
       - name: Repeat upgraded runtime and refuse local framework conflicts
         env:
           VERSION: ${{ matrix.expected }}
@@ -376,6 +398,9 @@ jobs:
             ${{ runner.temp }}/legacy-injected-failure.json
             ${{ runner.temp }}/legacy-applied.json
             ${{ runner.temp }}/upgrade-acceptance.json
+            ${{ runner.temp }}/legacy-bootstrap-preview.log
+            ${{ runner.temp }}/legacy-bootstrap-applied.log
+            ${{ runner.temp }}/legacy-post-bootstrap-doctor.json
             ${{ runner.temp }}/legacy-doctor.json
             ${{ runner.temp }}/legacy-owner.json
             ${{ runner.temp }}/legacy-discover.json
