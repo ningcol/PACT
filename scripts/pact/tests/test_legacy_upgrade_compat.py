@@ -538,6 +538,56 @@ class LegacyUpgradeTests(unittest.TestCase):
                     ".pact/fitness.yaml", "AGENTS.md"):
             self.assertEqual((self.project / rel).read_bytes(), original[rel])
 
+    def test_existing_toml_decision_with_crlf_is_not_legacy(self):
+        """Real Windows Decision bytes must be safe under an ordinary 0.4 upgrade."""
+        page = self.project / ".agents/decisions/implemented/windows-owner.md"
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_bytes(
+            b'+++\r\n[pact]\r\ntype = "decision"\r\n'
+            b'id = "DEC-CRLF-OWNER"\r\nstatus = "implemented"\r\n'
+            b'+++\r\n# Windows Owner decision\r\n\r\n'
+            b'Keep the original Owner approval boundary.\r\n'
+        )
+        original = page.read_bytes()
+        plan = self.run_upgrade()
+        self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["conflicts"], [])
+        self.assertEqual(page.read_bytes(), original)
+        applied = self.run_upgrade("--apply")
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertEqual(page.read_bytes(), original)
+        lookup = subprocess.run(
+            [sys.executable, str(self.project / "pact.py"),
+             "discover", "DEC-CRLF-OWNER", "--json"],
+            cwd=self.project, capture_output=True, text=True, timeout=80,
+        )
+        self.assertEqual(lookup.returncode, 0, lookup.stdout + lookup.stderr)
+        self.assertTrue(any(
+            item["id"] == "DEC-CRLF-OWNER" and item["status"] == "implemented"
+            for item in json.loads(lookup.stdout)["results"]
+        ))
+
+    def test_legacy_crlf_yaml_still_requires_opt_in_and_preserves_rationale(self):
+        """The CRLF fix must not turn actual legacy YAML into a silent no-op."""
+        self.old()
+        page = self.project / ".agents/decisions/implemented/approval.md"
+        original = OLD_DECISION.replace("\n", "\r\n").encode("utf-8")
+        page.write_bytes(original)
+        owner_yaml = (self.project / ".pact/config.yaml").read_bytes()
+        ordinary = self.run_upgrade()
+        self.assertEqual(ordinary.returncode, 0, ordinary.stdout + ordinary.stderr)
+        self.assertTrue(json.loads(ordinary.stdout)["conflicts"])
+        rejected = self.run_upgrade("--apply")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertEqual(page.read_bytes(), original)
+        migrated = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(migrated.returncode, 0, migrated.stdout + migrated.stderr)
+        updated = page.read_bytes()
+        self.assertTrue(updated.startswith(b"+++\n[pact]\n"))
+        self.assertEqual(updated.split(b"+++\n", 2)[2],
+                         original.split(b"---\r\n", 2)[2])
+        self.assertEqual((self.project / ".pact/config.yaml").read_bytes(), owner_yaml)
+
     def test_source_bound_converter_rejects_ambiguous_and_wrong_metadata(self):
         with self.assertRaisesRegex(ValueError, "duplicate YAML"):
             legacy_upgrade.parse_yaml("pact:\n  id: DEC-X\n  id: DEC-Y\n")
