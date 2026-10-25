@@ -127,7 +127,7 @@ jobs:
               "historical_version": os.environ["VERSION"],
               "historical_commit": os.environ["HISTORICAL_PIN"],
               "old_sha256": tracked,
-              "original_decision_body": original_body,
+              "original_decision_body": doc.read_text().split("+++\n" if modern else "---\n", 2)[2],
               "original_decision_full_sha256": hashlib.sha256(doc.read_bytes()).hexdigest(),
               "legacy_source": legacy,
           }
