@@ -1,4 +1,4 @@
-name: PACT Pinned Historical Install Upgrade (0.1 0.2 0.3)
+name: PACT Pinned Historical Install Upgrade (0.1 0.2 0.3 0.4)
 
 on:
   pull_request:
@@ -29,6 +29,8 @@ jobs:
             commit: 8ef8228340cd22e668e898128b33bafde5b047d7
           - expected: "0.3.0"
             commit: f8690a64f7d6bc448092919cfb71411567041fc5
+          - expected: "0.4.0-rc.1"
+            commit: ecb27333ac3ebdcd1fa638ef269914456db70051
     permissions:
       contents: read
     steps:
@@ -100,19 +102,21 @@ jobs:
           baseline.write_text(base.replace(old, new), encoding="utf-8")
           doc = target / ".agents/decisions/implemented/historical-owner-approval.md"
           doc.parent.mkdir(parents=True, exist_ok=True)
-          doc.write_text(
-              "---\n"
-              "pact:\n"
-              "  type: decision\n"
-              "  id: DEC-PF-UPGRADE-001\n"
-              "  status: implemented\n"
-              "  aliases:\n"
-              "    - owner approval boundary\n"
-              "---\n\n"
-              "# Original Owner decision must survive\n\n"
-              "Do not silently change authorization without Owner approval.\n",
-              encoding="utf-8",
+          # 0.1–0.3 used YAML Decision metadata; an existing 0.4 Decision
+          # already has TOML metadata and must never be rewritten.
+          modern = os.environ["VERSION"].startswith("0.4.")
+          header = (
+              '+++\n[pact]\ntype = "decision"\nid = "DEC-PF-UPGRADE-001"\n'
+              'status = "implemented"\naliases = ["owner approval boundary"]\n+++\n\n'
+              if modern else
+              "---\npact:\n  type: decision\n  id: DEC-PF-UPGRADE-001\n"
+              "  status: implemented\n  aliases:\n    - owner approval boundary\n---\n\n"
           )
+          original_body = (
+              "# Original Owner decision must survive\n\n"
+              "Do not silently change authorization without Owner approval.\n"
+          )
+          doc.write_text(header + original_body, encoding="utf-8")
           tracked = {
               name: hashlib.sha256(path.read_bytes()).hexdigest()
               for name, path in {
@@ -123,7 +127,8 @@ jobs:
               "historical_version": os.environ["VERSION"],
               "historical_commit": os.environ["HISTORICAL_PIN"],
               "old_sha256": tracked,
-              "original_decision_body": doc.read_text().split("---\n", 2)[2],
+              "original_decision_body": doc.read_text().split("+++\n" if modern else "---\n", 2)[2],
+              "original_decision_full_sha256": hashlib.sha256(doc.read_bytes()).hexdigest(),
               "legacy_source": legacy,
           }
           (Path(os.environ["RUNNER_TEMP"]) / "old-upgrade-before.json").write_text(
@@ -131,7 +136,9 @@ jobs:
           )
           PY
 
-      - name: Original upgrade refuses legacy metadata without explicit opt-in
+      - name: Baseline dry-run must refuse historical YAML but allow native 0.4
+        env:
+          VERSION: ${{ matrix.expected }}
         shell: bash
         run: |
           set -euo pipefail
@@ -142,28 +149,78 @@ jobs:
           import json, os
           from pathlib import Path
           d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-blocked.json").read_text())
-          assert d["conflicts"], "Legacy Decision must block a silent upgrade"
-          assert not d["mode"] == "apply"
+          if os.environ["VERSION"].startswith("0.4."):
+              assert not d["conflicts"], d["conflicts"]
+          else:
+              assert d["conflicts"], "Legacy Decision must block a silent upgrade"
+              assert any("migrate-legacy" in c["reason"] for c in d["conflicts"])
+          assert d["mode"] == "dry-run" and not d["applied"]
           PY
 
-      - name: Explicit migration preview then transactional upgrade
+      - name: Migration preview, injected failure rollback, and successful retry
+        env:
+          VERSION: ${{ matrix.expected }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/pact/upgrade.py \
-            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
-            --migrate-legacy --json > "$RUNNER_TEMP/legacy-plan.json"
+          UPGRADE_ARGS=(--target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE")
+          if [[ "$VERSION" != 0.4.* ]]; then
+            UPGRADE_ARGS+=(--migrate-legacy)
+          fi
+          python scripts/pact/upgrade.py "${UPGRADE_ARGS[@]}" \
+            --json > "$RUNNER_TEMP/legacy-plan.json"
           python - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
-          d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-plan.json").read_text())
-          assert not d["conflicts"], d["conflicts"]
-          assert any(o["action"] == "migrate-legacy-metadata" for o in d["operations"])
+          root = Path(os.environ["OLD_PACT_TARGET"])
+          plan = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-plan.json").read_text())
+          assert not plan["conflicts"], plan["conflicts"]
+          migrated = [x for x in plan["operations"]
+                      if x["action"] == "migrate-legacy-metadata"]
+          if os.environ["VERSION"].startswith("0.4."):
+              assert not migrated, migrated
+          else:
+              assert migrated, plan
+          assert any(x["action"] in {
+              "create-framework", "update-framework", "remove-framework",
+              "migrate-legacy-seed", "migrate-legacy-metadata"
+          } for x in plan["operations"]), plan
+          fingerprint = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in root.rglob("*") if p.is_file()
+          }
+          (Path(os.environ["RUNNER_TEMP"]) / "legacy-before-fault.json").write_text(
+              json.dumps(fingerprint, indent=2) + "\n", encoding="utf-8"
+          )
           PY
-          python scripts/pact/upgrade.py \
-            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
-            --migrate-legacy --apply --json \
-            > "$RUNNER_TEMP/legacy-applied.json"
+          set +e
+          PACT_TEST_FAIL_AFTER_REPLACE=1 python scripts/pact/upgrade.py \
+            "${UPGRADE_ARGS[@]}" --apply --json \
+            > "$RUNNER_TEMP/legacy-injected-failure.json"
+          fault_rc=$?
+          set -e
+          test "$fault_rc" -eq 2
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["OLD_PACT_TARGET"])
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          data = json.loads((scratch / "legacy-injected-failure.json").read_text())
+          assert not data["applied"] and data["rolled_back"], data
+          before = json.loads((scratch / "legacy-before-fault.json").read_text())
+          after = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in root.rglob("*") if p.is_file()
+          }
+          assert before == after, {
+              "missing_or_extra": sorted(set(before) ^ set(after)),
+              "altered": sorted(k for k in set(before) & set(after)
+                                if before[k] != after[k]),
+          }
+          print("Injected upgrade fault: all prior files and hashes restored")
+          PY
+          python scripts/pact/upgrade.py "${UPGRADE_ARGS[@]}" \
+            --apply --json > "$RUNNER_TEMP/legacy-applied.json"
 
       - name: Verify migration, historical authority, manifest and fresh PACT runtime
         shell: bash
@@ -195,6 +252,10 @@ jobs:
           assert raw.startswith("+++\n[pact]\n")
           assert raw.split("+++\n", 2)[2] == previous["original_decision_body"]
           assert "DEC-PF-UPGRADE-001" in raw
+          if previous["historical_version"].startswith("0.4."):
+              assert hashlib.sha256(doc.read_bytes()).hexdigest() == (
+                  previous["original_decision_full_sha256"]
+              ), "modern 0.4 Decision was unexpectedly rewritten"
           for name in ("config", "baseline"):
               assert manifest["files"][".pact/" + name + ".toml"]["management"] == "seed"
           assert ".agents/decisions/implemented/historical-owner-approval.md" not in manifest["files"]
@@ -224,6 +285,106 @@ jobs:
           print("Original Decision remains typed and retrievable, not just a Markdown file")
           PY
 
+      - name: Pin ZIP SHA256 and smoke real Bootstrap preview/apply entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_ZIP="$RUNNER_TEMP/pact-reviewed-source.zip"
+          git archive --format=zip --prefix=pact-reviewed/ \
+            -o "$SOURCE_ZIP" HEAD
+          SOURCE_SHA="$(sha256sum "$SOURCE_ZIP" | cut -d' ' -f1)"
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          python bootstrap.py upgrade \
+            --target "$OLD_PACT_TARGET" --archive "$SOURCE_ZIP" \
+            --ref "$SOURCE_COMMIT" --sha256 "$SOURCE_SHA" \
+            > "$RUNNER_TEMP/legacy-bootstrap-preview.log" 2>&1
+          python bootstrap.py upgrade \
+            --target "$OLD_PACT_TARGET" --archive "$SOURCE_ZIP" \
+            --ref "$SOURCE_COMMIT" --sha256 "$SOURCE_SHA" --apply \
+            > "$RUNNER_TEMP/legacy-bootstrap-applied.log" 2>&1
+          test "$(tr -d '[:space:]' < "$OLD_PACT_TARGET/.pact/VERSION")" = \
+            "$(tr -d '[:space:]' < .pact/VERSION)"
+          python "$OLD_PACT_TARGET/pact.py" doctor --strict --json \
+            > "$RUNNER_TEMP/legacy-post-bootstrap-doctor.json"
+
+      - name: Repeat upgraded runtime and refuse local framework conflicts
+        env:
+          VERSION: ${{ matrix.expected }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import sys
+          root = pathlib.Path(os.environ["OLD_PACT_TARGET"])
+          scratch = pathlib.Path(os.environ["RUNNER_TEMP"])
+          upgrader = pathlib.Path(os.environ["GITHUB_WORKSPACE"]) / "scripts/pact/upgrade.py"
+          config = root / ".pact/config.toml"
+          config.write_bytes(config.read_bytes() + b"\n# retained local Owner extension\n")
+          protected = [
+              config, root / ".pact/baseline.toml",
+              root / ".agents/decisions/implemented/historical-owner-approval.md",
+              root / "AGENTS.md",
+          ]
+          protected.extend(sorted((root / ".pact").glob("*.yaml")))
+          original_sha = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in protected
+          }
+          def run(*args, target=root):
+              return subprocess.run(
+                  [sys.executable, str(upgrader), "--target", str(target),
+                   "--source", os.environ["GITHUB_WORKSPACE"], "--json", *args],
+                  capture_output=True, text=True, timeout=200,
+              )
+          preview = run()
+          assert preview.returncode == 0, preview.stdout + preview.stderr
+          assert not json.loads(preview.stdout)["conflicts"], preview.stdout
+          retry = run("--apply")
+          assert retry.returncode == 0, retry.stdout + retry.stderr
+          assert json.loads(retry.stdout)["applied"]
+          assert {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in protected
+          } == original_sha, "repeat upgrade overwrote Owner/Decision/guide bytes"
+
+          # Locally modified framework runtime must block entire automatic
+          # upgrade; mutate only a disposable GitHub Actions test copy.
+          hostile = scratch / "pact-conflict-copy"
+          shutil.copytree(root, hostile)
+          runtime = hostile / ".pact/pact.pyz"
+          runtime.write_bytes(runtime.read_bytes() + b"\n# LOCAL-DIVERGENCE\n")
+          manifest = hostile / ".pact/install.json"
+          original_manifest = manifest.read_bytes()
+          refused = run("--apply", target=hostile)
+          assert refused.returncode == 1, refused.stdout + refused.stderr
+          detail = json.loads(refused.stdout)
+          assert not detail["applied"] and detail["conflicts"], detail
+          assert manifest.read_bytes() == original_manifest
+          assert runtime.read_bytes().endswith(b"# LOCAL-DIVERGENCE\n")
+          assert all(
+              (hostile / rel).read_bytes() == (root / rel).read_bytes()
+              for rel in original_sha
+          ), "conflict affected Owner/Decision/Agent content"
+          result = {
+              "historical_version": os.environ["VERSION"],
+              "historical_pin": os.environ["HISTORICAL_PIN"],
+              "post_crash_retry_succeeded": True,
+              "repeated_upgrade_preserves_owner_decision_and_agent_bytes": True,
+              "local_framework_conflict_fails_closed": True,
+              "real_agent_or_owner_trial": False,
+          }
+          (scratch / "upgrade-acceptance.json").write_text(
+              json.dumps(result, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
       - name: Preserve full historical upgrade receipts including failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -233,7 +394,13 @@ jobs:
             ${{ runner.temp }}/old-upgrade-before.json
             ${{ runner.temp }}/legacy-blocked.json
             ${{ runner.temp }}/legacy-plan.json
+            ${{ runner.temp }}/legacy-before-fault.json
+            ${{ runner.temp }}/legacy-injected-failure.json
             ${{ runner.temp }}/legacy-applied.json
+            ${{ runner.temp }}/upgrade-acceptance.json
+            ${{ runner.temp }}/legacy-bootstrap-preview.log
+            ${{ runner.temp }}/legacy-bootstrap-applied.log
+            ${{ runner.temp }}/legacy-post-bootstrap-doctor.json
             ${{ runner.temp }}/legacy-doctor.json
             ${{ runner.temp }}/legacy-owner.json
             ${{ runner.temp }}/legacy-discover.json

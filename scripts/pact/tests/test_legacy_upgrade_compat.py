@@ -414,6 +414,180 @@ class LegacyUpgradeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("missing .pact/install.json", result.stderr)
 
+    def test_modern_04_reupgrade_preserves_custom_owner_and_current_decision(self):
+        """No migration flag: existing compact 0.4 installation remains owned."""
+        config = self.project / ".pact/config.toml"
+        original = config.read_text(encoding="utf-8")
+        self.assertIn('language = "auto"', original)
+        config.write_text(
+            original.replace('language = "auto"', 'language = "zh-CN"'),
+            encoding="utf-8",
+        )
+        decision = self.project / ".agents/decisions/implemented/owner-meaning.md"
+        decision.parent.mkdir(parents=True, exist_ok=True)
+        decision.write_text(
+            '+++\n[pact]\ntype = "decision"\nid = "DEC-OWNER-MEANING"\n'
+            'status = "implemented"\n+++\n'
+            '# Preserve Owner meaning\n\n'
+            'Never change authorization without the Owner decision.\n',
+            encoding="utf-8",
+        )
+        guide = self.project / "AGENTS.md"
+        tracked = {
+            path: path.read_bytes()
+            for path in (config, decision, guide)
+        }
+        for cycle in (1, 2):
+            dry = self.run_upgrade()
+            self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+            self.assertEqual(json.loads(dry.stdout)["conflicts"], [])
+            for path, body in tracked.items():
+                self.assertEqual(path.read_bytes(), body, (cycle, path))
+            applied = self.run_upgrade("--apply")
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            self.assertTrue(json.loads(applied.stdout)["applied"])
+            for path, body in tracked.items():
+                self.assertEqual(path.read_bytes(), body, (cycle, path))
+        owner = subprocess.run(
+            [sys.executable, str(self.project / "pact.py"), "owner", "--strict", "--json"],
+            cwd=self.project, capture_output=True, text=True, timeout=80,
+        )
+        self.assertEqual(owner.returncode, 0, owner.stdout + owner.stderr)
+        self.assertEqual(json.loads(owner.stdout)["language"], "zh-CN")
+        lookup = subprocess.run(
+            [sys.executable, str(self.project / "pact.py"),
+             "discover", "DEC-OWNER-MEANING", "--json"],
+            cwd=self.project, capture_output=True, text=True, timeout=80,
+        )
+        self.assertEqual(lookup.returncode, 0, lookup.stdout + lookup.stderr)
+        self.assertTrue(any(
+            item["id"] == "DEC-OWNER-MEANING" and item["status"] == "implemented"
+            for item in json.loads(lookup.stdout)["results"]
+        ))
+
+    def test_migrate_rejected_and_superseded_without_losing_original_rationale(self):
+        """Old YAML Decision life cycle must not silently become implemented."""
+        self.old()
+        records = {}
+        for ident, status, directory in (
+            ("DEC-PREVIOUS-AUTH", "superseded", "implemented"),
+            ("DEC-REJECTED-AUTH", "rejected", "rejected"),
+        ):
+            page = self.project / f".agents/decisions/{directory}/{ident.lower()}.md"
+            page.parent.mkdir(parents=True, exist_ok=True)
+            raw = (
+                "---\npact:\n  type: decision\n"
+                f"  id: {ident}\n  status: {status}\n---\n"
+                f"# Historical {status} authorization choice\n\n"
+                "Do not forget the original Owner approval rationale.\n"
+                "Revisit only after validating the original premises.\n"
+            )
+            page.write_text(raw, encoding="utf-8")
+            records[ident] = (page, raw.split("---\n", 2)[-1], status)
+        applied = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        from formats import parse_markdown_metadata
+        for ident, (page, rationale, status) in records.items():
+            packet, body, fmt = parse_markdown_metadata(
+                page.read_text(encoding="utf-8")
+            )
+            self.assertEqual(fmt, "toml")
+            self.assertEqual(body, rationale)
+            self.assertEqual(packet["pact"]["id"], ident)
+            self.assertEqual(packet["pact"]["status"], status)
+            lookup = subprocess.run(
+                [sys.executable, str(self.project / "pact.py"),
+                 "discover", ident, "--intent", "history", "--json"],
+                cwd=self.project, capture_output=True, text=True, timeout=80,
+            )
+            self.assertEqual(lookup.returncode, 0, lookup.stdout + lookup.stderr)
+            self.assertTrue(any(
+                item["id"] == ident and item["status"] == status
+                for item in json.loads(lookup.stdout)["results"]
+            ), ident)
+
+    def test_historical_dry_run_failure_then_retry_keeps_all_source_bytes(self):
+        """Preview and injected crash must not consume/mutate original truth."""
+        self.old()
+        original = {
+            path.relative_to(self.project).as_posix(): path.read_bytes()
+            for path in self.project.rglob("*") if path.is_file()
+        }
+        dry = self.run_upgrade("--migrate-legacy")
+        self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+        self.assertEqual(json.loads(dry.stdout)["conflicts"], [])
+        self.assertEqual({
+            path.relative_to(self.project).as_posix(): path.read_bytes()
+            for path in self.project.rglob("*") if path.is_file()
+        }, original)
+
+        env = os.environ.copy()
+        env["PACT_TEST_FAIL_AFTER_REPLACE"] = "2"
+        interrupted = self.run_upgrade("--migrate-legacy", "--apply", env=env)
+        self.assertEqual(interrupted.returncode, 2,
+                         interrupted.stdout + interrupted.stderr)
+        self.assertTrue(json.loads(interrupted.stdout)["rolled_back"])
+        self.assertEqual({
+            path.relative_to(self.project).as_posix(): path.read_bytes()
+            for path in self.project.rglob("*") if path.is_file()
+        }, original, "failed migration left managed or Owner bytes changed")
+        retried = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+        self.assertTrue(json.loads(retried.stdout)["applied"])
+        for rel in (".pact/config.yaml", ".pact/baseline.yaml",
+                    ".pact/fitness.yaml", "AGENTS.md"):
+            self.assertEqual((self.project / rel).read_bytes(), original[rel])
+
+    def test_existing_toml_decision_with_crlf_is_not_legacy(self):
+        """Real Windows Decision bytes must be safe under an ordinary 0.4 upgrade."""
+        page = self.project / ".agents/decisions/implemented/windows-owner.md"
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_bytes(
+            b'+++\r\n[pact]\r\ntype = "decision"\r\n'
+            b'id = "DEC-CRLF-OWNER"\r\nstatus = "implemented"\r\n'
+            b'+++\r\n# Windows Owner decision\r\n\r\n'
+            b'Keep the original Owner approval boundary.\r\n'
+        )
+        original = page.read_bytes()
+        plan = self.run_upgrade()
+        self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["conflicts"], [])
+        self.assertEqual(page.read_bytes(), original)
+        applied = self.run_upgrade("--apply")
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertEqual(page.read_bytes(), original)
+        lookup = subprocess.run(
+            [sys.executable, str(self.project / "pact.py"),
+             "discover", "DEC-CRLF-OWNER", "--json"],
+            cwd=self.project, capture_output=True, text=True, timeout=80,
+        )
+        self.assertEqual(lookup.returncode, 0, lookup.stdout + lookup.stderr)
+        self.assertTrue(any(
+            item["id"] == "DEC-CRLF-OWNER" and item["status"] == "implemented"
+            for item in json.loads(lookup.stdout)["results"]
+        ))
+
+    def test_legacy_crlf_yaml_still_requires_opt_in_and_preserves_rationale(self):
+        """The CRLF fix must not turn actual legacy YAML into a silent no-op."""
+        self.old()
+        page = self.project / ".agents/decisions/implemented/approval.md"
+        original = OLD_DECISION.replace("\n", "\r\n").encode("utf-8")
+        page.write_bytes(original)
+        owner_yaml = (self.project / ".pact/config.yaml").read_bytes()
+        ordinary = self.run_upgrade()
+        self.assertEqual(ordinary.returncode, 0, ordinary.stdout + ordinary.stderr)
+        self.assertTrue(json.loads(ordinary.stdout)["conflicts"])
+        rejected = self.run_upgrade("--apply")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertEqual(page.read_bytes(), original)
+        migrated = self.run_upgrade("--migrate-legacy", "--apply")
+        self.assertEqual(migrated.returncode, 0, migrated.stdout + migrated.stderr)
+        updated = page.read_bytes()
+        self.assertTrue(updated.startswith(b"+++\n[pact]\n"))
+        self.assertEqual(updated.split(b"+++\n", 2)[2],
+                         original.split(b"---\r\n", 2)[2])
+        self.assertEqual((self.project / ".pact/config.yaml").read_bytes(), owner_yaml)
+
     def test_source_bound_converter_rejects_ambiguous_and_wrong_metadata(self):
         with self.assertRaisesRegex(ValueError, "duplicate YAML"):
             legacy_upgrade.parse_yaml("pact:\n  id: DEC-X\n  id: DEC-Y\n")

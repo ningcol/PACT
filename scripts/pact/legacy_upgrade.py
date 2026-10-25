@@ -396,7 +396,9 @@ def scan(
                 if path.is_symlink() or path.stat().st_size > MAX_SOURCE:
                     raise LegacyUpgradeError("unsafe or oversized authority document")
                 old = path.read_bytes()
-                if old.startswith(b"+++\n"):
+                # Both LF and CRLF TOML frontmatter are already current; a
+                # Windows checkout must not be treated as legacy YAML.
+                if old.startswith((b"+++\n", b"+++\r\n")):
                     continue
                 needs = rel.startswith(".agents/decisions/") or (
                     old.startswith((b"---\n", b"---\r\n"))
