@@ -6,6 +6,60 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
+Reserve this section for changes after the `0.4.0-rc.1` candidate is
+reviewed. The release candidate below is **not yet tagged or published**.
+
+## 0.4.0-rc.1 (experimental pilot candidate; not yet published)
+
+**Purpose:** controlled real-project trials of PACT's small, durable
+decision memory and evidence-backed completion. This is a prerelease
+engineering candidate, **not** a stable-release claim or an independent
+Agent/Owner efficacy result.
+
+### Final candidate: Decision recall, completion and upgrade safety (PRs #235–#241)
+
+- [PR #235](https://github.com/ningcol/PACT/pull/235) locks PACT's original
+  purpose for contributors without adding mandatory governance, runtime
+  features, extra long-term Decisions or a new approval process.
+- [PR #236](https://github.com/ningcol/PACT/pull/236) records fresh
+  source-backed, no-model Decision recall and false-completion probes.
+  These are developer-authored engineering cases, not a blind real Agent test.
+- [PR #237](https://github.com/ningcol/PACT/pull/237) defers generic
+  full-body lexical Decision bait to source-bound review hints instead
+  of silently injecting unrelated implemented Decisions; explicit IDs,
+  distinctive evidence and high-risk/full-Decision paths stay available.
+- [PRs #238–#239](https://github.com/ningcol/PACT/pull/239) measure
+  source-verified extra Decision candidate cost and reject a default
+  "read only the first Decision" shortcut: it misses required targets
+  in the original adr-viewer engineering scenarios. No retrieval-default
+  expansion or billed-token savings are claimed.
+- [PR #240](https://github.com/ningcol/PACT/pull/240) blocks false
+  mechanical completion when confirmed Rule / implemented Decision
+  **candidates** are known to have been excluded by the Context
+  knowledge-count cap. `task assist` respects the same gap, and
+  `task prepare --limit N` allows explicit re-preparation. A lexical
+  candidate is **not** automatically declared applicable.
+- [PR #241](https://github.com/ningcol/PACT/pull/241) corrects Windows
+  CRLF TOML Decision recognition during legacy upgrade without changing
+  Decision meaning or enabling implicit YAML migration. Four pinned
+  historical PACT installations (0.1.0, 0.2.0, 0.3.0 and an **unpublished
+  early 0.4 candidate checkout**) passed source-pinned upgrade, fault
+  rollback/retry, Owner/Decision preservation, repeated upgrade,
+  conflict refusal and SHA256-pinned Bootstrap checks.
+
+**Engineering receipts:** [PACT Check on merged #241 main](https://github.com/ningcol/PACT/actions/runs/40154561902)
+and [3 OS × 3 Python Core Matrix](https://github.com/ningcol/PACT/actions/runs/40154561904)
+were green for the pre-documentation main commit. The expanded
+[historical install/upgrade 4/4 validation](https://github.com/ningcol/PACT/actions/runs/40153967276)
+and [privacy/pilot regression](https://github.com/ningcol/PACT/actions/runs/40153967306)
+also passed on the tested PR head. **After this release-documentation change,
+the final main commit must pass its own CI before any tag or GO.**
+
+**Release boundary:** no GitHub tag, Release assets, human RC Environment
+approval, independently observed coding-Agent obedience or measured Owner
+benefit has been established by these PRs. Keep #221, #214, #28, #32 and
+the release decision #63 open; stable `v0.4.0` remains HOLD.
+
 ### Call-chain trust and concurrency hardening (PR #234)
 
 - Low-level Evidence and Complete cannot mark empty or optional-only
@@ -24,7 +78,7 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - These engineering controls do not replace independent Agent/Owner trials
   or grant permission to publish stable releases.
 
-### Historical PACT upgrade compatibility (not yet released)
+### Historical PACT upgrade compatibility (PR #232)
 
 - Detect old PACT 0.1/0.2 YAML seeds and PACT-marked authoritative Markdown
   before automatic framework upgrade. Legacy Owner or Decision semantics
@@ -66,13 +120,6 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 - Bound `task verify` timeout cleanup to its local process tree where supported;
   do not equate local process cleanup with a hostile-process sandbox.
 
-**Release status:** none of these changes asserts completion of the original
-48 acceptance criteria, publishes a tag, or verifies real Agent/Owner outcomes.
-The formal release decision stays under Issue #63.
-
-
-## 0.4.0-rc.1 (experimental pilot candidate; not yet published) — 2026-10-20
-
 ### Pre-release decision-memory, upgrade and publication safety
 
 - Source-corroborated default Context narrowing from [PR #231](https://github.com/ningcol/PACT/pull/231):
@@ -87,7 +134,8 @@ The formal release decision stays under Issue #63.
   conversion for unambiguous project-owned seeds and source-identified
   Decisions, preserving original old YAML/Decision prose and failing closed
   for custom retired policy, missing IDs or unfinished historical tasks.
-  Three public pinned historical install/upgrade engineering tests passed.
+  The historical 0.1/0.2/0.3 upgrade cases and an early 0.4 checkout
+  passed the extended four-version engineering matrix in PR #241.
 - Separate experimental RC and stable release approval channels: an RC
   requires a protected GitHub environment's **actual human review** plus
   Owner GO bound to exact reviewed main SHA, main/portable/full unit CI,
