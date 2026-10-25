@@ -136,7 +136,7 @@ jobs:
           )
           PY
 
-      - name: Original upgrade refuses legacy metadata without explicit opt-in
+      - name: Baseline dry-run must refuse historical YAML but allow native 0.4
         shell: bash
         run: |
           set -euo pipefail
@@ -147,28 +147,76 @@ jobs:
           import json, os
           from pathlib import Path
           d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-blocked.json").read_text())
-          assert d["conflicts"], "Legacy Decision must block a silent upgrade"
-          assert not d["mode"] == "apply"
+          if os.environ["VERSION"].startswith("0.4."):
+              assert not d["conflicts"], d["conflicts"]
+          else:
+              assert d["conflicts"], "Legacy Decision must block a silent upgrade"
+              assert any("migrate-legacy" in c["reason"] for c in d["conflicts"])
+          assert d["mode"] == "dry-run" and not d["applied"]
           PY
 
-      - name: Explicit migration preview then transactional upgrade
+      - name: Migration preview, injected failure rollback, and successful retry
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/pact/upgrade.py \
-            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
-            --migrate-legacy --json > "$RUNNER_TEMP/legacy-plan.json"
+          UPGRADE_ARGS=(--target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE")
+          if [[ "$VERSION" != 0.4.* ]]; then
+            UPGRADE_ARGS+=(--migrate-legacy)
+          fi
+          python scripts/pact/upgrade.py "${UPGRADE_ARGS[@]}" \
+            --json > "$RUNNER_TEMP/legacy-plan.json"
           python - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
-          d = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-plan.json").read_text())
-          assert not d["conflicts"], d["conflicts"]
-          assert any(o["action"] == "migrate-legacy-metadata" for o in d["operations"])
+          root = Path(os.environ["OLD_PACT_TARGET"])
+          plan = json.loads((Path(os.environ["RUNNER_TEMP"]) / "legacy-plan.json").read_text())
+          assert not plan["conflicts"], plan["conflicts"]
+          migrated = [x for x in plan["operations"]
+                      if x["action"] == "migrate-legacy-metadata"]
+          if os.environ["VERSION"].startswith("0.4."):
+              assert not migrated, migrated
+          else:
+              assert migrated, plan
+          assert any(x["action"] in {
+              "create-framework", "update-framework", "remove-framework",
+              "migrate-legacy-seed", "migrate-legacy-metadata"
+          } for x in plan["operations"]), plan
+          fingerprint = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in root.rglob("*") if p.is_file()
+          }
+          (Path(os.environ["RUNNER_TEMP"]) / "legacy-before-fault.json").write_text(
+              json.dumps(fingerprint, indent=2) + "\n", encoding="utf-8"
+          )
           PY
-          python scripts/pact/upgrade.py \
-            --target "$OLD_PACT_TARGET" --source "$GITHUB_WORKSPACE" \
-            --migrate-legacy --apply --json \
-            > "$RUNNER_TEMP/legacy-applied.json"
+          set +e
+          PACT_TEST_FAIL_AFTER_REPLACE=1 python scripts/pact/upgrade.py \
+            "${UPGRADE_ARGS[@]}" --apply --json \
+            > "$RUNNER_TEMP/legacy-injected-failure.json"
+          fault_rc=$?
+          set -e
+          test "$fault_rc" -eq 2
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["OLD_PACT_TARGET"])
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          data = json.loads((scratch / "legacy-injected-failure.json").read_text())
+          assert not data["applied"] and data["rolled_back"], data
+          before = json.loads((scratch / "legacy-before-fault.json").read_text())
+          after = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in root.rglob("*") if p.is_file()
+          }
+          assert before == after, {
+              "missing_or_extra": sorted(set(before) ^ set(after)),
+              "altered": sorted(k for k in set(before) & set(after)
+                                if before[k] != after[k]),
+          }
+          print("Injected upgrade fault: all prior files and hashes restored")
+          PY
+          python scripts/pact/upgrade.py "${UPGRADE_ARGS[@]}" \
+            --apply --json > "$RUNNER_TEMP/legacy-applied.json"
 
       - name: Verify migration, historical authority, manifest and fresh PACT runtime
         shell: bash
