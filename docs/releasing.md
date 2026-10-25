@@ -7,8 +7,8 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 ## Before tagging
 
 1. Replace any `-dev.*` runtime version in `.pact/VERSION` with the exact release version.
-2. Move/finalize relevant `CHANGELOG.md` entries under that release heading.
-3. Ensure `PACT Check` and the actual **fail-fast** 3 OS × 3 Python `PACT Core Matrix` are green for the **exact main commit intended for tagging**. Never count a Windows PowerShell step as passing if an earlier native command may have failed but a later command overwrote its exit status.
+2. Move/finalize **all merged pre-tag runtime fixes** under the exact release heading in `CHANGELOG.md`; reserve `Unreleased` for subsequent changes.
+3. Ensure `PACT Check` and the actual **fail-fast** 3 OS × 3 Python `PACT Core Matrix` are green for the **exact main commit intended for tagging, after the final documentation PR merge**. Never count a Windows PowerShell step as passing if an earlier native command may have failed but a later command overwrote its exit status.
 4. For a **stable** release, run and independently accept the applicable real coding-Agent/Owner trials when installation, Discovery, code mapping, Evidence or completion semantics change. Source-level fixtures and OS×Python unit tests cannot substitute. For an explicitly marked **RC pilot**, those trials may be pending, but the dedicated RC Owner/reviewer approval, source integrity, installation/upgrade smoke and all automated checks still apply. Never describe an RC as stable or as proving Agent obedience/Owner benefit.
 5. Resolve or explicitly document compatibility/migration behavior.
 6. Confirm `LICENSE` is present and release assets/checksums include the Apache-2.0 license file.
@@ -72,6 +72,74 @@ Use Git's immutable tag and the PACT Bootstrap pinned to that tag for
 individual pilot repositories. Report real Agent/Owner outcomes separately
 instead of relabeling old scripted engineering receipts.
 
+## RC upgrade-compatibility handoff (engineering evidence, not universal migration)
+
+The untagged `0.4.0-rc.1` candidate has a verified **four-version
+source-pinned engineering upgrade matrix** from [PR #241](https://github.com/ningcol/PACT/pull/241),
+using the original PACT installers in disposable GitHub Actions targets:
+
+| Original PACT installation | Candidate upgrade path | Acceptance boundary |
+| --- | --- | --- |
+| `0.1.0` and `0.2.0`, with a valid `.pact/install.json` | Explicit `--migrate-legacy` preview, then reviewed apply for YAML Owner seeds / PACT Decision metadata | No silent YAML/TOML shadowing or invented Decision/Owner status |
+| `0.3.0`, with a valid install manifest | Ordinary upgrade if fully modern; explicit `--migrate-legacy` if historical YAML/Decision sources are present | Original rationale and project-owned config remain authoritative |
+| Early **unpublished** `0.4.0-rc.1` development install | Ordinary preview and apply | Existing TOML Decisions, including Windows CRLF frontmatter, stay byte-identical |
+| No trustworthy `.pact/install.json`, incompatible custom YAML, conflicting local framework edits or incomplete historical Task state | **Do not auto-upgrade**; review a backed-up isolated copy manually | Fail closed instead of inventing ownership or rewriting policy |
+
+[Four pinned original installations, Bootstrap and failure/rollback checks](https://github.com/ningcol/PACT/actions/runs/40153967276)
+passed on the reviewed source. The checks include source ZIP SHA256,
+original Owner/Decision meaning and ID/status, repeated upgrade,
+simulated mid-apply failure with byte-for-byte rollback and retry,
+and local framework-edit conflict refusal. [Exact merged main
+PACT Check](https://github.com/ningcol/PACT/actions/runs/40154561902)
+and [3×3 Core Matrix](https://github.com/ningcol/PACT/actions/runs/40154561904)
+also passed **before this documentation update**. The last documentation
+commit must get its own main-push CI.
+
+These are test fixtures and sampled historical installations, **not a
+promise that every manually customized install will upgrade without
+intervention**, nor evidence that a real coding Agent honored a migrated
+Owner decision. The published tag and downloadable assets do not exist
+until human RC approval completes. **After publication**, repeat
+checksum/installation and representative 0.1/0.2/0.3/0.4-to-tag upgrades
+using the immutable `v0.4.0-rc.1` source, not moving `main`.
+
+### How an existing pilot project upgrades after RC publication
+
+Obtain the approved `pact-bootstrap.py` and `SHA256SUMS` from the
+**actual GitHub Release**, verify the downloaded asset digests, and
+back up the old project (or work in a disposable copy). The following
+commands are **post-publication examples**, not commands to run before
+`v0.4.0-rc.1` is released:
+
+```bash
+# Modern tracked installation: preview first; then apply only with no conflicts.
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.1 --target ../existing-project
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.1 --target ../existing-project --apply
+
+# Historical YAML sources: inspect an explicit migration preview FIRST.
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.1 --target ../existing-project --migrate-legacy
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.1 --target ../existing-project --migrate-legacy --apply
+```
+
+Use the ordinary **or** legacy path as appropriate; do not apply both
+paths indiscriminately. A preview reports conflicts without changing
+project files. Resolve an unsafe conflict with explicit Owner review
+before re-running; never bypass provenance by `init --apply` in place.
+The historical `AGENTS.md` is project-owned and is not silently
+rewritten even when it contains obsolete YAML references. After apply,
+verify `pact.py doctor --strict`, `owner --strict`, `readiness`,
+`check`, and exact-ID `discover` of the important Decisions in that
+project. See [Distribution and Safe Upgrades](design/distribution-upgrades.md).
+
+**The RC release is still HOLD until** the administrator configures
+`pact-rc-approval` with Required reviewers and environment-local
+`PACT_RC_RELEASE_GO=GO` plus
+`PACT_RC_RELEASE_APPROVED_SHA=<the final reviewed 40-character main SHA>`,
+and a real authorized reviewer approves the exact release workflow.
+These conditions cannot be satisfied by a PR, a CI badge or a note in
+the repository. Do **not** set stable
+`PACT_AGENT_OWNER_GATES_APPROVED=true` based on the RC tests.
+
 ## Tagging
 
 Use an immutable semantic-version tag **matching `.pact/VERSION`
@@ -96,8 +164,9 @@ git tag -a v0.4.0-rc.1 -m "PACT v0.4.0-rc.1 pilot prerelease"
 git push origin refs/tags/v0.4.0-rc.1
 ```
 
-Do not tag until `PACT_RC_RELEASE_APPROVED_SHA` equals the exact main
-commit being tagged and a real reviewer is assigned. If review or CI is
+Do not tag until `PACT_RC_RELEASE_APPROVED_SHA` equals the **final** main
+commit being tagged (which changes when the release-documentation PR merges)
+and a real reviewer is assigned. If review or CI is
 missing, the run stays blocked or fails and publishes nothing. Never move
 or force-push a release tag to work around a failure; fix the missing
 evidence and use a new reviewed commit/version if necessary.
@@ -129,7 +198,7 @@ The workflow:
 After an RC is actually published, verify its `prerelease` flag, attached
 `pact-bootstrap.py`, `pact.pyz`, `LICENSE`, `SHA256SUMS` and hashes
 using `gh release view`, `gh release download` and
-`sha256sum -c SHA256SUMS`. Test installation and the 0.1/0.2/0.3
+`sha256sum -c SHA256SUMS`. Test installation and the 0.1/0.2/0.3 plus early 0.4
 upgrade paths again from the immutable tag before declaring external
 adoption ready.
 
