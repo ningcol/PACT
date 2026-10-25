@@ -285,6 +285,84 @@ jobs:
           print("Original Decision remains typed and retrievable, not just a Markdown file")
           PY
 
+      - name: Repeat upgraded runtime and refuse local framework conflicts
+        env:
+          VERSION: ${{ matrix.expected }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import sys
+          root = pathlib.Path(os.environ["OLD_PACT_TARGET"])
+          scratch = pathlib.Path(os.environ["RUNNER_TEMP"])
+          upgrader = pathlib.Path(os.environ["GITHUB_WORKSPACE"]) / "scripts/pact/upgrade.py"
+          config = root / ".pact/config.toml"
+          config.write_bytes(config.read_bytes() + b"\n# retained local Owner extension\n")
+          protected = [
+              config, root / ".pact/baseline.toml",
+              root / ".agents/decisions/implemented/historical-owner-approval.md",
+              root / "AGENTS.md",
+          ]
+          protected.extend(sorted((root / ".pact").glob("*.yaml")))
+          original_sha = {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in protected
+          }
+          def run(*args, target=root):
+              return subprocess.run(
+                  [sys.executable, str(upgrader), "--target", str(target),
+                   "--source", os.environ["GITHUB_WORKSPACE"], "--json", *args],
+                  capture_output=True, text=True, timeout=200,
+              )
+          preview = run()
+          assert preview.returncode == 0, preview.stdout + preview.stderr
+          assert not json.loads(preview.stdout)["conflicts"], preview.stdout
+          retry = run("--apply")
+          assert retry.returncode == 0, retry.stdout + retry.stderr
+          assert json.loads(retry.stdout)["applied"]
+          assert {
+              p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in protected
+          } == original_sha, "repeat upgrade overwrote Owner/Decision/guide bytes"
+
+          # Locally modified framework runtime must block entire automatic
+          # upgrade; mutate only a disposable GitHub Actions test copy.
+          hostile = scratch / "pact-conflict-copy"
+          shutil.copytree(root, hostile)
+          runtime = hostile / ".pact/pact.pyz"
+          runtime.write_bytes(runtime.read_bytes() + b"\n# LOCAL-DIVERGENCE\n")
+          manifest = hostile / ".pact/install.json"
+          original_manifest = manifest.read_bytes()
+          refused = run("--apply", target=hostile)
+          assert refused.returncode == 1, refused.stdout + refused.stderr
+          detail = json.loads(refused.stdout)
+          assert not detail["applied"] and detail["conflicts"], detail
+          assert manifest.read_bytes() == original_manifest
+          assert runtime.read_bytes().endswith(b"# LOCAL-DIVERGENCE\n")
+          assert all(
+              (hostile / rel).read_bytes() == (root / rel).read_bytes()
+              for rel in original_sha
+          ), "conflict affected Owner/Decision/Agent content"
+          result = {
+              "historical_version": os.environ["VERSION"],
+              "historical_pin": os.environ["HISTORICAL_PIN"],
+              "post_crash_retry_succeeded": True,
+              "repeated_upgrade_preserves_owner_decision_and_agent_bytes": True,
+              "local_framework_conflict_fails_closed": True,
+              "real_agent_or_owner_trial": False,
+          }
+          (scratch / "upgrade-acceptance.json").write_text(
+              json.dumps(result, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
       - name: Preserve full historical upgrade receipts including failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -294,7 +372,10 @@ jobs:
             ${{ runner.temp }}/old-upgrade-before.json
             ${{ runner.temp }}/legacy-blocked.json
             ${{ runner.temp }}/legacy-plan.json
+            ${{ runner.temp }}/legacy-before-fault.json
+            ${{ runner.temp }}/legacy-injected-failure.json
             ${{ runner.temp }}/legacy-applied.json
+            ${{ runner.temp }}/upgrade-acceptance.json
             ${{ runner.temp }}/legacy-doctor.json
             ${{ runner.temp }}/legacy-owner.json
             ${{ runner.temp }}/legacy-discover.json
