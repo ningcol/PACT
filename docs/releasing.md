@@ -74,7 +74,7 @@ instead of relabeling old scripted engineering receipts.
 
 ## RC upgrade-compatibility handoff (engineering evidence, not universal migration)
 
-The untagged `0.4.0-rc.1` candidate has a verified **four-version
+The `0.4.0-rc.1` candidate has a verified **four-version
 source-pinned engineering upgrade matrix** from [PR #241](https://github.com/ningcol/PACT/pull/241),
 using the original PACT installers in disposable GitHub Actions targets:
 
@@ -98,8 +98,8 @@ commit must get its own main-push CI.
 These are test fixtures and sampled historical installations, **not a
 promise that every manually customized install will upgrade without
 intervention**, nor evidence that a real coding Agent honored a migrated
-Owner decision. The published tag and downloadable assets do not exist
-until human RC approval completes. **After publication**, repeat
+Owner decision. Merging release documentation does **not** publish a
+tag or downloadable assets; those require human RC approval. **After publication**, repeat
 checksum/installation and representative 0.1/0.2/0.3/0.4-to-tag upgrades
 using the immutable `v0.4.0-rc.1` source, not moving `main`.
 
