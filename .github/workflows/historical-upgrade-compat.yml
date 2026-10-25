@@ -137,6 +137,8 @@ jobs:
           PY
 
       - name: Baseline dry-run must refuse historical YAML but allow native 0.4
+        env:
+          VERSION: ${{ matrix.expected }}
         shell: bash
         run: |
           set -euo pipefail
@@ -156,6 +158,8 @@ jobs:
           PY
 
       - name: Migration preview, injected failure rollback, and successful retry
+        env:
+          VERSION: ${{ matrix.expected }}
         shell: bash
         run: |
           set -euo pipefail
