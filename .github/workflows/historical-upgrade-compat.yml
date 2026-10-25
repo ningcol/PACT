@@ -1,4 +1,4 @@
-name: PACT Pinned Historical Install Upgrade (0.1 0.2 0.3)
+name: PACT Pinned Historical Install Upgrade (0.1 0.2 0.3 0.4)
 
 on:
   pull_request:
@@ -29,6 +29,8 @@ jobs:
             commit: 8ef8228340cd22e668e898128b33bafde5b047d7
           - expected: "0.3.0"
             commit: f8690a64f7d6bc448092919cfb71411567041fc5
+          - expected: "0.4.0-rc.1"
+            commit: ecb27333ac3ebdcd1fa638ef269914456db70051
     permissions:
       contents: read
     steps:
@@ -100,19 +102,21 @@ jobs:
           baseline.write_text(base.replace(old, new), encoding="utf-8")
           doc = target / ".agents/decisions/implemented/historical-owner-approval.md"
           doc.parent.mkdir(parents=True, exist_ok=True)
-          doc.write_text(
-              "---\n"
-              "pact:\n"
-              "  type: decision\n"
-              "  id: DEC-PF-UPGRADE-001\n"
-              "  status: implemented\n"
-              "  aliases:\n"
-              "    - owner approval boundary\n"
-              "---\n\n"
-              "# Original Owner decision must survive\n\n"
-              "Do not silently change authorization without Owner approval.\n",
-              encoding="utf-8",
+          # 0.1–0.3 used YAML Decision metadata; an existing 0.4 Decision
+          # already has TOML metadata and must never be rewritten.
+          modern = os.environ["VERSION"].startswith("0.4.")
+          header = (
+              '+++\n[pact]\ntype = "decision"\nid = "DEC-PF-UPGRADE-001"\n'
+              'status = "implemented"\naliases = ["owner approval boundary"]\n+++\n\n'
+              if modern else
+              "---\npact:\n  type: decision\n  id: DEC-PF-UPGRADE-001\n"
+              "  status: implemented\n  aliases:\n    - owner approval boundary\n---\n\n"
           )
+          original_body = (
+              "# Original Owner decision must survive\n\n"
+              "Do not silently change authorization without Owner approval.\n"
+          )
+          doc.write_text(header + original_body, encoding="utf-8")
           tracked = {
               name: hashlib.sha256(path.read_bytes()).hexdigest()
               for name, path in {
@@ -123,7 +127,8 @@ jobs:
               "historical_version": os.environ["VERSION"],
               "historical_commit": os.environ["HISTORICAL_PIN"],
               "old_sha256": tracked,
-              "original_decision_body": doc.read_text().split("---\n", 2)[2],
+              "original_decision_body": original_body,
+              "original_decision_full_sha256": hashlib.sha256(doc.read_bytes()).hexdigest(),
               "legacy_source": legacy,
           }
           (Path(os.environ["RUNNER_TEMP"]) / "old-upgrade-before.json").write_text(
@@ -195,6 +200,10 @@ jobs:
           assert raw.startswith("+++\n[pact]\n")
           assert raw.split("+++\n", 2)[2] == previous["original_decision_body"]
           assert "DEC-PF-UPGRADE-001" in raw
+          if previous["historical_version"].startswith("0.4."):
+              assert hashlib.sha256(doc.read_bytes()).hexdigest() == (
+                  previous["original_decision_full_sha256"]
+              ), "modern 0.4 Decision was unexpectedly rewritten"
           for name in ("config", "baseline"):
               assert manifest["files"][".pact/" + name + ".toml"]["management"] == "seed"
           assert ".agents/decisions/implemented/historical-owner-approval.md" not in manifest["files"]
