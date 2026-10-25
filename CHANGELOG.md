@@ -7,9 +7,9 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 ## Unreleased
 
 Reserve this section for changes after the `0.4.0-rc.1` candidate is
-reviewed. The release candidate below is **not yet tagged or published**.
+reviewed. A changelog entry alone is **not** a release tag or approval.
 
-## 0.4.0-rc.1 (experimental pilot candidate; not yet published)
+## 0.4.0-rc.1 (experimental controlled-pilot release candidate)
 
 **Purpose:** controlled real-project trials of PACT's small, durable
 decision memory and evidence-backed completion. This is a prerelease
