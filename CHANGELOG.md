@@ -28,7 +28,8 @@ Agent/Owner efficacy result.
   full-body lexical Decision bait to source-bound review hints instead
   of silently injecting unrelated implemented Decisions; explicit IDs,
   distinctive evidence and high-risk/full-Decision paths stay available.
-- [PRs #238–#239](https://github.com/ningcol/PACT/pull/239) measure
+- [PR #238](https://github.com/ningcol/PACT/pull/238) and
+  [PR #239](https://github.com/ningcol/PACT/pull/239) measure
   source-verified extra Decision candidate cost and reject a default
   "read only the first Decision" shortcut: it misses required targets
   in the original adr-viewer engineering scenarios. No retrieval-default
