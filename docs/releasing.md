@@ -9,56 +9,48 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 1. Replace any `-dev.*` runtime version in `.pact/VERSION` with the exact release version.
 2. Move/finalize **all merged pre-tag runtime fixes** under the exact release heading in `CHANGELOG.md`; reserve `Unreleased` for subsequent changes.
 3. Ensure `PACT Check` and the actual **fail-fast** 3 OS × 3 Python `PACT Core Matrix` are green for the **exact main commit intended for tagging, after the final documentation PR merge**. Never count a Windows PowerShell step as passing if an earlier native command may have failed but a later command overwrote its exit status.
-4. For a **stable** release, run and independently accept the applicable real coding-Agent/Owner trials when installation, Discovery, code mapping, Evidence or completion semantics change. Source-level fixtures and OS×Python unit tests cannot substitute. For an explicitly marked **RC pilot**, those trials may be pending, but the dedicated RC Owner/reviewer approval, source integrity, installation/upgrade smoke and all automated checks still apply. Never describe an RC as stable or as proving Agent obedience/Owner benefit.
+4. For a **stable** release, run and independently accept the applicable real coding-Agent/Owner trials when installation, Discovery, code mapping, Evidence or completion semantics change. Source-level fixtures and OS×Python unit tests cannot substitute. For an explicitly marked **RC pilot**, those trials may be pending; a maintainer can publish a tagged prerelease after exact-main CI, release portability and asset smoke succeed, without an extra Environment approval. Source integrity and installation/upgrade checks still apply. Never describe an RC as stable or as proving Agent obedience/Owner benefit.
 5. Resolve or explicitly document compatibility/migration behavior.
 6. Confirm `LICENSE` is present and release assets/checksums include the Apache-2.0 license file.
 
-## Two fail-closed channels (default: HOLD)
+## Two release channels: simple prerelease, protected stable
 
-`v0.4.0-rc.1` is for **controlled real-project pilots**, not a stable or
-independently approved Agent/Owner efficacy claim. The stable `v0.4.0`
-keeps stronger acceptance gates. Neither channel is approved merely by a
-passing test, an environment **name**, or a successful PR.
+`v0.4.0-rc.1` is an **experimental controlled-pilot prerelease**. It is
+not a stable-release or independently verified Agent/Owner efficacy claim.
+The tag-pushing maintainer initiates RC publication; **no**
+`pact-rc-approval` Environment, `PACT_RC_RELEASE_GO`, SHA-approval variable
+or secondary human deployment review is required.
 
-Both channels require the tag to equal the exact `.pact/VERSION`, identify
-the **current main HEAD**, and have successful GitHub **main-push** PACT Check
-and Core Matrix receipts for that same SHA. The tag workflow reruns all
-9 OS×Python combinations and the full source/installation smoke tests.
-It calls GitHub's per-workflow-run **environment approval history API** and
-**fails closed unless it contains an actual human `approved` review for the
-correct selected environment**. An empty history (including unconfigured
-environments) or an API failure blocks publication even when variables are
-set. The last publication step rechecks current main HEAD.
+For **both** release channels the immutable tag must match
+`.pact/VERSION` and point to the **current reviewed `main` HEAD**, with
+successful *main-push* PACT Check and 3 OS × 3 Python Core Matrix runs
+for that SHA. The release workflow additionally reruns the tagged
+9-cell matrix, source/schema/unit checks, asset builds, bootstrap smoke
+and checksums before publishing. A changed main commit, missing/failed
+CI, invalid tag or failed smoke stops publication.
 
-| Channel | Version / environment | Required Owner variables | Real Agent/Owner acceptance |
+| Channel | Tag | Human setup | Additional release conditions |
 | --- | --- | --- | --- |
-| RC pilot | `vX.Y.Z-rc.N` / `pact-rc-approval` | `PACT_RC_RELEASE_GO=GO` and `PACT_RC_RELEASE_APPROVED_SHA=<40-character exact main SHA>` | Not claimed; formal trial may still be pending |
-| Stable | `vX.Y.Z` / `pact-release-approval` | `PACT_RELEASE_GO=GO`, `PACT_RELEASE_APPROVED_SHA=<40-character exact main SHA>`, `PACT_AGENT_OWNER_GATES_APPROVED=true` | Independently completed and accepted before GO |
+| Experimental RC | `vX.Y.Z-rc.N` | Maintainer with tag-write permission; **no Environment or GO variables** | Exact-current-main CI, tagged matrix, source/build/asset validation; published as `prerelease`, **not latest** |
+| Stable | `vX.Y.Z` | Protected `pact-release-approval` Environment with Required reviewers | Actual approved GitHub run review, `PACT_RELEASE_GO=GO`, `PACT_RELEASE_APPROVED_SHA=<exact-main-SHA>`, `PACT_AGENT_OWNER_GATES_APPROVED=true`, plus all RC-grade checks |
 
-Do **not** set `PACT_AGENT_OWNER_GATES_APPROVED=true` solely because the
-engineering CI succeeded. Stable approval remains **HOLD** until genuine
-Agent/Owner acceptance is authorized.
+### Stable approval only
 
-### Human setup still required in GitHub Settings
+For the stable channel, a repository administrator must configure
+**Settings → Environments → `pact-release-approval`** with real
+Required reviewers and the three Environment-local variables above.
+An authorized human must approve **Review deployments → Approve and
+deploy** on the exact stable release workflow run. The policy verifies
+GitHub's authenticated per-run Environment-approval history; a named
+but unprotected environment, bypass, missing variables, malformed
+approval response or unapproved run fails closed.
 
-The repository administrator must create **both** GitHub Environments
-(`pact-rc-approval`, `pact-release-approval`) as relevant under
-**Settings → Environments** and configure **Required reviewers** for each.
-For the RC, put the two `PACT_RC_*` values in the **RC environment's
-variables**, not as a credential in code or a repository commit. Configure
-required reviewers in the stable environment independently and do not set
-its three GO/Owner acceptance variables until stable evidence exists.
-
-A GitHub run waiting for review requires a real human to select
-**Review deployments → Approve and deploy**. The selected reviewer should
-be an authorized person, not an Agent or workflow. If prevention of
-self-review is enabled, an independent authorized reviewer must approve.
-GitHub environment restrictions and their reviewer lists are not
-version-controlled; configuration **cannot** be inferred from these files.
-This workflow verifies an actual approved event for its exact run after
-that event occurs. Running `gh release create` outside this workflow is an
-administrative action outside these automated gates and is not authorized
-by passing CI.
+The stable-only approval Job must succeed before the common publisher
+can run. RC intentionally **skips** that Job and cannot turn a skipped
+stable approval into a stable release. Do **not** set
+`PACT_AGENT_OWNER_GATES_APPROVED=true` based on synthetic/unit or
+source-level checks; genuine real Agent/Owner acceptance remains open
+under #214, #28, #32 and release decision #63.
 
 ### RC pilot limitations and follow-up
 
@@ -98,8 +90,9 @@ commit must get its own main-push CI.
 These are test fixtures and sampled historical installations, **not a
 promise that every manually customized install will upgrade without
 intervention**, nor evidence that a real coding Agent honored a migrated
-Owner decision. Merging release documentation does **not** publish a
-tag or downloadable assets; those require human RC approval. **After publication**, repeat
+Owner decision. Changing the release workflow or merging documentation
+never creates a tag or downloadable assets: an authorized maintainer must
+push the RC tag after exact-main CI succeeds. **After publication**, repeat
 checksum/installation and representative 0.1/0.2/0.3/0.4-to-tag upgrades
 using the immutable `v0.4.0-rc.1` source, not moving `main`.
 
@@ -131,14 +124,13 @@ verify `pact.py doctor --strict`, `owner --strict`, `readiness`,
 `check`, and exact-ID `discover` of the important Decisions in that
 project. See [Distribution and Safe Upgrades](design/distribution-upgrades.md).
 
-**The RC release is still HOLD until** the administrator configures
-`pact-rc-approval` with Required reviewers and environment-local
-`PACT_RC_RELEASE_GO=GO` plus
-`PACT_RC_RELEASE_APPROVED_SHA=<the final reviewed 40-character main SHA>`,
-and a real authorized reviewer approves the exact release workflow.
-These conditions cannot be satisfied by a PR, a CI badge or a note in
-the repository. Do **not** set stable
-`PACT_AGENT_OWNER_GATES_APPROVED=true` based on the RC tests.
+**RC publication boundary:** a maintainer must push a valid
+`v0.4.0-rc.1` tag pointing to the exact, fully tested `main` commit.
+The tagged GitHub Actions workflow validates the same-source push CI,
+repeats the 9-cell matrix and builds/smokes assets automatically; it
+must finish **successfully** before the prerelease is considered
+published. There is **no additional RC Environment/GO approval**.
+Stable `v0.4.0` retains the independent human Agent/Owner gates.
 
 ## Tagging
 
@@ -148,8 +140,8 @@ are publishable by this workflow; `-dev.N`, `-alpha` and arbitrary
 suffixes are rejected. The current source version is `0.4.0-rc.1`.
 No tag or GitHub Release is created by merely merging this workflow.
 
-Once main Check + Core Matrix are green on its exact SHA, and the
-appropriate human reviewer/environment variables are configured:
+Once main Check + Core Matrix are green on the exact intended SHA,
+the authorized maintainer can create and push the RC tag:
 
 ```bash
 git fetch origin main
@@ -164,12 +156,12 @@ git tag -a v0.4.0-rc.1 -m "PACT v0.4.0-rc.1 pilot prerelease"
 git push origin refs/tags/v0.4.0-rc.1
 ```
 
-Do not tag until `PACT_RC_RELEASE_APPROVED_SHA` equals the **final** main
-commit being tagged (which changes when the release-documentation PR merges)
-and a real reviewer is assigned. If review or CI is
-missing, the run stays blocked or fails and publishes nothing. Never move
-or force-push a release tag to work around a failure; fix the missing
-evidence and use a new reviewed commit/version if necessary.
+Do not tag a stale or unrelated commit: the tag **must** resolve to
+the final `main` SHA with green main-push CI for that same commit.
+No extra RC reviewer/GO setup is needed. If the tag or CI gate fails,
+the workflow publishes nothing. Never move or force-push a release tag
+to work around a failure; fix the source/evidence first and select a
+new version if an immutable tag already exists.
 
 ## Automated GitHub Release
 
@@ -189,11 +181,11 @@ The workflow:
 - marks only `-rc.N` versions as experimental GitHub prereleases
   (not latest) with an explicit no-Agent/Owner-efficacy warning; `-dev.N`
   cannot publish;
-- verifies a real reviewer event for the selected environment, exact
-  approved commit variables and successful main-branch CI via authenticated
-  GitHub API before building/publishing;
-- retains the existing independent Agent/Owner approval requirement for
-  stable releases.
+- for RC, verifies **exact-main CI and tag identity**, with no human
+  Environment approval or `GO` variables;
+- for stable, requires an actual approved event for `pact-release-approval`,
+  exact approved SHA, Owner `GO` and genuine Agent/Owner acceptance
+  **before** the common publishing job can run.
 
 After an RC is actually published, verify its `prerelease` flag, attached
 `pact-bootstrap.py`, `pact.pyz`, `LICENSE`, `SHA256SUMS` and hashes
