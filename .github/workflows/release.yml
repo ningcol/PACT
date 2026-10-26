@@ -10,13 +10,12 @@ permissions:
 
 jobs:
   classify:
-    name: Validate immutable release tag and choose approval channel
+    name: Validate exact release tag and channel
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       channel: ${{ steps.version.outputs.channel }}
-      environment: ${{ steps.version.outputs.environment }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,15 +83,69 @@ jobs:
           # Evidence / Task Finish, on all three OS and Python versions.
           python -m unittest discover -s scripts/pact/tests -p 'test_*.py'
 
-  release:
+  stable_approval:
+    name: Stable-only human approval and Owner acceptance
     needs:
       - classify
       - portability
+    if: ${{ needs.classify.outputs.channel == 'stable' }}
     runs-on: ubuntu-latest
-    # Different required-reviewer environments for experimental RC and stable.
-    # An environment without real reviewer history fails closed in the policy
-    # step even if repository variables were manually set.
-    environment: ${{ needs.classify.outputs.environment }}
+    # Stable release retains the actual protected GitHub reviewer event.
+    environment: pact-release-approval
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Fail closed without genuine human review, Owner GO, real Agent/Owner acceptance and exact CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACT_RELEASE_GO: ${{ vars.PACT_RELEASE_GO }}
+          PACT_RELEASE_APPROVED_SHA: ${{ vars.PACT_RELEASE_APPROVED_SHA }}
+          PACT_AGENT_OWNER_GATES_APPROVED: ${{ vars.PACT_AGENT_OWNER_GATES_APPROVED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
+          TAG_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          # Environment approval is audited from this exact GitHub Actions
+          # run, after the protected stable approval job becomes executable.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
+            > "$RUNNER_TEMP/pact-release-approvals.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA&per_page=100" \
+            > "$RUNNER_TEMP/pact-release-check-runs.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA&per_page=100" \
+            > "$RUNNER_TEMP/pact-release-matrix-runs.json"
+          python scripts/release/release_policy.py gate \
+            --tag "$GITHUB_REF_NAME" --version-file .pact/VERSION \
+            --tag-sha "$TAG_SHA" --main-sha "$MAIN_SHA" \
+            --event "$GITHUB_EVENT_NAME" \
+            --approvals-file "$RUNNER_TEMP/pact-release-approvals.json" \
+            --check-runs-file "$RUNNER_TEMP/pact-release-check-runs.json" \
+            --matrix-runs-file "$RUNNER_TEMP/pact-release-matrix-runs.json"
+
+  release:
+    name: Publish approved stable or CI-verified RC
+    needs:
+      - classify
+      - portability
+      - stable_approval
+    # A skipped stable approval is expected ONLY for RC. Stable MUST
+    # have an actual successful protected approval job before publication.
+    if: >-
+      ${{ !cancelled() &&
+          needs.classify.result == 'success' &&
+          needs.portability.result == 'success' &&
+          ((needs.classify.outputs.channel == 'rc' && needs.stable_approval.result == 'skipped') ||
+           (needs.classify.outputs.channel == 'stable' && needs.stable_approval.result == 'success')) }}
+    runs-on: ubuntu-latest
+    # No Environment needed for RC; stable approval occurs in stable_approval.
     permissions:
       actions: read
       contents: write
@@ -104,37 +157,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fail closed without real GitHub environment reviewer, GO and exact-main green CI
+      - name: RC tag and exact-main CI gate, no Environment or GO
+        if: ${{ needs.classify.outputs.channel == 'rc' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          PACT_RC_RELEASE_GO: ${{ vars.PACT_RC_RELEASE_GO }}
-          PACT_RC_RELEASE_APPROVED_SHA: ${{ vars.PACT_RC_RELEASE_APPROVED_SHA }}
-          PACT_RELEASE_GO: ${{ vars.PACT_RELEASE_GO }}
-          PACT_RELEASE_APPROVED_SHA: ${{ vars.PACT_RELEASE_APPROVED_SHA }}
-          PACT_AGENT_OWNER_GATES_APPROVED: ${{ vars.PACT_AGENT_OWNER_GATES_APPROVED }}
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
           TAG_SHA="$(git rev-parse HEAD)"
           MAIN_SHA="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
-          test "$GITHUB_REF_TYPE" = "tag"
-
-          # GET responses come from this exact GitHub Actions run, not files
-          # authored by the Agent, a repository note or the tag's commit.
-          # An unconfigured/unprotected Environment yields no approved human
-          # review; an empty/failed API response can never publish a release.
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
-            > "$RUNNER_TEMP/pact-release-approvals.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA&per_page=100" \
             > "$RUNNER_TEMP/pact-release-check-runs.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA&per_page=100" \
             > "$RUNNER_TEMP/pact-release-matrix-runs.json"
-
           python scripts/release/release_policy.py gate \
             --tag "$GITHUB_REF_NAME" --version-file .pact/VERSION \
             --tag-sha "$TAG_SHA" --main-sha "$MAIN_SHA" \
             --event "$GITHUB_EVENT_NAME" \
-            --approvals-file "$RUNNER_TEMP/pact-release-approvals.json" \
             --check-runs-file "$RUNNER_TEMP/pact-release-check-runs.json" \
             --matrix-runs-file "$RUNNER_TEMP/pact-release-matrix-runs.json"
 
