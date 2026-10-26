@@ -41,23 +41,33 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertIn("release:\n    needs:", text)
         self.assertIn("contents: write", text)
 
-    def test_release_requires_protected_owner_go_on_exact_main_commit(self) -> None:
+    def test_rc_needs_no_environment_but_stable_requires_real_review(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
-        # Channel selection is derived from strict release-policy source,
-        # not an unprotected default or a mere 'pact-rc' job name.
-        self.assertIn("needs.classify.outputs.environment", text)
-        self.assertIn("PACT_RC_RELEASE_GO:", text)
-        self.assertIn("PACT_RC_RELEASE_APPROVED_SHA:", text)
-        self.assertIn("PACT_RELEASE_GO:", text)
-        self.assertIn("PACT_RELEASE_APPROVED_SHA:", text)
-        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", text)
-        self.assertIn("actions: read", text)
-        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", text)
-        self.assertIn("actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA", text)
-        self.assertIn("actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA", text)
-        self.assertIn("git ls-remote --exit-code origin refs/heads/main", text)
-        self.assertIn('test "$TAG_SHA" = "$MAIN_SHA"', text)
-        self.assertIn("scripts/release/release_policy.py gate", text)
+        stable, publish = text.split("\n  stable_approval:\n", 1)[1].split(
+            "\n  release:\n", 1
+        )
+        self.assertIn("if: ${{ needs.classify.outputs.channel == 'stable' }}", stable)
+        self.assertIn("environment: pact-release-approval", stable)
+        self.assertIn("PACT_RELEASE_GO:", stable)
+        self.assertIn("PACT_RELEASE_APPROVED_SHA:", stable)
+        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", stable)
+        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", stable)
+        self.assertIn("scripts/release/release_policy.py gate", stable)
+        self.assertNotIn("environment: ${{ needs.classify.outputs.environment }}", text)
+        self.assertNotIn("environment: pact-rc-approval", text)
+        self.assertNotIn("PACT_RC_RELEASE_GO:", text)
+        self.assertNotIn("PACT_RC_RELEASE_APPROVED_SHA:", text)
+        self.assertIn("needs.stable_approval.result == 'skipped'", publish)
+        self.assertIn("needs.stable_approval.result == 'success'", publish)
+        self.assertIn("needs.classify.result == 'success'", publish)
+        self.assertIn("needs.portability.result == 'success'", publish)
+        self.assertIn("!cancelled()", publish)
+        self.assertIn("if: ${{ needs.classify.outputs.channel == 'rc' }}", publish)
+        self.assertIn("scripts/release/release_policy.py gate", publish)
+        self.assertIn("git ls-remote --exit-code origin refs/heads/main", publish)
+        self.assertIn('test "$TAG_SHA" = "$MAIN_SHA"', publish)
+        self.assertIn("actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA", publish)
+        self.assertIn("actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA", publish)
         self.assertLess(
             text.index("scripts/release/release_policy.py gate"),
             text.index("gh release create"),
@@ -66,15 +76,14 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             PROJECT_ROOT / "scripts/release/release_policy.py"
         ).read_text(encoding="utf-8")
         for gate in (
-            "PACT_RC_RELEASE_GO",
-            "PACT_RC_RELEASE_APPROVED_SHA",
             "PACT_RELEASE_GO",
             "PACT_RELEASE_APPROVED_SHA",
             "PACT_AGENT_OWNER_GATES_APPROVED",
-            "pact-rc-approval",
             "pact-release-approval",
         ):
             self.assertIn(gate, policy_text)
+        self.assertNotIn("PACT_RC_RELEASE_APPROVED_SHA", policy_text)
+        self.assertNotIn("PACT_RC_RELEASE_GO", policy_text)
 
     def test_release_builds_and_smokes_exact_assets_before_publish(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
