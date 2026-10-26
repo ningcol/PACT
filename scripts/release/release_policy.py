@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed, human-reviewed PACT RC/stable release policy.
+"""Two release channels: CI-verified RC and human-reviewed stable releases.
 
-The tag workflow fetches GitHub's actual per-run environment approval history
-and exact-main CI results using an Actions-read token. An environment name or
-a repository variable on its own is NOT proof that reviewers are configured.
-This module neither creates tags nor publishes releases.
+Both channels require the exact-current-main tag and genuine successful
+main-push CI. Only stable also requires an authenticated human Environment
+review, Owner GO and independent Agent/Owner acceptance. This module never
+creates tags or publishes releases.
 """
 from __future__ import annotations
 
@@ -21,10 +21,7 @@ SEMVER = re.compile(
     r"(?:(-rc\.(?:0|[1-9][0-9]*)))?$"
 )
 SHA = re.compile(r"^[0-9a-f]{40}$")
-ENVIRONMENT = {
-    "rc": "pact-rc-approval",
-    "stable": "pact-release-approval",
-}
+ENVIRONMENT = {"stable": "pact-release-approval"}
 CI_WORKFLOWS = {
     "pact-check": "PACT Check",
     "core-matrix": "PACT Core Matrix",
@@ -115,41 +112,38 @@ def require_release_approval(
     ci_reports: Mapping[str, object],
     event: str = "push",
 ) -> None:
-    if channel not in ENVIRONMENT:
+    if channel not in {"rc", "stable"}:
         raise ReleaseHold("invalid release channel")
     if event != "push":
         raise ReleaseHold("only an immutable version-tag push can publish")
     require_sha(tag_sha, main_sha)
     require_ci_receipts(ci_reports, tag_sha)
 
-    expected_env = ENVIRONMENT[channel]
+    # An experimental RC is published by an authorized tag writer after
+    # exact-main and CI validation. No Environment, GO or synthetic
+    # Agent/Owner efficacy signoff is needed for this release channel.
+    if channel == "rc":
+        return
+
+    # Stable keeps the independent human gate. An unconfigured/unprotected
+    # Environment or failed approvals API must not be treated as approval.
+    expected_env = ENVIRONMENT["stable"]
     if not has_real_environment_approval(approvals, expected_env):
         raise ReleaseHold(
             f"{expected_env}: missing authenticated approved environment review "
             "in GitHub's per-run audit history; an unprotected environment "
             "or a bypass cannot release"
         )
-    if channel == "rc":
-        go = env.get("PACT_RC_RELEASE_GO")
-        approved = env.get("PACT_RC_RELEASE_APPROVED_SHA")
-        if go != "GO" or approved != tag_sha:
-            raise ReleaseHold(
-                "RC requires explicit PACT_RC_RELEASE_GO=GO and "
-                "PACT_RC_RELEASE_APPROVED_SHA equal to the exact tag commit"
-            )
-        # RC engineering trial is permitted without falsely claiming real
-        # Agent/Owner efficacy. This does not relax the stable gate below.
-    else:
-        if (
-            env.get("PACT_RELEASE_GO") != "GO"
-            or env.get("PACT_RELEASE_APPROVED_SHA") != tag_sha
-            or env.get("PACT_AGENT_OWNER_GATES_APPROVED") != "true"
-        ):
-            raise ReleaseHold(
-                "stable release requires protected GO, exact approved SHA, "
-                "and genuine PACT_AGENT_OWNER_GATES_APPROVED=true; "
-                "developer engineering trials do not meet this gate"
-            )
+    if (
+        env.get("PACT_RELEASE_GO") != "GO"
+        or env.get("PACT_RELEASE_APPROVED_SHA") != tag_sha
+        or env.get("PACT_AGENT_OWNER_GATES_APPROVED") != "true"
+    ):
+        raise ReleaseHold(
+            "stable release requires protected GO, exact approved SHA, "
+            "and genuine PACT_AGENT_OWNER_GATES_APPROVED=true; "
+            "developer engineering trials do not meet this gate"
+        )
 
 
 def read_json(path: str) -> object:
@@ -172,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     gate.add_argument("--tag-sha", required=True)
     gate.add_argument("--main-sha", required=True)
     gate.add_argument("--event", default="push")
-    gate.add_argument("--approvals-file", required=True)
+    gate.add_argument("--approvals-file", help="required for stable, unused for RC")
     gate.add_argument("--check-runs-file", required=True)
     gate.add_argument("--matrix-runs-file", required=True)
     args = parser.parse_args(argv)
@@ -182,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "classify":
             data = {
                 "channel": channel,
-                "environment": ENVIRONMENT[channel],
                 "prerelease": "true" if channel == "rc" else "false",
             }
             if args.github_output:
@@ -191,22 +184,26 @@ def main(argv: list[str] | None = None) -> int:
                         output.write(f"{key}={value}\n")
             print(json.dumps(data, sort_keys=True))
         else:
+            if channel == "stable" and not args.approvals_file:
+                raise ReleaseHold("stable requires an authenticated approvals file")
             require_release_approval(
                 channel, args.tag_sha, args.main_sha,
                 env=os.environ,
-                approvals=read_json(args.approvals_file),
+                approvals=read_json(args.approvals_file) if channel == "stable" else None,
                 ci_reports={
                     "pact-check": read_json(args.check_runs_file),
                     "core-matrix": read_json(args.matrix_runs_file),
                 },
                 event=args.event,
             )
-            print(json.dumps({
+            result = {
                 "release_gate": "AUTHORIZED",
                 "channel": channel, "commit": args.tag_sha,
-                "reviewed_environment": ENVIRONMENT[channel],
-                "main_ci_verified": ["PACT Check", "PACT Core Matrix"],
-            }))
+                "main_ci_verified": ["PACT Check", "Core Matrix"],
+            }
+            if channel == "stable":
+                result["reviewed_environment"] = ENVIRONMENT["stable"]
+            print(json.dumps(result))
         return 0
     except (ReleaseHold, OSError, UnicodeError) as exc:
         print(f"Release HOLD: {exc}", file=sys.stderr)
