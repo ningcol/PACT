@@ -1,4 +1,4 @@
-"""RC/stable release gates: malformed tags, missing reviewer audit or Owner GO fail closed."""
+"""RC publishes on reviewed main CI; stable retains protected human approval."""
 from __future__ import annotations
 
 import contextlib
@@ -44,13 +44,6 @@ def approved(environment: str) -> list:
     }]
 
 
-def rc_vars() -> dict:
-    return {
-        "PACT_RC_RELEASE_GO": "GO",
-        "PACT_RC_RELEASE_APPROVED_SHA": SHA,
-    }
-
-
 def stable_vars() -> dict:
     return {
         "PACT_RELEASE_GO": "GO",
@@ -64,9 +57,12 @@ class ReleaseApprovalTests(unittest.TestCase):
              approvals=UNSET, ci=None, event="push"):
         return policy.require_release_approval(
             channel, sha, main,
-            env=env if env is not None else rc_vars(),
-            approvals=approved(policy.ENVIRONMENT[channel])
-            if approvals is UNSET else approvals,
+            env=env if env is not None else (
+                stable_vars() if channel == "stable" else {}
+            ),
+            approvals=(
+                approved(policy.ENVIRONMENT["stable"]) if channel == "stable" else None
+            ) if approvals is UNSET else approvals,
             ci_reports=ci if ci is not None else checked_ci(),
             event=event,
         )
@@ -90,19 +86,19 @@ class ReleaseApprovalTests(unittest.TestCase):
                 with self.assertRaises(policy.ReleaseHold):
                     policy.classify(tag, version)
 
-    def test_rc_may_ship_for_trials_without_fake_agent_owner_claim(self):
-        # RC has an explicit dedicated human review, SHA+GO, but not an
-        # invented positive real Agent/Owner trial. Stable remains separate.
-        self.gate(channel="rc")
+    def test_rc_publish_requires_no_environment_owner_go_or_agent_claim(self):
+        self.gate(channel="rc", env={}, approvals=None)
+        self.gate(channel="rc", env={}, approvals=[])
+        self.gate(channel="rc", env={}, approvals={"untrusted": True})
         self.gate(channel="rc", env={
-            **rc_vars(), "PACT_AGENT_OWNER_GATES_APPROVED": "false",
+            "PACT_AGENT_OWNER_GATES_APPROVED": "false",
         })
         self.gate(channel="stable", env=stable_vars())
 
-    def test_stable_cannot_use_rc_env_or_rc_variables(self):
+    def test_stable_cannot_use_unprotected_env_or_missing_owner_go(self):
         for approvals, vars_ in [
             (approved("pact-rc-approval"), stable_vars()),
-            (approved("pact-release-approval"), rc_vars()),
+            (approved("pact-release-approval"), {}),
             (approved("pact-release-approval"), {
                 **stable_vars(), "PACT_AGENT_OWNER_GATES_APPROVED": "false",
             }),
@@ -114,137 +110,165 @@ class ReleaseApprovalTests(unittest.TestCase):
                 with self.assertRaises(policy.ReleaseHold):
                     self.gate("stable", env=vars_, approvals=approvals)
 
-    def test_unprotected_environment_or_bypass_cannot_release(self):
+    def test_stable_unprotected_environment_or_bypass_cannot_release(self):
         for records in [
-            [],
-            {},
-            None,
+            [], {}, None,
             [{"state": "approved", "environments": [
-                {"name": "pact-rc-approval"}
+                {"name": "pact-release-approval"},
             ]}],
             [{"state": "bypassed", "environments": [
-                {"name": "pact-rc-approval"}
+                {"name": "pact-release-approval"},
             ], "user": {"login": "owner", "type": "User"}}],
             [{"state": "rejected", "environments": [
-                {"name": "pact-rc-approval"}
+                {"name": "pact-release-approval"},
             ], "user": {"login": "owner", "type": "User"}}],
-            approved("pact-release-approval"),
+            approved("pact-rc-approval"),
             [{"state": "approved", "environments": [
-                {"name": "pact-rc-approval"}
-            ], "user": {"login": "trusted-bot", "type": "Bot"}}],
+                {"name": "pact-release-approval"},
+            ], "user": {"login": "bot", "type": "Bot"}}],
         ]:
             with self.subTest(records=records):
                 with self.assertRaises(policy.ReleaseHold):
-                    self.gate(approvals=records)
+                    self.gate(channel="stable", env=stable_vars(), approvals=records)
 
-    def test_failed_or_cross_sha_main_ci_cannot_release(self):
-        for key in ("pact-check", "core-matrix"):
-            bad = checked_ci()
-            bad[key]["workflow_runs"][0]["conclusion"] = "failure"
+    def test_both_channels_reject_failed_cross_sha_or_non_main_push_ci(self):
+        for channel in ("rc", "stable"):
+            for key in ("pact-check", "core-matrix"):
+                for field, bad_value in [
+                    ("conclusion", "failure"),
+                    ("head_sha", DIFFERENT_SHA),
+                    ("head_branch", "release-rc"),
+                    ("event", "pull_request"),
+                    ("status", "in_progress"),
+                ]:
+                    with self.subTest(channel=channel, key=key, field=field):
+                        bad = checked_ci()
+                        bad[key]["workflow_runs"][0][field] = bad_value
+                        with self.assertRaises(policy.ReleaseHold):
+                            self.gate(channel=channel, ci=bad)
             with self.assertRaises(policy.ReleaseHold):
-                self.gate(ci=bad)
-            bad = checked_ci()
-            bad[key]["workflow_runs"][0]["head_sha"] = DIFFERENT_SHA
-            with self.assertRaises(policy.ReleaseHold):
-                self.gate(ci=bad)
-            bad = checked_ci()
-            bad[key]["workflow_runs"][0]["head_branch"] = "release-rc"
-            with self.assertRaises(policy.ReleaseHold):
-                self.gate(ci=bad)
-            bad = checked_ci()
-            bad[key]["workflow_runs"][0]["event"] = "pull_request"
-            with self.assertRaises(policy.ReleaseHold):
-                self.gate(ci=bad)
-        with self.assertRaises(policy.ReleaseHold):
-            self.gate(ci={})
+                self.gate(channel=channel, ci={})
 
-    def test_missing_go_sha_and_event_always_block(self):
-        with self.assertRaisesRegex(policy.ReleaseHold, "exact tag commit"):
-            self.gate(env={"PACT_RC_RELEASE_GO": "GO"})
-        with self.assertRaisesRegex(policy.ReleaseHold, "missing authenticated"):
-            self.gate(approvals=[])
-        with self.assertRaisesRegex(policy.ReleaseHold, "differs"):
-            self.gate(main=DIFFERENT_SHA)
-        with self.assertRaisesRegex(policy.ReleaseHold, "immutable version-tag push"):
-            self.gate(event="workflow_dispatch")
-        for sha in ("", "ab1", "n" * 40):
-            with self.assertRaises(policy.ReleaseHold):
-                self.gate(sha=sha, main=sha)
+    def test_stable_missing_go_and_both_channels_wrong_sha_or_event_block(self):
+        for vars_ in [
+            {},
+            {"PACT_RELEASE_GO": "GO"},
+            {**stable_vars(), "PACT_RELEASE_GO": "WAIT"},
+            {**stable_vars(), "PACT_RELEASE_APPROVED_SHA": DIFFERENT_SHA},
+            {**stable_vars(), "PACT_AGENT_OWNER_GATES_APPROVED": "false"},
+        ]:
+            with self.subTest(vars=vars_):
+                with self.assertRaises(policy.ReleaseHold):
+                    self.gate("stable", env=vars_)
+        for channel in ("rc", "stable"):
+            with self.assertRaisesRegex(policy.ReleaseHold, "differs"):
+                self.gate(channel=channel, main=DIFFERENT_SHA)
+            with self.assertRaisesRegex(policy.ReleaseHold, "immutable version-tag push"):
+                self.gate(channel=channel, event="workflow_dispatch")
+            for sha in ("", "ab1", "n" * 40):
+                with self.assertRaises(policy.ReleaseHold):
+                    self.gate(channel=channel, sha=sha, main=sha)
 
-    def test_release_workflow_wires_actual_remote_approvals_before_publication(self):
-        raw = (
-            ROOT / ".github" / "workflows" / "release.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("needs.classify.outputs.environment", raw)
-        self.assertIn("actions: read", raw)
-        self.assertIn("PACT_RC_RELEASE_APPROVED_SHA:", raw)
-        self.assertIn("PACT_RELEASE_APPROVED_SHA:", raw)
-        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", raw)
-        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", raw)
+    def test_workflow_stable_approval_cannot_be_bypassed_for_release(self):
+        raw = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        protected, publish = raw.split("\n  stable_approval:\n", 1)[1].split(
+            "\n  release:\n", 1
+        )
+        self.assertIn("environment: pact-release-approval", protected)
+        self.assertIn("PACT_RELEASE_APPROVED_SHA:", protected)
+        self.assertIn("PACT_AGENT_OWNER_GATES_APPROVED:", protected)
+        self.assertIn("actions/runs/$GITHUB_RUN_ID/approvals", protected)
+        self.assertIn("scripts/release/release_policy.py gate", protected)
+        self.assertNotIn("environment:", publish.replace(
+            "# No Environment needed for RC; stable approval occurs in stable_approval.",
+            "",
+        ))
+        self.assertIn("needs.stable_approval.result == 'skipped'", publish)
+        self.assertIn("needs.stable_approval.result == 'success'", publish)
+        self.assertIn("needs.portability.result == 'success'", publish)
+        self.assertIn("!cancelled()", publish)
+        self.assertIn("needs.classify.outputs.channel == 'rc'", publish)
+        self.assertIn("needs.classify.outputs.channel == 'stable'", publish)
+        self.assertNotIn("PACT_RC_RELEASE_GO:", raw)
+        self.assertNotIn("PACT_RC_RELEASE_APPROVED_SHA:", raw)
         self.assertIn("actions/workflows/pact-check.yml/runs?head_sha=$TAG_SHA", raw)
         self.assertIn("actions/workflows/core-matrix.yml/runs?head_sha=$TAG_SHA", raw)
-        self.assertIn("scripts/release/release_policy.py gate", raw)
-        self.assertLess(
-            raw.index("scripts/release/release_policy.py gate"),
-            raw.index("gh release create"),
-        )
+        self.assertLess(raw.index("scripts/release/release_policy.py gate"),
+                        raw.index("gh release create"))
         self.assertIn("--verify-tag", raw)
         self.assertIn("--prerelease --latest=false", raw)
         self.assertIn("EXPERIMENTAL RC FOR REAL-PROJECT PILOTS ONLY", raw)
-        self.assertIn("dist/SHA256SUMS", raw)
-        self.assertIn("dist/LICENSE", raw)
-        self.assertIn("dist/pact.pyz", raw)
-        self.assertIn(
-            "python scripts/release/release_assets.py --output-dir dist --smoke", raw
-        )
+        for asset in ("dist/SHA256SUMS", "dist/LICENSE", "dist/pact.pyz"):
+            self.assertIn(asset, raw)
+        self.assertIn("python scripts/release/release_assets.py --output-dir dist --smoke", raw)
         for version in ("3.11", "3.12", "3.13"):
             self.assertIn(version, raw)
         for runner in ("windows-latest", "macos-latest", "ubuntu-latest"):
             self.assertIn(runner, raw)
 
-    def test_cli_classify_and_gates_remain_verifiable_offline(self):
+    def test_cli_classify_rc_and_stable_gates_remain_verifiable_offline(self):
         with tempfile.TemporaryDirectory() as td:
             folder = pathlib.Path(td)
             version = folder / "VERSION"
             version.write_text("0.4.0-rc.1\n")
             github_output = folder / "output.txt"
             with contextlib.redirect_stdout(io.StringIO()):
-                code = policy.main([
+                self.assertEqual(policy.main([
                     "classify", "--tag", "v0.4.0-rc.1",
                     "--version-file", str(version),
                     "--github-output", str(github_output),
-                ])
-            self.assertEqual(code, 0)
+                ]), 0)
             self.assertEqual(github_output.read_text().splitlines(), [
-                "channel=rc",
-                "environment=pact-rc-approval",
-                "prerelease=true",
+                "channel=rc", "prerelease=true",
             ])
             files = {}
             for name, data in [
-                ("approvals", approved("pact-rc-approval")),
+                ("approvals", approved("pact-release-approval")),
                 ("check", checked_ci()["pact-check"]),
                 ("matrix", checked_ci()["core-matrix"]),
             ]:
                 path = folder / (name + ".json")
                 path.write_text(json.dumps(data))
                 files[name] = str(path)
-            argv = [
-                "gate", "--tag", "v0.4.0-rc.1",
-                "--version-file", str(version),
+            base = [
                 "--tag-sha", SHA, "--main-sha", SHA,
-                "--approvals-file", files["approvals"],
                 "--check-runs-file", files["check"],
                 "--matrix-runs-file", files["matrix"],
             ]
-            with mock.patch.dict("os.environ", rc_vars(), clear=True):
-                with contextlib.redirect_stdout(io.StringIO()) as buf:
-                    self.assertEqual(policy.main(argv), 0)
-                self.assertIn('"release_gate": "AUTHORIZED"', buf.getvalue())
+            rc = [
+                "gate", "--tag", "v0.4.0-rc.1",
+                "--version-file", str(version), *base,
+            ]
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with contextlib.redirect_stdout(io.StringIO()) as result:
+                    self.assertEqual(policy.main(rc), 0)
+                output = json.loads(result.getvalue())
+                self.assertEqual(output["channel"], "rc")
+                self.assertNotIn("reviewed_environment", output)
+            version.write_text("0.4.0\n")
+            stable = [
+                "gate", "--tag", "v0.4.0",
+                "--version-file", str(version), *base,
+            ]
+            with mock.patch.dict("os.environ", stable_vars(), clear=True):
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertEqual(policy.main(stable), 2)
+                self.assertIn("stable requires an authenticated approvals file", err.getvalue())
+                with contextlib.redirect_stdout(io.StringIO()) as result:
+                    self.assertEqual(policy.main([
+                        *stable, "--approvals-file", files["approvals"],
+                    ]), 0)
+                self.assertEqual(
+                    json.loads(result.getvalue())["reviewed_environment"],
+                    "pact-release-approval",
+                )
             with mock.patch.dict("os.environ", {}, clear=True):
                 with contextlib.redirect_stderr(io.StringIO()) as err:
-                    self.assertEqual(policy.main(argv), 2)
+                    self.assertEqual(policy.main([
+                        *stable, "--approvals-file", files["approvals"],
+                    ]), 2)
                 self.assertIn("Release HOLD", err.getvalue())
+
 
 
 if __name__ == "__main__":
