@@ -38,8 +38,13 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
     def test_release_keeps_publish_permission_scoped_to_release_job(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", text)
-        self.assertIn("release:\n    needs:", text)
-        self.assertIn("contents: write", text)
+        self.assertIn("release:\n    name: Publish approved stable or CI-verified RC\n    needs:", text)
+        stable, publish = text.split("\n  stable_approval:\n", 1)[1].split(
+            "\n  release:\n", 1
+        )
+        self.assertIn("contents: read", stable)
+        self.assertNotIn("contents: write", stable)
+        self.assertIn("contents: write", publish)
 
     def test_rc_needs_no_environment_but_stable_requires_real_review(self) -> None:
         text = RELEASE.read_text(encoding="utf-8")
