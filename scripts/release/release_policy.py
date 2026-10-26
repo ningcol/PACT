@@ -199,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             result = {
                 "release_gate": "AUTHORIZED",
                 "channel": channel, "commit": args.tag_sha,
-                "main_ci_verified": ["PACT Check", "Core Matrix"],
+                "main_ci_verified": ["PACT Check", "PACT Core Matrix"],
             }
             if channel == "stable":
                 result["reviewed_environment"] = ENVIRONMENT["stable"]
