@@ -16,6 +16,18 @@ decision memory and evidence-backed completion. This is a prerelease
 engineering candidate, **not** a stable-release claim or an independent
 Agent/Owner efficacy result.
 
+### RC publication simplified; stable approval preserved
+
+- A maintainer may push the `v0.4.0-rc.1` tag at the exact reviewed,
+  green `main` commit. The tagged workflow checks the 9 OS × Python
+  combinations, release source, bootstrap, checksums, and publishes a
+  `prerelease` (not `latest`) with an explicit no-Agent/Owner-efficacy
+  warning. There is **no additional RC Environment or GO variable**.
+- Stable `v0.4.0` still requires a protected `pact-release-approval`
+  Job with authenticated human review, exact Owner GO and genuine
+  Agent/Owner acceptance before the common release Job is eligible.
+  Neither channel can publish on a stale tag or failed exact-main CI.
+
 ### Final candidate: Decision recall, completion and upgrade safety (PRs #235–#241)
 
 - [PR #235](https://github.com/ningcol/PACT/pull/235) locks PACT's original
@@ -54,12 +66,14 @@ were green for the pre-documentation main commit. The expanded
 [historical install/upgrade 4/4 validation](https://github.com/ningcol/PACT/actions/runs/40153967276)
 and [privacy/pilot regression](https://github.com/ningcol/PACT/actions/runs/40153967306)
 also passed on the tested PR head. **After this release-documentation change,
-the final main commit must pass its own CI before any tag or GO.**
+the final main commit must pass its own CI before any release tag.**
 
-**Release boundary:** no GitHub tag, Release assets, human RC Environment
-approval, independently observed coding-Agent obedience or measured Owner
-benefit has been established by these PRs. Keep #221, #214, #28, #32 and
-the release decision #63 open; stable `v0.4.0` remains HOLD.
+**Release boundary:** documentation and green CI alone do not publish
+a tag or GitHub Release. A maintainer-triggered RC tag may publish after
+exact-main and tagged CI plus asset checks, without an additional
+Environment approval. No independently observed coding-Agent obedience
+or measured Owner benefit is claimed. Keep #221, #214, #28, #32 and
+release decision #63 open; stable `v0.4.0` remains HOLD.
 
 ### Call-chain trust and concurrency hardening (PR #234)
 
@@ -137,13 +151,13 @@ the release decision #63 open; stable `v0.4.0` remains HOLD.
   for custom retired policy, missing IDs or unfinished historical tasks.
   The historical 0.1/0.2/0.3 upgrade cases and an early 0.4 checkout
   passed the extended four-version engineering matrix in PR #241.
-- Separate experimental RC and stable release approval channels: an RC
-  requires a protected GitHub environment's **actual human review** plus
-  Owner GO bound to exact reviewed main SHA, main/portable/full unit CI,
-  and validated checksummed assets. Stable still requires independently
-  accepted real Agent/Owner gates. No environment/GO approvals, tag, GitHub
-  Release, independent model trial or Owner benefit are claimed by this
-  code change. RC artifacts must be labelled for pilot use only.
+- Separate experimental RC from stable release enforcement: the original
+  RC-specific Environment/Owner GO was subsequently simplified before
+  publication. RC now requires a version-matching tag at exact green
+  `main` plus tagged portability/source/asset checks, without another
+  deployment approval. Stable still requires a genuine protected
+  human review, exact Owner GO and independently accepted Agent/Owner
+  trials. RC assets remain explicitly labeled experimental.
 
 
 
