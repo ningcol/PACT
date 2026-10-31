@@ -1,0 +1,95 @@
+name: PACT RC1 Community ADR Stage 1 (no model)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/community-platform-rc1-stage1.yml"
+      - "scripts/benchmark/community_platform_rc1_stage1.py"
+      - "benchmarks/decision-memory/community-platform-stage1-*.json"
+      - "docs/evaluation/community-platform-rc1-stage1-*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-public-original-adr-probe:
+    name: No-model source-bound Decision retrieval diagnostic (not an Agent trial)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact PACT experimental branch head, with no write credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact Git source HEAD
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e 7592efd3393ff568758400ff06d7e2e5b3315a2f^{commit}
+
+      - name: Set up stdlib Python only
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone public ADR upstream read-only at immutable commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/pact-community-platform-adr-stage1"
+          echo "UPSTREAM_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/What-We-Will/community-platform.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet 52ca3e7cecab0a1568158921359cc743fdd0954a
+          test "$(git -C "$TARGET" rev-parse HEAD)" = 52ca3e7cecab0a1568158921359cc743fdd0954a
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+          echo "No upstream scripts, npm dependencies or external models will run."
+
+      - name: Execute pinned PACT RC1 installed-runtime Decision probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          result_path="$RUNNER_TEMP/community-platform-stage1-raw.json"
+          exit_code=0
+          python scripts/benchmark/community_platform_rc1_stage1.py \
+            --target "$UPSTREAM_TARGET" \
+            > "$result_path" || exit_code=$?
+          cat "$result_path"
+          echo "RC1 source pin: 7592efd3393ff568758400ff06d7e2e5b3315a2f"
+          echo "Evaluator CLI exit code: $exit_code"
+          test "$exit_code" -eq 0
+
+      - name: Print strictly qualified developer-oracle scores
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          r = json.loads((Path(os.environ["RUNNER_TEMP"]) /
+              "community-platform-stage1-raw.json").read_text(encoding="utf-8"))
+          assert r["engineering_safety_gate"] == "PASS"
+          assert r["real_coding_agent_executed"] is False
+          assert r["owner_validation"] is False
+          assert r["release_gate"] == "HOLD"
+          print("Mechanical probe successful. Semantic oracle is NONBLIND.")
+          for key, value in r.get("scores", {}).items():
+              if key not in ("source_rows",):
+                  print(key, value)
+          PY
+
+      - name: Preserve raw success/failure receipt on PACT Actions only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pact-rc1-community-platform-stage1-raw
+          path: ${{ runner.temp }}/community-platform-stage1-raw.json
+          if-no-files-found: warn
+          retention-days: 30
