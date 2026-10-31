@@ -228,6 +228,9 @@ class InstalledDefaultWeakTests(unittest.TestCase):
             ("--risk", "low", "--query", self.TASK, "--query", "CSV"),
             ("--risk", "low", "--query", "Rename"),
             ("--risk", "low", "--scope-first", "--full-decisions"),
+            ("--risk", "high", "--scope-first"),
+            ("--risk", "low", "--scope-first", "--intent", "history"),
+            ("--risk", "low", "--scope-first", "--query", self.TASK, "--query", "CSV"),
         ]
         for flags in modes:
             with self.subTest(flags=flags):
@@ -235,22 +238,23 @@ class InstalledDefaultWeakTests(unittest.TestCase):
                 self.assertIn(self.WEAK, packet["decisions"])
                 self.assertNotIn("weak_decision_hints", packet)
 
-    @staticmethod
-    def assert_fallback_context_parity(default, scoped, *, status):
+    def assert_fallback_context_parity(self, default, scoped, *, status):
         """Only route diagnostics may differ without a usable unique Domain."""
-        assert scoped["scope_route"]["status"] == status
-        assert scoped["scope_route"]["restricted_selection"] is False
-        assert scoped["decisions"] == default["decisions"]
-        assert scoped["applicable_rules"] == default["applicable_rules"]
-        assert [
+        self.assertEqual(scoped["scope_route"]["status"], status)
+        self.assertFalse(scoped["scope_route"]["restricted_selection"])
+        self.assertEqual(scoped["decisions"], default["decisions"])
+        self.assertEqual(scoped["applicable_rules"], default["applicable_rules"])
+        self.assertEqual([
             (row["id"], row["path"], row["sha256"])
             for row in scoped["artifacts"]
-        ] == [
+        ], [
             (row["id"], row["path"], row["sha256"])
             for row in default["artifacts"]
-        ]
-        assert scoped.get("weak_decision_hints") == default.get("weak_decision_hints")
-        assert scoped["context_budget"] == default["context_budget"]
+        ])
+        self.assertEqual(
+            scoped.get("weak_decision_hints"), default.get("weak_decision_hints"),
+        )
+        self.assertEqual(scoped["context_budget"], default["context_budget"])
 
     def test_unmapped_scope_first_keeps_low_medium_default_weak_deferral(self):
         """Source-backed RED: no Domain must not disable default de-noising."""
@@ -266,6 +270,40 @@ class InstalledDefaultWeakTests(unittest.TestCase):
                     [x["id"] for x in default["weak_decision_hints"]["candidates"]],
                     [self.WEAK],
                 )
+
+    def test_unmapped_scope_deferred_decision_still_blocks_unreviewed_finish(self):
+        """Default fallback must keep SHA-bound mandatory Convergence coverage."""
+        packet = self.envelope("--risk", "low", "--scope-first")
+        self.assertEqual(packet["scope_route"]["status"], "unmapped")
+        self.assertNotIn(self.WEAK, packet["decisions"])
+        group = packet["weak_decision_hints"]
+        self.assertEqual(group["truncated_candidates"], 0)
+        self.assertEqual([x["id"] for x in group["candidates"]], [self.WEAK])
+        path = self.root / "fallback-context-review.json"
+        path.write_text(json.dumps(packet), encoding="utf-8")
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        coverage = [
+            {"path": item["path"], "disposition": "aligned",
+             "rationale": "Source read and checked"}
+            for item in packet["artifacts"]
+        ]
+        report = {"context_sha256": checksum, "coverage": coverage}
+        errors, summary = convergence_coverage.review(
+            packet, report, root=self.root, context_path=path,
+            expected_context_sha256=checksum,
+        )
+        self.assertTrue(errors)
+        self.assertIn(self.weak_path, summary["missing_artifacts"])
+        report["coverage"].append({
+            "path": self.weak_path,
+            "disposition": "not-applicable",
+            "rationale": "Inspected source; this local rename does not change policy.",
+        })
+        cleared, _ = convergence_coverage.review(
+            packet, report, root=self.root, context_path=path,
+            expected_context_sha256=checksum,
+        )
+        self.assertEqual(cleared, [])
 
     def test_ambiguous_scope_first_keeps_default_decisions_and_hints(self):
         """Two matching, test-only Domain pages cannot silently increase authority."""
