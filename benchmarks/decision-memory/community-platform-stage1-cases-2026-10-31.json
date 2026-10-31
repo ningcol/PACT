@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "purpose": "No-model new-source Decision-memory adversarial probe; developer-authored/non-blind, not real Agent/Owner evidence",
+  "pact_tag": "v0.4.0-rc.1",
+  "pact_commit": "7592efd3393ff568758400ff06d7e2e5b3315a2f",
+  "upstream": "What-We-Will/community-platform",
+  "upstream_commit": "52ca3e7cecab0a1568158921359cc743fdd0954a",
+  "source_decisions": [
+    {
+      "id": "DEC-CPL-0003",
+      "path": "docs/adr/0003-pre-merge-supply-chain-gate.md",
+      "git_blob": "0b2fc3a49213654a3727c62ed39da603c50a5f88",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0004",
+      "path": "docs/adr/0004-router-push-for-filter-urls.md",
+      "git_blob": "98c39bf0f9fa66fd76eb1f4747ee9ae199c8199e",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0006",
+      "path": "docs/adr/0006-profiles-protected-column-enforcement.md",
+      "git_blob": "c98a15a54b907d7513ddc505934da52e57ea3212",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0007",
+      "path": "docs/adr/0007-url-validation-over-html-sanitizer.md",
+      "git_blob": "689f320618e9df014ba6f8828c3edd1fca1be1f2",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0009",
+      "path": "docs/adr/0009-time-boxed-waivers-for-unfixable-advisories.md",
+      "git_blob": "296f62b6c05eba07f511707a13a951d86c89f2ae",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0011",
+      "path": "docs/adr/0011-feature-flags-not-an-authorization-boundary.md",
+      "git_blob": "3e3204112ae26b3c2c022621e4620d0e14c8d5c1",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0012",
+      "path": "docs/adr/0012-dependency-risk-control-lanes.md",
+      "git_blob": "511610b894270532fa3c82647fe554520352cab1",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    },
+    {
+      "id": "DEC-CPL-0014",
+      "path": "docs/adr/0014-calver-release-tags.md",
+      "git_blob": "222fc150afb813fd6c0253e1a91c1d7e46535d9b",
+      "source_status": "Accepted",
+      "projection_status": "implemented"
+    }
+  ],
+  "settings": {
+    "query_mode": "single-task-default-no-intent",
+    "risk": "low",
+    "knowledge_limit": 12,
+    "estimated_token_budget": 45000,
+    "code_context": false
+  },
+  "cases": [
+    {
+      "id": "C1",
+      "category": "decision-conflict",
+      "task": "To speed up pull requests, remove the invisible Unicode character scanner from the required security check while keeping other build jobs."
+    },
+    {
+      "id": "C2",
+      "category": "decision-conflict",
+      "task": "For disabled product features, rely on the feature flag value as the only permission check when performing server mutations."
+    },
+    {
+      "id": "C3",
+      "category": "decision-conflict",
+      "task": "Let any signed-in member change protected account approval and membership columns through the ordinary profile editing form."
+    },
+    {
+      "id": "C4",
+      "category": "decision-conflict",
+      "task": "Permit javascript scheme URLs in member profile links because the browser escapes ordinary displayed text."
+    },
+    {
+      "id": "P1",
+      "category": "pathless-no-id",
+      "task": "Change search filter navigation so every filter adjustment replaces the current history entry and the Back button no longer steps through previous filters."
+    },
+    {
+      "id": "P2",
+      "category": "pathless-no-id",
+      "task": "Replace the dedicated link-scheme and output-context validation with a generic HTML sanitizer for member-submitted web addresses."
+    },
+    {
+      "id": "P3",
+      "category": "pathless-no-id",
+      "task": "Switch production deployment version tags to semantic-version numbers even though this site has no packaged downstream API."
+    },
+    {
+      "id": "M1",
+      "category": "partial-amendment",
+      "task": "Make a routine dependency-only pull request fail whenever any pre-existing high severity advisory is present anywhere in the entire dependency tree."
+    },
+    {
+      "id": "M2",
+      "category": "partial-amendment",
+      "task": "Remove the expiry date from dependency advisory exception records while retaining the current introduced-vulnerability merge gate."
+    },
+    {
+      "id": "M3",
+      "category": "partial-amendment",
+      "task": "Since pull requests only gate newly introduced dependency vulnerabilities, delete the other required security scanning and SHA-pinning controls."
+    },
+    {
+      "id": "N1",
+      "category": "routine-negative",
+      "task": "Correct a typo in the volunteer onboarding guide; change prose only and do not modify product or security behavior."
+    },
+    {
+      "id": "N2",
+      "category": "routine-negative",
+      "task": "Alphabetize import declarations in a presentation-only component without changing program behavior."
+    },
+    {
+      "id": "N3",
+      "category": "routine-negative",
+      "task": "Rename a local unit-test fixture constant while preserving the test inputs and expected outputs."
+    },
+    {
+      "id": "N4",
+      "category": "routine-negative",
+      "task": "Reflow README installation paragraphs and normalize whitespace without changing any instructions or code."
+    }
+  ]
+}
