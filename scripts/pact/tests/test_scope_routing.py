@@ -232,15 +232,31 @@ domains = ["DOMAIN-PAY"]
             for msg in packet["known_unknowns"]
         ))
 
-    def test_unknown_or_ambiguous_scope_preserves_baseline_candidates(self):
+    def test_unknown_or_ambiguous_scope_keeps_source_bound_review_candidates(self):
         for task, status in (
             ("Refactor opaque component without path", "unmapped"),
             ("Modify login and payment behavior", "ambiguous"),
         ):
-            p = self.packet(task)
-            self.assertEqual(p["scope_route"]["status"], status)
-            self.assertFalse(p["scope_route"]["restricted_selection"])
-            self.assertIn("DEC-PAY-001", p["decisions"])
+            with self.subTest(task=task):
+                p = self.packet(task)
+                self.assertEqual(p["scope_route"]["status"], status)
+                self.assertFalse(p["scope_route"]["restricted_selection"])
+                # Fallback now uses the same conservative source-backed weak
+                # Decision policy as plain Context. A weak candidate may be
+                # a SHA-verified hint rather than an injected current Decision.
+                hints = p.get("weak_decision_hints", {}).get("candidates", [])
+                materialized = set(p["decisions"])
+                reviewable = materialized | {h["id"] for h in hints}
+                self.assertIn("DEC-PAY-001", reviewable)
+                for hint in hints:
+                    source = self.root / hint["path"]
+                    self.assertEqual(
+                        hint["sha256"], hashlib.sha256(source.read_bytes()).hexdigest(),
+                    )
+                self.assertEqual(
+                    p.get("weak_decision_hints", {}).get("truncated_candidates", 0),
+                    0,
+                )
 
     def test_high_risk_keeps_unrestricted_candidates(self):
         task = "Change login permissions"
