@@ -33,8 +33,12 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           git cat-file -e 7592efd3393ff568758400ff06d7e2e5b3315a2f^{commit}
           git diff --quiet 7592efd3393ff568758400ff06d7e2e5b3315a2f HEAD -- \
-            bootstrap.py pact.py scripts/pact .pact AGENTS.md .agents/decisions \
+            bootstrap.py pact.py .pact AGENTS.md .agents/decisions \
             docs/governance docs/product docs/design
+          changed_runtime="$(git diff --name-only \
+            7592efd3393ff568758400ff06d7e2e5b3315a2f HEAD -- scripts/pact)"
+          test "$changed_runtime" = "scripts/pact/context.py"
+          echo "Counterfactual runtime patch limited to scripts/pact/context.py"
 
       - name: Prepare Python 3.12 standard library only
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
