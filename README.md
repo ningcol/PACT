@@ -326,8 +326,8 @@ The rule is:
 
 ## Status
 
-**Main runtime:** 0.4.0-rc.2 (experimental RC candidate; not tagged yet)  
-**Last published release:** 0.4.0-rc.1 (experimental prerelease)  
+**Main runtime source:** 0.4.0-rc.2 (experimental; publication tracked in GitHub Releases)  
+**Previous immutable release:** v0.4.0-rc.1 (experimental prerelease)  
 **Control-plane protocol:** v1
 
 The RC2 candidate retains the compact 0.3+ control-plane foundation and includes the reviewed nonrestricting Domain-first fallback correction from PR #246:
@@ -344,7 +344,7 @@ The RC2 candidate retains the compact 0.3+ control-plane foundation and includes
 - generic lexical code retrieval for common unsupported structured languages without fabricated edges;
 - full correctness CI separated from the 3×3 portability matrix.
 
-Until the RC2 tag and release checks actually succeed, this source version is **not** a published GitHub Release. For existing deployments use the immutable `v0.4.0-rc.1` release or a reviewed exact commit; do not infer stable Agent/Owner efficacy from engineering tests.
+A version file or source commit alone is **not** proof of a published GitHub Release. For reproducible adoption use an actual immutable tagged prerelease with verified checksums, or a reviewed exact commit. Neither source checks nor RC pilots prove stable Agent/Owner efficacy.
 
 The remaining high-level validation work is ongoing evaluation with observed real tasks.
 
