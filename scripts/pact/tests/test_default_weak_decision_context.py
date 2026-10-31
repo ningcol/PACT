@@ -352,11 +352,14 @@ class InstalledDefaultWeakTests(unittest.TestCase):
                 row["sha256"],
                 hashlib.sha256((self.root / row["path"]).read_bytes()).hexdigest(),
             )
-        # Explicit --full-decisions keeps unscoped hits materialized even
-        # when a task was routed to exactly one test-only Domain.
+        # Explicit --full-decisions disables weak-hit deferral, but a
+        # genuinely unique Domain route still treats linked sources as
+        # candidates rather than automatically verified authority.
         full = self.envelope("--risk", "low", "--scope-first", "--full-decisions")
         self.assertEqual(full["scope_route"]["status"], "unique")
         self.assertFalse(full["scope_route"]["applicability_verified"])
+        self.assertEqual(full["scope_route"]["candidates"], route["candidates"])
+        self.assertEqual(full["decisions"], scoped["decisions"])
 
     def test_explicit_nonfunctional_still_works_without_implicit_weak_group(self):
         packet = self.envelope("--risk", "low", "--nonfunctional")
