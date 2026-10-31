@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "authoring": "assistant developer-labelled; NOT independent/blinded; never exposed to installed PACT task prompts",
+  "expected_current": {
+    "C1": [
+      "DEC-CPL-0003"
+    ],
+    "C2": [
+      "DEC-CPL-0011"
+    ],
+    "C3": [
+      "DEC-CPL-0006"
+    ],
+    "C4": [
+      "DEC-CPL-0007"
+    ],
+    "P1": [
+      "DEC-CPL-0004"
+    ],
+    "P2": [
+      "DEC-CPL-0007"
+    ],
+    "P3": [
+      "DEC-CPL-0014"
+    ],
+    "M1": [
+      "DEC-CPL-0003",
+      "DEC-CPL-0009",
+      "DEC-CPL-0012"
+    ],
+    "M2": [
+      "DEC-CPL-0009",
+      "DEC-CPL-0012"
+    ],
+    "M3": [
+      "DEC-CPL-0003",
+      "DEC-CPL-0012"
+    ],
+    "N1": [],
+    "N2": [],
+    "N3": [],
+    "N4": []
+  },
+  "interpretation": {
+    "C1": "Supply-chain scan's hidden-character check remains required in ADR-0003",
+    "C2": "ADR-0011 explicitly separates rollout feature flags from permission checks",
+    "C3": "ADR-0006 protects approval and membership columns from self-service profile writes",
+    "C4": "ADR-0007 enforces HTTPS link schemes independently of React text escaping",
+    "P1": "ADR-0004 preserves filter navigation history via router.push; no source path or ADR identifier in task",
+    "P2": "ADR-0007 rejects generic HTML sanitizers for plain submitted links; original source context required",
+    "P3": "ADR-0014 chooses calendar-based deployment tags over SemVer",
+    "M1": "ADR-0003's audit requirement is narrowed by ADR-0009 and again by ADR-0012; earlier security controls survive",
+    "M2": "ADR-0009 still requires expiry despite ADR-0012's narrower applicability",
+    "M3": "ADR-0012 changes dependency-audit scope only; ADR-0003's non-audit controls remain",
+    "N1": "Routine no-decision prose edit",
+    "N2": "Pure import order change",
+    "N3": "Test local identifier only",
+    "N4": "README whitespace only"
+  },
+  "success_threshold": "For each positive task, all developer-labelled applicable source decision records must be materialized as current Decisions; routine controls materialize none; diagnostics must never invent Owner/Agent claims. Failure is preserved, not tuned.",
+  "limits": "Context candidates/hints are not decision obedience. Developer-labelled expected_current may include related lineage requiring semantic review; extra candidates are not automatically irrelevant."
+}
