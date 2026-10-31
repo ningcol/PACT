@@ -326,11 +326,11 @@ The rule is:
 
 ## Status
 
-**Main runtime:** 0.4.0-dev.1 (pre-release)  
-**Last release baseline:** 0.3.0  
+**Main runtime:** 0.4.0-rc.2 (experimental RC candidate; not tagged yet)  
+**Last published release:** 0.4.0-rc.1 (experimental prerelease)  
 **Control-plane protocol:** v1
 
-Current `main` is the development line for the next minor release. It includes the 0.3 foundation plus:
+The RC2 candidate retains the compact 0.3+ control-plane foundation and includes the reviewed nonrestricting Domain-first fallback correction from PR #246:
 
 - compact single-file `.pact/pact.pyz` runtime with embedded protocol schemas;
 - minimal/lazy brownfield adoption (8 managed files in the real pilot);
@@ -344,7 +344,7 @@ Current `main` is the development line for the next minor release. It includes t
 - generic lexical code retrieval for common unsupported structured languages without fabricated edges;
 - full correctness CI separated from the 3×3 portability matrix.
 
-This development version is **not** a GitHub Release or immutable release tag. For reproducible external adoption, prefer an exact commit until a formal release is cut.
+Until the RC2 tag and release checks actually succeed, this source version is **not** a published GitHub Release. For existing deployments use the immutable `v0.4.0-rc.1` release or a reviewed exact commit; do not infer stable Agent/Owner efficacy from engineering tests.
 
 The remaining high-level validation work is ongoing evaluation with observed real tasks.
 
