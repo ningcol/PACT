@@ -227,13 +227,98 @@ class InstalledDefaultWeakTests(unittest.TestCase):
             ("--risk", "low", "--intent", "decision"),
             ("--risk", "low", "--query", self.TASK, "--query", "CSV"),
             ("--risk", "low", "--query", "Rename"),
-            ("--risk", "low", "--scope-first"),
+            ("--risk", "low", "--scope-first", "--full-decisions"),
         ]
         for flags in modes:
             with self.subTest(flags=flags):
                 packet = self.envelope(*flags)
                 self.assertIn(self.WEAK, packet["decisions"])
                 self.assertNotIn("weak_decision_hints", packet)
+
+    @staticmethod
+    def assert_fallback_context_parity(default, scoped, *, status):
+        """Only route diagnostics may differ without a usable unique Domain."""
+        assert scoped["scope_route"]["status"] == status
+        assert scoped["scope_route"]["restricted_selection"] is False
+        assert scoped["decisions"] == default["decisions"]
+        assert scoped["applicable_rules"] == default["applicable_rules"]
+        assert [
+            (row["id"], row["path"], row["sha256"])
+            for row in scoped["artifacts"]
+        ] == [
+            (row["id"], row["path"], row["sha256"])
+            for row in default["artifacts"]
+        ]
+        assert scoped.get("weak_decision_hints") == default.get("weak_decision_hints")
+        assert scoped["context_budget"] == default["context_budget"]
+
+    def test_unmapped_scope_first_keeps_low_medium_default_weak_deferral(self):
+        """Source-backed RED: no Domain must not disable default de-noising."""
+        for risk in ("low", "medium"):
+            with self.subTest(risk=risk):
+                default = self.envelope("--risk", risk)
+                scoped = self.envelope("--risk", risk, "--scope-first")
+                self.assert_fallback_context_parity(
+                    default, scoped, status="unmapped",
+                )
+                self.assertEqual(default["decisions"], [self.STRONG])
+                self.assertEqual(
+                    [x["id"] for x in default["weak_decision_hints"]["candidates"]],
+                    [self.WEAK],
+                )
+
+    def test_ambiguous_scope_first_keeps_default_decisions_and_hints(self):
+        """Two matching, test-only Domain pages cannot silently increase authority."""
+        for label in ("A", "B"):
+            self.write(
+                f"docs/product/domains/csv-{label.lower()}.md",
+                '+++\n[pact]\ntype = "domain"\n'
+                f'id = "DOMAIN-CSV-{label}"\n'
+                'status = "confirmed"\naliases = ["CSV test"]\n'
+                'related = ["DEC-CSV-TEST-BEHAVIOR"]\n'
+                '+++\n# CSV testing router\n',
+            )
+        default = self.envelope("--risk", "low")
+        scoped = self.envelope("--risk", "low", "--scope-first")
+        self.assert_fallback_context_parity(default, scoped, status="ambiguous")
+        self.assertEqual(
+            {x["id"] for x in scoped["scope_route"]["domains"]},
+            {"DOMAIN-CSV-A", "DOMAIN-CSV-B"},
+        )
+        self.assertIn(self.STRONG, scoped["decisions"])
+        self.assertNotIn(self.WEAK, scoped["decisions"])
+
+    def test_unique_scope_remains_opt_in_metadata_only_and_full_is_explicit(self):
+        """A unique Domain still selects router evidence, not guessed applicability."""
+        self.write(
+            "docs/product/domains/csv.md",
+            '+++\n[pact]\ntype = "domain"\nid = "DOMAIN-CSV"\n'
+            'status = "confirmed"\naliases = ["CSV test"]\n'
+            'related = ["DEC-CSV-TEST-BEHAVIOR", '
+            '"DEC-UNRELATED-RENAMING"]\n'
+            '+++\n# CSV testing router\n',
+        )
+        scoped = self.envelope("--risk", "low", "--scope-first")
+        route = scoped["scope_route"]
+        self.assertEqual(route["status"], "unique")
+        self.assertTrue(route["restricted_selection"])
+        self.assertFalse(route["applicability_verified"])
+        self.assertIn("DOMAIN-CSV", [r["id"] for r in scoped["artifacts"]])
+        self.assertEqual(
+            {r["id"] for r in route["candidates"]},
+            {self.STRONG, self.WEAK},
+        )
+        self.assertNotIn("weak_decision_hints", scoped)
+        for row in route["candidates"]:
+            self.assertEqual(
+                row["sha256"],
+                hashlib.sha256((self.root / row["path"]).read_bytes()).hexdigest(),
+            )
+        # Explicit --full-decisions keeps unscoped hits materialized even
+        # when a task was routed to exactly one test-only Domain.
+        full = self.envelope("--risk", "low", "--scope-first", "--full-decisions")
+        self.assertEqual(full["scope_route"]["status"], "unique")
+        self.assertFalse(full["scope_route"]["applicability_verified"])
 
     def test_explicit_nonfunctional_still_works_without_implicit_weak_group(self):
         packet = self.envelope("--risk", "low", "--nonfunctional")
