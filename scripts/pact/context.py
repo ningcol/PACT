@@ -948,13 +948,17 @@ def main() -> int:
         not args.full_decisions
         and args.risk != "high"
         and args.intent not in {"decision", "history"}
-        and not args.scope_first
+        # A Domain lookup that is unmapped, ambiguous or cannot restrict
+        # selection must retain the ordinary lexical weak-Decision policy.
+        # Only a genuinely restricted Domain-first route owns its candidates.
+        and (scope_route is None or not scope_route["restricted_selection"])
         and len(queries) == 1
         and queries[0].strip().casefold() == args.task.strip().casefold()
     ):
         # Never use fused RRF scores or a replacement-query score as
         # corroboration for the original task's Decision relevance.
-        # Unscoped weak hits are a navigation hint, not normative truth.
+        # Weak uncorroborated lexical hits are reviewable navigation hints,
+        # never permission to disregard a Decision or skip Convergence.
         candidate_results, weak = split_weak_lexical_decisions(candidate_results, args.task)
         if weak:
             try:
