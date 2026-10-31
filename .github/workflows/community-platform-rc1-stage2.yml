@@ -1,0 +1,86 @@
+name: PACT RC1 Stage 2 Default vs Domain-first (no model)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/community-platform-rc1-stage2.yml"
+      - "scripts/benchmark/community_platform_rc1_stage2.py"
+      - "benchmarks/decision-memory/community-platform-stage2-*.json"
+      - "docs/evaluation/community-platform-rc1-stage2-*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-model-paired-domain-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact PACT experimental commit with no persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Pin evaluated code and frozen RC1 parent
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e 7592efd3393ff568758400ff06d7e2e5b3315a2f^{commit}
+          git diff --quiet 7592efd3393ff568758400ff06d7e2e5b3315a2f HEAD -- \
+            bootstrap.py pact.py scripts/pact .pact AGENTS.md .agents/decisions \
+            docs/governance docs/product docs/design
+
+      - name: Prepare Python 3.12 standard library only
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned public ADR project read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/stage2-public-adr-disposable"
+          echo "UPSTREAM_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/What-We-Will/community-platform.git "$TARGET"
+          git -C "$TARGET" checkout --detach --quiet 52ca3e7cecab0a1568158921359cc743fdd0954a
+          test "$(git -C "$TARGET" rev-parse HEAD)" = 52ca3e7cecab0a1568158921359cc743fdd0954a
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+          echo "Source-only: no upstream code/test execution, no external agent or model."
+
+      - name: Run exact RC1 installed PACT CLI, preserving all original outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/community-platform-stage2-raw.json"
+          result=0
+          python scripts/benchmark/community_platform_rc1_stage2.py \
+            --target "$UPSTREAM_TARGET" > "$output" || result=$?
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "community-platform-stage2-raw.json"
+          packet = json.loads(path.read_text(encoding="utf-8"))
+          print("Engineering evidence:", packet.get("engineering_collection"))
+          print("Last stage:", packet.get("stage"))
+          print("Runner error:", packet.get("error"))
+          for name, arm in packet.get("scores", {}).get("arms", {}).items():
+              print(name, {k: v for k, v in arm.items() if k != "cases"})
+          print("Result evidence is NOT independent or a real Agent trial.")
+          PY
+          test "$result" -eq 0
+
+      - name: Preserve raw evidence even on failure; never mutate upstream
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pact-rc1-community-stage2-raw
+          path: ${{ runner.temp }}/community-platform-stage2-raw.json
+          if-no-files-found: warn
+          retention-days: 30
