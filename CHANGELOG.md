@@ -6,8 +6,51 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
-Reserve this section for changes after the `0.4.0-rc.1` candidate is
-reviewed. A changelog entry alone is **not** a release tag or approval.
+Reserved for changes after the RC2 release candidate. This heading does
+not create a tag, downloadable release or Stable approval.
+
+## 0.4.0-rc.2 (experimental pilot release candidate)
+
+**Scope:** one verified, backward-compatible opt-in Context fallback fix
+from [PR #246](https://github.com/ningcol/PACT/pull/246), plus release
+metadata and RC1-to-RC2 upgrade verification. **Not a stable release.**
+
+- When `context --scope-first` cannot restrict to a uniquely verified
+  Domain (unmapped, ambiguous, or conservative fallback), restore the
+  **ordinary low/medium single-query** source-backed weak Decision deferral,
+  rather than loading extra low-confidence Decision bodies.
+- Preserve already-approved Decision sources as SHA-bound, reviewable hints;
+  Convergence/Task Finish still blocks missing, truncated or stale source
+  dispositions. A hint is not proof of semantic applicability.
+- Unique Domain routes remain opt-in and metadata-first. Explicit full
+  Decisions, history/decision intent, high-risk work and multi-query safety
+  behavior retain their existing rules. No new CLI, schema, dependency,
+  mandatory Knowledge note or default retrieval mode.
+- Exact frozen, *developer-authored/nonblind* 14-case read-only upstream
+  replay under actual RC1 low-risk defaults found full expected Decision
+  materialization parity **14/14** for previously noisy unmapped scope.
+  Extra selected Decision slots fell **90 to 7**; initial file-size/4
+  estimated Context volume **286,821 to 108,782** across those tasks.
+  The proxy numbers are neither billable LLM tokens nor independent
+  Agent/Owner-obedience evidence. Four routine negatives still have
+  **3** incidental Decision selections; Issue #221 remains open.
+- The already merged main change was independently rerun on its exact
+  squash commit `6ea856d2ed51c48ef9b3560fa65a02daae1ade46`:
+  [PACT Check](https://github.com/ningcol/PACT/actions/runs/41171382107)
+  and [9/9 OS × Python matrix](https://github.com/ningcol/PACT/actions/runs/41171382114)
+  passed. RC2's **new** version/documentation commit must pass its own
+  exact-main CI and RC release checks before tagging.
+- Historical and published RC1 upgrade paths remain explicit and
+  transactional. The prerelease must preserve project-owned Owner
+  preferences, Product Rules and Decision rationale; unsupported legacy
+  YAML and locally modified managed files must fail closed.
+
+**Release boundary:** `v0.4.0-rc.1` is immutable and already published.
+`v0.4.0-rc.2` is **not** published by this changelog. Its release requires
+a new tag pointing to exactly the approved green RC2 `main` SHA and
+successful tagged matrix/asset/Bootstrap checks. Real independent Agent
+compliance and Owner benefit remain unverified (#214/#28/#32); stable
+`v0.4.0` stays HOLD. See [releasing](docs/releasing.md).
 
 ## 0.4.0-rc.1 (experimental controlled-pilot release candidate)
 

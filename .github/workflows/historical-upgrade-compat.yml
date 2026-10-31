@@ -31,6 +31,10 @@ jobs:
             commit: f8690a64f7d6bc448092919cfb71411567041fc5
           - expected: "0.4.0-rc.1"
             commit: ecb27333ac3ebdcd1fa638ef269914456db70051
+          # Actual published immutable RC1 release source; different from
+          # the earlier unpublished candidate pin above.
+          - expected: "0.4.0-rc.1"
+            commit: 7592efd3393ff568758400ff06d7e2e5b3315a2f
     permissions:
       contents: read
     steps:
@@ -70,6 +74,10 @@ jobs:
           test "$(git -C "$ORIGIN" rev-parse HEAD)" = "$PIN"
           test "$(tr -d '[:space:]' < "$ORIGIN/.pact/VERSION")" = "$VERSION"
           test -z "$(git -C "$ORIGIN" status --porcelain --untracked-files=no)"
+          if [[ "$PIN" = 7592efd3393ff568758400ff06d7e2e5b3315a2f ]]; then
+            test "$(git -C "$ORIGIN" rev-parse 'v0.4.0-rc.1^{commit}')" = "$PIN"
+            echo "Published RC1 annotated tag resolves to pinned source SHA"
+          fi
           python "$ORIGIN/scripts/pact/init.py" --target "$TARGET" --apply
           test -f "$TARGET/.pact/install.json"
           test "$(tr -d '[:space:]' < "$TARGET/.pact/VERSION")" = "$VERSION"
@@ -385,11 +393,36 @@ jobs:
           print(json.dumps(result, indent=2))
           PY
 
+      - name: Verify candidate RC2 release assets and fresh Bootstrap on published RC1 upgrade case
+        if: ${{ matrix.commit == '7592efd3393ff568758400ff06d7e2e5b3315a2f' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release/release_assets.py \
+            --output-dir "$RUNNER_TEMP/pact-rc2-release-assets" \
+            --smoke --json > "$RUNNER_TEMP/pact-rc2-release-smoke.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          record = json.loads((scratch / "pact-rc2-release-smoke.json").read_text())
+          source_version = Path(".pact/VERSION").read_text().strip()
+          assert source_version == "0.4.0-rc.2", source_version
+          assert record["smoke"]["runtime_version"] == source_version
+          assert record["smoke"]["status"] == "pass", record["smoke"]
+          assert record["smoke"]["installed_runtime_sha256"] == (
+              record["smoke"]["release_runtime_sha256"]
+          )
+          assert set(record["assets"]) == {"pact-bootstrap.py", "pact.pyz", "LICENSE"}
+          assert Path(record["checksums"]).is_file()
+          print("RC2 asset checksum/bootstrap smoke verified on source-pinned upgrade job")
+          PY
+
       - name: Preserve full historical upgrade receipts including failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pact-historical-upgrade-${{ matrix.expected }}
+          name: pact-historical-upgrade-${{ matrix.expected }}-${{ matrix.commit }}
           path: |
             ${{ runner.temp }}/old-upgrade-before.json
             ${{ runner.temp }}/legacy-blocked.json
@@ -404,5 +437,6 @@ jobs:
             ${{ runner.temp }}/legacy-doctor.json
             ${{ runner.temp }}/legacy-owner.json
             ${{ runner.temp }}/legacy-discover.json
+            ${{ runner.temp }}/pact-rc2-release-smoke.json
           if-no-files-found: warn
           retention-days: 14
