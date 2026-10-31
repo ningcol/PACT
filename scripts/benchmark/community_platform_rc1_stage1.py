@@ -330,6 +330,40 @@ def score(cases: dict, oracle: dict, record_b: list[dict]) -> dict:
     }
 
 
+def pact_check_snapshot(target: pathlib.Path) -> dict:
+    """Keep all known original upstream check errors, not a fabricated pass."""
+    result = subprocess.run(
+        [sys.executable, str(target / "pact.py"), "check"],
+        cwd=target, capture_output=True, text=True, timeout=120, check=False,
+    )
+    return {
+        "returncode": result.returncode,
+        "stdout": result.stdout[:3000],
+        "stderr": result.stderr[:3000],
+        "errors": [
+            line.strip()[2:].strip()
+            for line in result.stderr.splitlines()
+            if line.strip().startswith("- ")
+        ],
+    }
+
+
+def check_only_existing_source_placeholders(before: dict, after: dict) -> None:
+    """Treat original-only broken examples as a documented baseline, not success."""
+    known = {
+        "docs/adr/README.md: broken internal link './NNNN-...'",
+        "docs/adr/template.md: broken internal link './NNNN-...'",
+    }
+    if (before["returncode"] != 1 or len(before["errors"]) != 4
+            or set(before["errors"]) != known):
+        raise ValueError("unexpected preexisting source check errors; no waiver")
+    if (after["returncode"] != 1
+            or sorted(after["errors"]) != sorted(before["errors"])):
+        raise ValueError("PACT projection introduced or changed check errors")
+    if "discovered 8 machine-readable artifact(s)" not in after["stdout"]:
+        raise ValueError("pact check did not discover exactly eight projected Decisions")
+
+
 def evaluate(target: pathlib.Path, report: dict) -> None:
     report["stage"] = "validate-frozen-fixtures"
     cases, oracle = frozen_inputs()
@@ -341,21 +375,19 @@ def evaluate(target: pathlib.Path, report: dict) -> None:
     report["upstream_blobs_before"] = original_sources(target, cases)
     report["stage"] = "install-rc1"
     report["installed"] = pilot.install_pact(target)
+    report["stage"] = "record-unadapted-upstream-pact-check-baseline"
+    report["pact_check_baseline"] = pact_check_snapshot(target)
     report["stage"] = "probe-A-unadapted-source"
     report["A"] = []
     probe(target, cases, "A-original-ADR-no-Pact-projection", report["A"])
     report["stage"] = "project-pinned-ADRs-into-disposable-clone"
     report["projected"] = project_source_decisions(target, cases)
-    check = subprocess.run(
-        [sys.executable, str(target / "pact.py"), "check"],
-        cwd=target, capture_output=True, text=True, timeout=120, check=False,
+    report["pact_check"] = pact_check_snapshot(target)
+    check_only_existing_source_placeholders(
+        report["pact_check_baseline"], report["pact_check"]
     )
-    report["pact_check"] = {
-        "returncode": check.returncode, "stdout": check.stdout[:3000],
-        "stderr": check.stderr[:3000],
-    }
-    if check.returncode:
-        raise ValueError("installed PACT check did not accept source projections")
+    report["upstream_preexisting_broken_template_links"] = 4
+    report["pact_check_new_errors"] = 0
     report["stage"] = "probe-B-source-faithful-test-projection"
     report["B"] = []
     probe(target, cases, "B-projected-original-ADRs", report["B"])
