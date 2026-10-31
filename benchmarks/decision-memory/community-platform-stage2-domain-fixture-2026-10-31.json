@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "label": "PACT-only developer-authored hypothetical Domain routers for mechanism probe; NOT upstream Owner-confirmed authority",
+  "parent_stage1_pr": 244,
+  "pact_ref": "v0.4.0-rc.1",
+  "pact_sha": "7592efd3393ff568758400ff06d7e2e5b3315a2f",
+  "original_upstream": "What-We-Will/community-platform",
+  "upstream_sha": "52ca3e7cecab0a1568158921359cc743fdd0954a",
+  "stage1_cards_blob": "7398962212a21bb00a44fb1b6750a4d96ee59868",
+  "stage1_oracle_blob": "56c8c37bf841adf0b18697ab50c271f9a45fe598",
+  "arms": [
+    {
+      "id": "B-default",
+      "prepared_as": "source-faithful projected ADRs without Domain seeds",
+      "flags": [
+        "--risk",
+        "low"
+      ],
+      "budget": "actual low-risk default; no --limit/--token-budget/--no-code/--intent"
+    },
+    {
+      "id": "B-scope-no-domains",
+      "prepared_as": "same source-faithful projected ADRs without Domain seeds",
+      "flags": [
+        "--risk",
+        "low",
+        "--scope-first"
+      ],
+      "budget": "actual low-risk default"
+    },
+    {
+      "id": "C-default-synthetic-domains",
+      "prepared_as": "same original ADR projections plus hypothetical developer Domain seeds",
+      "flags": [
+        "--risk",
+        "low"
+      ],
+      "budget": "actual low-risk default"
+    },
+    {
+      "id": "C-scope-synthetic-domains",
+      "prepared_as": "same Domain-seeded source",
+      "flags": [
+        "--risk",
+        "low",
+        "--scope-first"
+      ],
+      "budget": "actual low-risk default"
+    }
+  ],
+  "extra_safety_cases": [
+    "C2",
+    "M3"
+  ],
+  "domains": [
+    {
+      "id": "DOMAIN-SECURITY-CHECKS",
+      "name": "Security scanning",
+      "aliases": [
+        "security check",
+        "invisible character scanning"
+      ],
+      "related": [
+        "DEC-CPL-0003",
+        "DEC-CPL-0009",
+        "DEC-CPL-0012"
+      ],
+      "source_reason": "ADR-0003 security scan & linked audit amendments 0009/0012"
+    },
+    {
+      "id": "DOMAIN-DEPENDENCY-RISK",
+      "name": "Dependency risk control",
+      "aliases": [
+        "dependency advisory",
+        "dependency vulnerabilities"
+      ],
+      "related": [
+        "DEC-CPL-0003",
+        "DEC-CPL-0009",
+        "DEC-CPL-0012"
+      ],
+      "source_reason": "ADR-0012 dependency-risk control lanes and its 0003/0009 amendment chain"
+    },
+    {
+      "id": "DOMAIN-PROFILE",
+      "name": "Member profile",
+      "aliases": [
+        "profile links",
+        "profile editing"
+      ],
+      "related": [
+        "DEC-CPL-0006",
+        "DEC-CPL-0007"
+      ],
+      "source_reason": "ADR-0006 protected profile columns and ADR-0007 submitted profile links"
+    },
+    {
+      "id": "DOMAIN-FEATURE-FLAGS",
+      "name": "Feature flags",
+      "aliases": [
+        "feature flag"
+      ],
+      "related": [
+        "DEC-CPL-0011"
+      ],
+      "source_reason": "ADR-0011 title and actual rollout/authorization scope"
+    },
+    {
+      "id": "DOMAIN-FILTER-URLS",
+      "name": "Filter URL navigation",
+      "aliases": [
+        "search filter",
+        "filter navigation"
+      ],
+      "related": [
+        "DEC-CPL-0004"
+      ],
+      "source_reason": "ADR-0004 filter/search URLs and history navigation"
+    },
+    {
+      "id": "DOMAIN-RELEASE-TAGS",
+      "name": "Production release tags",
+      "aliases": [
+        "deployment version tags"
+      ],
+      "related": [
+        "DEC-CPL-0014"
+      ],
+      "source_reason": "ADR-0014 production CalVer release tag boundary"
+    }
+  ],
+  "source_integrity": "All Domain pages must live exclusively in disposable clones; no external repository writes; only test-fixture routes, not factual Owner approval.",
+  "strict_criteria": {
+    "positive": "Target materialized current Decisions must be distinguished from linked-but-unread metadata; any missing source cannot be called a hit.",
+    "negative": "Routine negatives counted clean only with zero selected implemented Decisions; metadata-only hints are separate review workload.",
+    "default_adoption": "NO-GO without independently held-out semantic Agent/Owner evidence; developer-constructed aliases cannot justify shipping a new default.",
+    "provenance": "Original ADR blobs and installed RC1 runtime verified before/after; all predicted IDs/path/SHA checked before score.",
+    "financial": "Only file-size UTF-8/4 estimated context cost; no model billed tokens or true Agent task time."
+  }
+}
