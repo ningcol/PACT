@@ -282,10 +282,45 @@ def score(cards, oracle, observed):
         "no_default_rollout_authorized": True,
     }
 
+def validate_only_fallback_patch():
+    """No other PACT runtime/truth changes may enter this counterfactual replay."""
+    baseline = stage1.PACT_SHA
+    changed = stage1.git(ROOT, "diff", "--name-only", baseline, "HEAD", "--",
+                         "scripts/pact", "bootstrap.py", "pact.py",
+                         ".pact", "AGENTS.md", ".agents/decisions",
+                         "docs/governance", "docs/product", "docs/design")
+    if changed.stdout.strip() != "scripts/pact/context.py":
+        raise ValueError("counterfactual replay contains unexpected runtime/truth changes")
+    original = stage1.git(ROOT, "show", baseline + ":scripts/pact/context.py").stdout
+    old = "        and not args.scope_first\n        and len(queries) == 1"
+    new = (
+        "        # A Domain lookup that is unmapped, ambiguous or cannot restrict\n"
+        "        # selection must retain the ordinary lexical weak-Decision policy.\n"
+        "        # Only a genuinely restricted Domain-first route owns its candidates.\n"
+        '        and (scope_route is None or not scope_route["restricted_selection"])\n'
+        "        and len(queries) == 1"
+    )
+    prior_comment = "        # Unscoped weak hits are a navigation hint, not normative truth."
+    new_comment = (
+        "        # Weak uncorroborated lexical hits are reviewable navigation hints,\n"
+        "        # never permission to disregard a Decision or skip Convergence."
+    )
+    # All source bytes must match the independently reviewed minimal patch,
+    # not just include a substring or appear alongside hidden changes.
+    if old not in original or prior_comment not in original:
+        raise ValueError("original source no longer matches the frozen base")
+    expected = original.replace(old, new).replace(prior_comment, new_comment)
+    tested = (ROOT / "scripts/pact/context.py").read_text(encoding="utf-8")
+    if tested != expected:
+        raise ValueError("replay tested runtime differs from exact Stage3 patch")
+
+
 def evaluate(target, report):
     report["stage"] = "validate-frozen-stage1-and-stage2-inputs"
     cards, oracle, config = load_frozen()
-    stage1.check_pact_baseline()
+    validate_only_fallback_patch()
+    report["tested_context_runtime_sha256"] = file_sha(ROOT / "scripts/pact/context.py")
+    report["original_rc1_source_baseline"] = stage1.PACT_SHA
     original = stage1.original_sources(target, cards)
     report["source_blobs"] = original
     report["stage"] = "install-exact-rc1"
