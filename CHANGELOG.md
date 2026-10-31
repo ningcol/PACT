@@ -9,7 +9,7 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 Reserved for changes after the RC2 release candidate. This heading does
 not create a tag, downloadable release or Stable approval.
 
-## 0.4.0-rc.2 (experimental pilot candidate; publication pending)
+## 0.4.0-rc.2 (experimental pilot release candidate)
 
 **Scope:** one verified, backward-compatible opt-in Context fallback fix
 from [PR #246](https://github.com/ningcol/PACT/pull/246), plus release
