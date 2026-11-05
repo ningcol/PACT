@@ -19,13 +19,16 @@ from converge import outcome as converge_outcome
 from report import convergence_outcome as report_outcome
 
 
-def retention(disposition="none", updated=None, created=None):
-    return {
+def retention(disposition="none", updated=None, created=None, removed=None):
+    entry = {
         "disposition": disposition,
         "rationale": "Reviewed task intent and durable knowledge sources.",
         "updated": [] if updated is None else updated,
         "created": [] if created is None else created,
     }
+    if removed is not None:
+        entry["removed"] = removed
+    return entry
 
 
 class KnowledgeRetentionTests(unittest.TestCase):
@@ -61,6 +64,97 @@ class KnowledgeRetentionTests(unittest.TestCase):
                 )
                 self.assertEqual(problems, [])
                 self.assertEqual(summary["status"], "reviewed")
+
+    def test_legacy_review_without_removed_field_still_passes(self):
+        data = {"knowledge_retention": retention("none")}
+        errors, report = review(data, changed_files=[], require=True)
+        self.assertEqual(errors, [])
+        self.assertEqual(report["removed"], [])
+
+    def test_source_verified_removal_is_existing_knowledge_maintenance(self):
+        path = "docs/product/rules/retired.md"
+        data = {
+            "knowledge_retention": retention("update", removed=[path]),
+            "coverage": [{
+                "path": path, "disposition": "removed",
+                "rationale": "Verified source-backed retirement",
+            }],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            errors, outcome = review(
+                data, changed_files=[path], root=root, require=True,
+                verified_removed_paths=[path],
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(outcome["removed"], [path])
+            self.assertTrue(outcome["removed_source_verified"])
+
+    def test_source_verified_rename_covers_both_old_and_new_paths(self):
+        old = "docs/product/rules/old.md"
+        new = "docs/product/rules/new.md"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / new).parent.mkdir(parents=True)
+            (root / new).write_text("# Revised canonical rule\n", "utf-8")
+            data = {
+                "knowledge_retention": retention(
+                    "update-and-create", created=[new], removed=[old]),
+                "coverage": [{
+                    "path": old, "disposition": "removed",
+                    "rationale": "Source-verified path retirement",
+                }],
+            }
+            errors, outcome = review(
+                data, changed_files=[old, new], root=root,
+                verified_removed_paths=[old], require=True,
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(outcome["created"], [new])
+            self.assertEqual(outcome["removed"], [old])
+
+    def test_removal_without_original_convergence_proof_is_rejected(self):
+        path = ".agents/decisions/implemented/retired.md"
+        base = retention("update", removed=[path])
+        for covered, verified in [
+            ([], [path]),  # no explicit Convergence coverage
+            ([{"path": path, "disposition": "aligned"}], [path]),
+            ([{"path": path, "disposition": "removed"}], None),  # no Context
+            ([{"path": path, "disposition": "removed"}], []),  # unverified
+        ]:
+            with self.subTest(covered=covered, verified=verified):
+                data = {"knowledge_retention": base, "coverage": covered}
+                errors, _ = review(
+                    data, changed_files=[path], require=True,
+                    verified_removed_paths=verified,
+                )
+                self.assertTrue(errors)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            f = root / path
+            f.parent.mkdir(parents=True)
+            f.write_text("# Still exists\n", "utf-8")
+            data = {
+                "knowledge_retention": base,
+                "coverage": [{"path": path, "disposition": "removed"}],
+            }
+            errors, _ = review(
+                data, changed_files=[path], root=root, require=True,
+                verified_removed_paths=[path],
+            )
+            self.assertIn("missing or unsafe", " ".join(errors))
+
+    def test_removed_paths_cannot_be_duplicated_or_disguised_as_none(self):
+        path = "docs/product/rules/old.md"
+        for entry in [
+            retention("none", removed=[path]),
+            retention("create", created=["docs/product/rules/new.md"], removed=[path]),
+            retention("update", updated=[path], removed=[path]),
+            retention("update", removed=[path, path]),
+            retention("update", removed=["../escape.md"]),
+        ]:
+            with self.subTest(entry=entry):
+                self.assertTrue(review({"knowledge_retention": entry})[0])
 
     def test_pending_always_blocks_completion(self):
         data = {"knowledge_retention": retention("pending")}
@@ -243,6 +337,10 @@ class KnowledgeRetentionTests(unittest.TestCase):
         example = json.loads(
             (ROOT / ".pact/examples/convergence-report.example.json").read_text("utf-8")
         )
+        self.assertEqual(validate_instance(example, schema), [])
+        example["knowledge_retention"]["removed"] = [
+            "docs/product/rules/old.md",
+        ]
         self.assertEqual(validate_instance(example, schema), [])
         example["knowledge_retention"]["unknown"] = 1
         self.assertTrue(validate_instance(example, schema))
