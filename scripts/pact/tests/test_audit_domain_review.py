@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -121,6 +124,108 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
         self.assertEqual(len(result["possible_knowledge_overlaps"]), 1)
         self.assertEqual(result["possible_knowledge_overlaps"][0]["signal"], "same-title")
         self.assertEqual(result["scoped_sources_count"], 2)
+
+    def test_malformed_related_and_domains_are_not_promoted_or_crashing(self):
+        domain = doc(
+            "domain", "DOMAIN-BROKEN",
+            related=["RULE-GOOD-1", None, 42, {"not": "an-id"}, ["nested"]],
+            aliases=[None, {"bad": "alias"}, "safe alias"],
+        )
+        good = doc(
+            "rule", "RULE-GOOD-1", None, title="Stable policy",
+            domains=["DOMAIN-BROKEN", None, {"invalid": "domain"}],
+        )
+        unrelated = doc("rule", "RULE-OTHER-1", None)
+        for selected in (None, "DOMAIN-BROKEN"):
+            with self.subTest(selected=selected):
+                result = audit.evaluate(
+                    {"documents": [domain, good, unrelated]},
+                    deterministic_check="fail", domain=selected,
+                )
+                self.assertEqual(result["deterministic_check"], "fail")
+                self.assertEqual(result["possible_knowledge_overlaps"], [])
+                if selected:
+                    self.assertEqual(
+                        [x["id"] for x in result["scoped_sources"]],
+                        ["RULE-GOOD-1"],
+                    )
+
+    def test_malformed_supersedes_does_not_crash_decision_comparison(self):
+        old = doc(
+            "decision", "DEC-OLD", "DOMAIN-ORDER",
+            title="Stock invariant",
+        )
+        new = doc(
+            "decision", "DEC-NEW", "DOMAIN-ORDER",
+            title="Stock invariant",
+            supersedes=[{"untrusted": "DEC-OLD"}, None],
+        )
+        result = audit.evaluate(
+            {"documents": [self.order, old, new]},
+            deterministic_check="fail",
+        )
+        self.assertEqual(len(result["possible_knowledge_overlaps"]), 1)
+        self.assertEqual(result["possible_knowledge_overlaps"][0]["signal"], "same-title")
+
+    def test_malformed_related_containers_do_not_crash(self):
+        for malformed in ("RULE-GOOD-1", 5, {"RULE-GOOD-1": True}, None):
+            with self.subTest(value=malformed):
+                router = doc("domain", "DOMAIN-TEST", related=malformed)
+                result = audit.evaluate(
+                    {"documents": [router]}, deterministic_check="fail",
+                    domain="DOMAIN-TEST",
+                )
+                self.assertEqual(result["scoped_sources"], [])
+                self.assertEqual(result["possible_knowledge_overlaps"], [])
+
+    def test_installed_audit_reports_invalid_relation_without_crashing(self):
+        """Check rejects mixed TOML types; audit still returns a JSON inventory."""
+        init = ROOT / "scripts/pact/init.py"
+        with tempfile.TemporaryDirectory(prefix="pact-audit-metadata-") as tmp:
+            root = pathlib.Path(tmp)
+            installed = subprocess.run(
+                [sys.executable, str(init), "--target", str(root), "--apply"],
+                text=True, capture_output=True,
+            )
+            self.assertEqual(
+                installed.returncode, 0, installed.stdout + installed.stderr,
+            )
+            domain = root / "docs/product/domains/broken.md"
+            domain.parent.mkdir(parents=True)
+            domain.write_text(
+                '+++\n[pact]\ntype = "domain"\nid = "DOMAIN-BROKEN"\n'
+                'status = "confirmed"\nrelated = ["RULE-ONE", 42, { invalid = "record" }]\n+++\n'
+                '# Broken domain\n',
+                encoding="utf-8",
+            )
+            rule = root / "docs/product/rules/one.md"
+            rule.parent.mkdir(parents=True)
+            rule.write_text(
+                '+++\n[pact]\ntype = "rule"\nid = "RULE-ONE"\n'
+                'status = "confirmed"\ndomains = ["DOMAIN-BROKEN"]\n'
+                '+++\n# Original confirmed source\n',
+                encoding="utf-8",
+            )
+            checked = subprocess.run(
+                [sys.executable, str(root / "pact.py"), "check"],
+                cwd=root, capture_output=True, text=True,
+            )
+            self.assertNotEqual(checked.returncode, 0)
+            self.assertIn("schema error", checked.stderr)
+
+            audit = subprocess.run(
+                [sys.executable, str(root / "pact.py"), "audit",
+                 "--domain", "DOMAIN-BROKEN", "--json"],
+                cwd=root, capture_output=True, text=True,
+            )
+            self.assertEqual(audit.returncode, 1, audit.stdout + audit.stderr)
+            output = json.loads(audit.stdout)
+            self.assertEqual(output["deterministic_check"], "fail")
+            self.assertEqual(
+                [x["id"] for x in output["scoped_sources"]], ["RULE-ONE"],
+            )
+            self.assertNotIn("TypeError", audit.stderr)
+            self.assertNotIn("Traceback", audit.stderr)
 
     def test_unknown_domain_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown Domain"):

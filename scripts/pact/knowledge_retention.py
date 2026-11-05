@@ -54,6 +54,7 @@ def review(
     changed_files: list[str] | None = None,
     require: bool = False,
     root: Path | None = None,
+    verified_removed_paths: list[str] | None = None,
 ) -> tuple[list[str], dict]:
     """Review optional knowledge disposition; legacy reports remain readable."""
     item = convergence.get("knowledge_retention")
@@ -71,6 +72,9 @@ def review(
     rationale = item.get("rationale")
     updated = item.get("updated")
     created = item.get("created")
+    # Optional for backwards compatibility. Removal of a durable record is
+    # maintenance of existing knowledge, so "update" includes remove-only.
+    removed = item.get("removed", [])
     if disposition == "pending":
         errors.append("knowledge retention: pending semantic review cannot complete")
     elif disposition not in {"none", "update", "create", "update-and-create"}:
@@ -78,7 +82,7 @@ def review(
     if not isinstance(rationale, str) or not rationale.strip():
         errors.append("knowledge retention: nonblank rationale required")
 
-    for name, paths in (("updated", updated), ("created", created)):
+    for name, paths in (("updated", updated), ("created", created), ("removed", removed)):
         if not isinstance(paths, list) or any(not _safe_path(p) for p in paths):
             errors.append(f"knowledge retention: {name} must contain safe repository paths")
         elif len(paths) != len(set(paths)):
@@ -88,9 +92,12 @@ def review(
     if errors:
         return errors, {"status": "invalid", "disposition": disposition}
 
-    updated_set, created_set = set(updated), set(created)
-    if updated_set & created_set:
-        errors.append("knowledge retention: a path cannot be both updated and created")
+    updated_set, created_set, removed_set = set(updated), set(created), set(removed)
+    if (updated_set & created_set or updated_set & removed_set
+            or created_set & removed_set):
+        errors.append(
+            "knowledge retention: a path cannot be updated, created, and/or removed in the same review"
+        )
 
     expectations = {
         "none": (False, False),
@@ -99,13 +106,16 @@ def review(
         "update-and-create": (True, True),
     }
     if disposition in expectations:
-        want_updated, want_created = expectations[disposition]
-        if bool(updated_set) != want_updated or bool(created_set) != want_created:
+        want_maintained, want_created = expectations[disposition]
+        # A delete/rename replaces earlier durable knowledge and must be
+        # explicitly reviewed; no extra disposition enum combinatorics.
+        if (bool(updated_set | removed_set) != want_maintained
+                or bool(created_set) != want_created):
             errors.append("knowledge retention: disposition conflicts with listed paths")
 
     if changed_files is not None:
         changed = set(changed_files)
-        declared = updated_set | created_set
+        declared = updated_set | created_set | removed_set
         for path in sorted(declared - changed):
             errors.append(f"knowledge retention: declared path not changed by task: {path!r}")
 
@@ -132,12 +142,55 @@ def review(
                 + (" ..." if len(unreported) > 8 else "")
             )
 
+    if verified_removed_paths is not None:
+        # Git attribution is optional for low-risk tasks without Git, but
+        # Convergence still knows which prepared canonical sources disappeared.
+        # A "none" claim must not hide a source-verified Rule/Decision removal.
+        undeclared_removals = sorted(
+            path for path in set(verified_removed_paths) - removed_set
+            if (path in DURABLE_FILES
+                or (path.startswith(DURABLE_HOMES) and path.endswith(".md")))
+        )
+        if undeclared_removals:
+            errors.append(
+                "knowledge retention: source-verified canonical removals "
+                "not declared: " + ", ".join(undeclared_removals[:8])
+            )
+
+    if removed_set:
+        # Reuse Convergence's existing source-bound "removed" coverage:
+        # a deleted Rule/Decision must have been present in prepared Context,
+        # with its original SHA and a verified removal. Merely typing its
+        # name in this report never authorizes a deletion.
+        covered = {
+            row.get("path") for row in convergence.get("coverage", [])
+            if isinstance(row, dict) and row.get("disposition") == "removed"
+        }
+        missing_coverage = sorted(removed_set - covered)
+        if missing_coverage:
+            errors.append(
+                "knowledge retention: removed paths lack Convergence 'removed' coverage: "
+                + ", ".join(missing_coverage[:8])
+            )
+
+        if verified_removed_paths is None:
+            errors.append(
+                "knowledge retention: removed paths require source-bound "
+                "Task Context verification"
+            )
+        else:
+            unverified = sorted(removed_set - set(verified_removed_paths))
+            if unverified:
+                errors.append(
+                    "knowledge retention: removed paths are not source-verified: "
+                    + ", ".join(unverified[:8])
+                )
+
     if root is not None:
         repository_root = root.resolve()
-        # Both newly created and updated knowledge must remain source-backed.
-        # Removing an authoritative record is a separate Convergence "removed"
-        # review, not an "update" disguised as a missing file.
-        for path in sorted(updated_set | created_set):
+        # Updated/created sources must exist; explicitly removed sources must
+        # be absent and independently verified against a prepared Context.
+        for path in sorted(updated_set | created_set | removed_set):
             candidate = root / path
             try:
                 resolved = candidate.resolve(strict=False)
@@ -150,7 +203,7 @@ def review(
                 safe = (
                     resolved.is_relative_to(repository_root)
                     and not has_symlink
-                    and candidate.is_file()
+                    and (not candidate.exists() if path in removed_set else candidate.is_file())
                 )
             except (OSError, RuntimeError, ValueError):
                 safe = False
@@ -165,8 +218,13 @@ def review(
         "disposition": disposition,
         "updated": sorted(updated_set),
         "created": sorted(created_set),
+        "removed": sorted(removed_set),
         "changed_paths_checked": changed_files is not None,
         "created_paths_checked": root is not None,
         "kind_of_change_verified": False,
+        "removed_source_verified": bool(removed_set) and (
+            verified_removed_paths is not None
+            and removed_set.issubset(set(verified_removed_paths))
+        ),
         "semantic_verification": False,
     }

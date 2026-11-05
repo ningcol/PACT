@@ -825,6 +825,117 @@ class TaskSurfaceTests(unittest.TestCase):
         )
 
 
+    def test_task_finish_accepts_source_verified_rule_rename(self) -> None:
+        """Real installed Task Finish must reconcile old and new canonical paths."""
+        before_path = self.root / "docs/product/rules/old-route.md"
+        after_path = self.root / "docs/product/rules/new-route.md"
+        before_path.parent.mkdir(parents=True)
+        before_path.write_text(
+            '+++\n[pact]\ntype = "rule"\nid = "RULE-RENAME-001"\n'
+            'status = "confirmed"\n+++\n\n# Existing Rule\n'
+            "The same confirmed invariant remains operative.\n",
+            encoding="utf-8",
+        )
+        for cmd in (
+            ("init", "-q"),
+            ("config", "user.email", "pact-test@example.invalid"),
+            ("config", "user.name", "PACT Test"),
+            ("add", "-A"),
+            ("commit", "-qm", "original confirmed Rule baseline"),
+        ):
+            result = subprocess.run(["git", *cmd], cwd=self.root, text=True,
+                                    capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        task_id = "TASK-RULE-RENAME"
+        prepared = self.pact(
+            "task", "prepare", "rename RULE-RENAME-001 canonical Rule file",
+            "--success", "The confirmed Rule is present under its new path",
+            "--risk", "low", "--require-rule", "RULE-RENAME-001",
+            "--query", "RULE-RENAME-001", "--task-id", task_id, "--json",
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        packet = json.loads(prepared.stdout)
+        context = json.loads(
+            (self.root / packet["context"]).read_text(encoding="utf-8")
+        )
+        old_rel = before_path.relative_to(self.root).as_posix()
+        new_rel = after_path.relative_to(self.root).as_posix()
+        self.assertIn(old_rel, [item["path"] for item in context["artifacts"]])
+        drafted = self.pact("task", "draft", task_id, "--json")
+        self.assertEqual(drafted.returncode, 0, drafted.stdout + drafted.stderr)
+
+        before_path.rename(after_path)
+        claim = "The original confirmed Rule is present under its new pathname"
+        verified = self.pact(
+            "task", "verify", task_id, "--criterion", "AC-1",
+            "--claim", claim, "--claim-id", "EV-RENAME",
+            "--source", new_rel, "--",
+            sys.executable, "-c",
+            "from pathlib import Path; "
+            "assert Path('docs/product/rules/new-route.md').is_file(); "
+            "assert not Path('docs/product/rules/old-route.md').exists()",
+        )
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        contract = json.loads(
+            (self.root / packet["contract"]).read_text(encoding="utf-8")
+        )
+        coverage = [{
+            "path": item["path"],
+            "disposition": "removed" if item["path"] == old_rel else "aligned",
+            "rationale": "Reviewed original source and explicit verified rename"
+                         if item["path"] == old_rel else
+                         "Original prepared knowledge is unchanged",
+        } for item in context["artifacts"]]
+        bundle = f".pact/completions/{task_id}"
+        convergence = {
+            "version": 1, "task_id": task_id,
+            "change": "Move a confirmed Rule file without modifying its meaning",
+            "owner_summary": "Original rule retained under the new path.",
+            "context_sha256": packet["context_sha256"],
+            "evidence": ["EV-RENAME"],
+            "coverage": coverage,
+            "change_coverage": [
+                {"path": old_rel, "rationale": "Original path was retired"},
+                {"path": new_rel, "rationale": "Same authoritative Rule moved here"},
+            ],
+            "findings": [],
+            "knowledge_retention": {
+                "disposition": "update-and-create",
+                "rationale": "Move exactly the existing confirmed Rule, not new truth",
+                "updated": [],
+                "created": [new_rel],
+                "removed": [old_rel],
+            },
+        }
+        owner = {
+            "version": 1, "task_id": task_id, "status": "completed",
+            "summary": "Confirmed Rule renamed with original meaning intact.",
+            "before": "Original confirmed Rule path existed.",
+            "after": "Same confirmed Rule is under the new path.",
+            "verification": [{"claim": claim, "evidence_ids": ["EV-RENAME"]}],
+            "acceptance": [{
+                "criterion_id": "AC-1",
+                "summary": contract["acceptance_criteria"][0]["text"],
+                "evidence_ids": ["EV-RENAME"],
+            }],
+            "consistency": {"status": "aligned", "summary": "No authority drift"},
+            "owner_decisions": [],
+        }
+        self.write_json(f"{bundle}/convergence.json", convergence)
+        self.write_json(f"{bundle}/owner-report.json", owner)
+        finished = self.pact(
+            "task", "finish", task_id, "--require-knowledge-retention", "--json",
+        )
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        data = json.loads(finished.stdout)
+        self.assertEqual(data["knowledge_retention"]["removed"], [old_rel])
+        self.assertEqual(data["knowledge_retention"]["created"], [new_rel])
+        self.assertEqual(data["convergence_coverage"]["removed_verified"], [old_rel])
+        self.assertEqual(set(data["task_change"]["changed_files"]), {old_rel, new_rel})
+        self.assertTrue(data["complete"])
+
+
     def test_task_finish_rejects_unverified_acceptance_criterion(self) -> None:
         task_id = "TASK-AC-GAP"
         prepared = self.pact(

@@ -35,16 +35,31 @@ def _text_key(doc: dict) -> str:
 def _linked_decisions(a: dict, b: dict) -> bool:
     left, right = a.get("id"), b.get("id")
     return bool(
-        (left and left in (b.get("supersedes") or []))
-        or (right and right in (a.get("supersedes") or []))
+        (left and left in _string_ids(b.get("supersedes")))
+        or (right and right in _string_ids(a.get("supersedes")))
         or (left and b.get("superseded_by") == left)
         or (right and a.get("superseded_by") == right)
     )
 
 
+def _string_ids(value) -> set[str]:
+    """Reject malformed metadata values without crashing or elevating them.
+
+    The authoritative PACT check already rejects non-string IDs; Audit should
+    remain a diagnostic inventory when Check fails, never treat untrusted
+    values as valid graph edges or as a normal audit success.
+    """
+    if not isinstance(value, list):
+        return set()
+    return {
+        value_id for value_id in value
+        if isinstance(value_id, str) and value_id
+    }
+
+
 def _router_ids(router: dict) -> set[str]:
     """Only explicit machine IDs; arbitrary prose never becomes authority."""
-    ids = set(router.get("related") or [])
+    ids = _string_ids(router.get("related"))
     ids.update(re.findall(
         r"\b(?:RULE|DEC)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b",
         str(router.get("text") or ""),
@@ -72,14 +87,14 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
 
     groups: dict[str, list[dict]] = {}
     for doc in docs:
-        if doc.get("artifact_type") not in {"rule", "decision"}:
+        if not isinstance(doc.get("artifact_type"), str) or doc["artifact_type"] not in {"rule", "decision"}:
             continue
-        if doc.get("status") not in {
+        if not isinstance(doc.get("status"), str) or doc["status"] not in {
             "candidate", "confirmed", "proposed", "implemented",
             "rejected", "superseded", "archived",
         }:
             continue
-        for ident in sorted(set(doc.get("domains") or [])):
+        for ident in sorted(_string_ids(doc.get("domains"))):
             if ident in domains and (domain is None or ident == domain):
                 groups.setdefault(ident, []).append(doc)
 
@@ -152,8 +167,11 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
     for ident, d in sorted(domains.items()):
         if d.get("status") != "confirmed":
             continue
-        for alias in d.get("aliases") or []:
-            norm = re.sub(r"\s+", " ", str(alias).casefold().strip())
+        aliases = d.get("aliases")
+        for alias in (aliases if isinstance(aliases, list) else []):
+            if not isinstance(alias, str):
+                continue
+            norm = re.sub(r"\s+", " ", alias.casefold().strip())
             if len(norm) >= 2:
                 alias_sources.setdefault(norm, []).append(ident)
     for alias, owners in sorted(alias_sources.items()):
@@ -183,7 +201,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
             "artifact_type": d.get("artifact_type"),
             "status": d.get("status"),
             "routing_evidence": (
-                "declared-domain" if domain in (d.get("domains") or [])
+                "declared-domain" if domain in _string_ids(d.get("domains"))
                 else "explicit-router-id"
             ),
         } for d in sorted(selected.values(), key=lambda d: d["path"])]

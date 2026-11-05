@@ -157,10 +157,16 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
         status = artifact.pact.get("status")
         ident = artifact.pact.get("id")
 
+        if not isinstance(typ, str):
+            errors.append(f"{path}: type must be a string")
+            continue
+
         if typ in ID_REQUIRED and not ident:
             errors.append(f"{path}: type '{typ}' requires a stable id")
 
-        if ident:
+        if ident and not isinstance(ident, str):
+            errors.append(f"{path}: artifact id must be a string")
+        elif ident:
             previous = seen_ids.get(ident)
             if previous:
                 errors.append(
@@ -170,7 +176,8 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
             else:
                 seen_ids[ident] = artifact
 
-        if typ in STATUS_BY_TYPE and status is not None and status not in STATUS_BY_TYPE[typ]:
+        if (typ in STATUS_BY_TYPE and status is not None
+                and (not isinstance(status, str) or status not in STATUS_BY_TYPE[typ])):
             allowed = ", ".join(sorted(STATUS_BY_TYPE[typ]))
             errors.append(
                 f"{path}: invalid status '{status}' for type '{typ}' (allowed: {allowed})"
@@ -182,14 +189,26 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
                 f"{path}: type '{typ}' must live under one of: {', '.join(prefixes)}"
             )
 
-        errors.extend(lifecycle_errors(path, typ, status))
+        # Invalid TOML status objects are already schema errors. Do not let
+        # lifecycle set-membership checks raise TypeError on unhashable input.
+        if status is not None and not isinstance(status, str):
+            errors.append(f"{path}: status must be a string")
+        else:
+            errors.extend(lifecycle_errors(path, typ, status))
 
     for artifact in artifacts:
         path = rel(artifact.path, root)
         typ = artifact.pact.get("type")
         ident = artifact.pact.get("id")
 
-        for domain_id in artifact.pact.get("domains", []) or []:
+        domain_ids = artifact.pact.get("domains", []) or []
+        if not isinstance(domain_ids, list):
+            errors.append(f"{path}: domains must be a list of stable IDs")
+            domain_ids = []
+        for domain_id in domain_ids:
+            if not isinstance(domain_id, str):
+                errors.append(f"{path}: domains contains a non-string stable ID")
+                continue
             target = seen_ids.get(domain_id)
             if not target:
                 errors.append(f"{path}: domains references missing id '{domain_id}'")
@@ -200,7 +219,14 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
                 )
 
         for field in ("related", "supersedes"):
-            for target_id in artifact.pact.get(field, []) or []:
+            field_ids = artifact.pact.get(field, []) or []
+            if not isinstance(field_ids, list):
+                errors.append(f"{path}: {field} must be a list of stable IDs")
+                continue
+            for target_id in field_ids:
+                if not isinstance(target_id, str):
+                    errors.append(f"{path}: {field} contains a non-string stable ID")
+                    continue
                 target = seen_ids.get(target_id)
                 if not target:
                     errors.append(f"{path}: {field} references missing id '{target_id}'")
@@ -213,7 +239,9 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
                     )
 
         superseded_by = artifact.pact.get("superseded_by")
-        if superseded_by:
+        if superseded_by and not isinstance(superseded_by, str):
+            errors.append(f"{path}: superseded_by must be a stable ID string")
+        elif superseded_by:
             target = seen_ids.get(superseded_by)
             if not target:
                 errors.append(
