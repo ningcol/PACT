@@ -795,6 +795,35 @@ class TaskSurfaceTests(unittest.TestCase):
         self.assertEqual(machine_summary["errors"], [])
         self.assertNotIn("score", machine_summary["summary"])
 
+        # Opt-in knowledge review must not silently pass an old review bundle.
+        opt_in_missing = self.pact(
+            "task", "finish", task_id, "--require-knowledge-retention", "--json",
+        )
+        self.assertNotEqual(opt_in_missing.returncode, 0)
+        self.assertIn("knowledge retention", opt_in_missing.stdout)
+
+        # The reviewed disposition lives in the existing Convergence document.
+        convergence["knowledge_retention"] = {
+            "disposition": "none",
+            "rationale": "Only existing source behavior and its tests were reviewed.",
+            "updated": [],
+            "created": [],
+        }
+        self.write_json(
+            f".pact/completions/{task_id}/convergence.json", convergence
+        )
+        opt_in_completed = self.pact(
+            "task", "finish", task_id, "--require-knowledge-retention", "--json",
+        )
+        self.assertEqual(
+            opt_in_completed.returncode, 0,
+            opt_in_completed.stdout + opt_in_completed.stderr,
+        )
+        self.assertEqual(
+            json.loads(opt_in_completed.stdout)["knowledge_retention"]["disposition"],
+            "none",
+        )
+
 
     def test_task_finish_rejects_unverified_acceptance_criterion(self) -> None:
         task_id = "TASK-AC-GAP"
