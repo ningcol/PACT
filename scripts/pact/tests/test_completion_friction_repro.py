@@ -136,11 +136,14 @@ class CompletionFrictionReproTests(unittest.TestCase):
         self.assertTrue(outcome["complete"])
         self.assertEqual(outcome["acceptance"]["evidence_verified"], 1)
 
-    def assert_stale(self) -> None:
+    def assert_stale(self) -> str:
         result, outcome = self.complete()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertFalse(outcome["complete"])
-        self.assertIn("stale pact-run receipt", "\n".join(outcome["errors"]))
+        details = "\n".join(outcome["errors"])
+        self.assertIn("stale pact-run receipt", details)
+        self.assertIn("advisory only:", details)
+        return details
 
     def test_baseline_valid_completion(self) -> None:
         self.verify()
@@ -152,7 +155,10 @@ class CompletionFrictionReproTests(unittest.TestCase):
         old_tree = self.git("rev-parse", "HEAD^{tree}")
         self.git("commit", "--allow-empty", "-qm", "no content change")
         self.assertEqual(old_tree, self.git("rev-parse", "HEAD^{tree}"))
-        self.assert_stale()
+        details = self.assert_stale()
+        self.assertIn("Git HEAD moved", details)
+        self.assertIn("committed Git trees are identical", details)
+        self.assertIn("commit SHA may still affect checks", details)
 
     def test_unrelated_document_commit_invalidates_run_receipt(self) -> None:
         self.verify()
@@ -160,13 +166,17 @@ class CompletionFrictionReproTests(unittest.TestCase):
         (self.root / "README.md").write_text("# Fixture\nExtra note\n", encoding="utf-8")
         self.git("add", "README.md")
         self.git("commit", "-qm", "change unrelated README")
-        self.assert_stale()
+        details = self.assert_stale()
+        self.assertIn("committed Git paths differ (1)", details)
+        self.assertIn("README.md", details)
 
     def test_relevant_source_change_correctly_invalidates_receipt(self) -> None:
         self.verify()
         self.assert_verified()
         (self.root / "app.py").write_text("ANSWER = 43\n", encoding="utf-8")
-        self.assert_stale()
+        details = self.assert_stale()
+        self.assertIn("Git index/worktree identity changed", details)
+        self.assertIn("original dirty-file details are not stored", details)
 
     def test_changed_declared_verification_source_correctly_rejects_receipt(self) -> None:
         (self.root / "verify.py").write_text("print('first')\n", encoding="utf-8")
@@ -177,6 +187,16 @@ class CompletionFrictionReproTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertFalse(outcome["complete"])
         self.assertIn("declared source digest has changed", "\n".join(outcome["errors"]))
+
+    def test_untrusted_receipt_head_never_enters_git_argument_as_option(self) -> None:
+        self.verify()
+        run = json.loads(self.run_ref.read_text(encoding="utf-8"))
+        run["workspace_after"]["git_head"] = "--exec=bad"
+        run["workspace_after"]["sha256"] = "f" * 64
+        self.write_json(self.run_ref, run)
+        details = self.assert_stale()
+        self.assertIn("Git commit-tree comparison unavailable", details)
+        self.assertIn("Git HEAD moved", details)
 
     def test_owner_acceptance_in_prose_cannot_mask_missing_verification(self) -> None:
         self.verify()
