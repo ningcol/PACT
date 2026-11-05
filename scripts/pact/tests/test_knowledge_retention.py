@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import tempfile
@@ -14,6 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 
 from knowledge_retention import review
+from convergence_coverage import review as review_context_coverage
 from schema_validate import load_schema, validate_instance
 from converge import outcome as converge_outcome
 from report import convergence_outcome as report_outcome
@@ -112,6 +114,68 @@ class KnowledgeRetentionTests(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(outcome["created"], [new])
             self.assertEqual(outcome["removed"], [old])
+
+    def test_removed_proof_comes_from_prepared_task_context(self):
+        """The remover cannot invent a Convergence receipt for an unknown Rule."""
+        path = "docs/product/rules/old.md"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source = root / path
+            source.parent.mkdir(parents=True)
+            source.write_text("# Original confirmed Rule\\n", "utf-8")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            context = {
+                "artifacts": [{
+                    "path": path, "sha256": digest,
+                    "id": "RULE-OLD", "artifact_type": "rule",
+                }],
+            }
+            context_path = root / "context.json"
+            context_path.write_text(json.dumps(context), "utf-8")
+            context_digest = hashlib.sha256(context_path.read_bytes()).hexdigest()
+            convergence = {
+                "context_sha256": context_digest,
+                "coverage": [{
+                    "path": path, "disposition": "removed",
+                    "rationale": "Explicit reviewed retirement",
+                }],
+                "findings": [],
+                "knowledge_retention": retention("update", removed=[path]),
+            }
+            source.unlink()
+            coverage_errors, stats = review_context_coverage(
+                context, convergence, root=root, context_path=context_path,
+                expected_context_sha256=context_digest,
+            )
+            self.assertEqual(coverage_errors, [])
+            self.assertEqual(stats["removed_verified"], [path])
+            errors, report = review(
+                convergence, root=root, changed_files=[path],
+                require=True, verified_removed_paths=stats["removed_verified"],
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(report["removed"], [path])
+
+            # The same Convergence cannot bless a path whose exact original
+            # bytes were never part of the prepared Context.
+            forged = "docs/product/rules/never-prepared.md"
+            convergence["coverage"].append({
+                "path": forged, "disposition": "removed",
+                "rationale": "Not in prepared Context",
+            })
+            convergence["knowledge_retention"] = retention(
+                "update", removed=[path, forged],
+            )
+            coverage_errors, stats = review_context_coverage(
+                context, convergence, root=root, context_path=context_path,
+                expected_context_sha256=context_digest,
+            )
+            self.assertTrue(coverage_errors)
+            errors, _ = review(
+                convergence, root=root, changed_files=[path, forged],
+                require=True, verified_removed_paths=stats["removed_verified"],
+            )
+            self.assertIn("not source-verified", " ".join(errors))
 
     def test_removal_without_original_convergence_proof_is_rejected(self):
         path = ".agents/decisions/implemented/retired.md"
