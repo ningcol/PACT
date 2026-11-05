@@ -40,7 +40,7 @@ python3 pact.py task verify <TASK-ID> --criterion AC-1 --claim "<specific check>
 python3 pact.py task finish <TASK-ID>
 ```
 
-These are default orchestration helpers, not mandatory workflow steps. Use lower-level `discover/context/impact/run/evidence/converge/report/complete` primitives directly when that is more efficient or precise. Never bypass truth/evidence requirements merely to reduce steps.
+These are default orchestration helpers, not mandatory workflow steps. For explanations or small changes, use proportionate project procedures without automatically preparing a PACT task. Once a Task Contract is prepared, its Evidence and acceptance requirements still apply; use lower-level `discover/context/impact/run/evidence/converge/report/complete` primitives where more precise. Never bypass truth/evidence requirements merely to reduce steps.
 
 ## Before changing behavior
 
@@ -68,7 +68,7 @@ Escalate only when the decision changes product meaning, user-observable behavio
 
 ## Completion
 
-A task is not done merely because code was written or tests are green.
+A task is not PACT-verified as complete merely because code was written or tests are green. An Owner may explicitly accept a limited delivery with disclosed unverified work under the existing project workflow; that is **not** `task finish` success or `complete=true`, and must not falsify Evidence, waive binding requirements, or silently change a Task Contract. See [Completion Contract](docs/governance/completion-contract.md#owner-accepted-delivery-versus-verified-completion).
 
 Done requires, as applicable:
 

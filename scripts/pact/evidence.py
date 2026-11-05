@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
-import hashlib
+import re
+import subprocess
 import sys
+from functools import lru_cache
 
 from schema_validate import load_schema, validate_instance
 from workspace import workspace_snapshot
@@ -37,6 +40,103 @@ def resolve_ref(root: pathlib.Path, ref: str) -> pathlib.Path:
             f"evidence ref escapes repository root: {ref}"
         ) from exc
     return path
+
+
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+_STALE_PATH_LIMIT = 5
+
+
+@lru_cache(maxsize=32)
+def _committed_diff_hint(root: pathlib.Path, earlier: object, later: object) -> str:
+    """Explain committed-tree changes, never certify that old Evidence is safe.
+
+    The v2 receipt stores a summarized worktree fingerprint, not all verifier
+    inputs or each original dirty file. A Git diff is only an advisory clue.
+    """
+    if not (
+        isinstance(earlier, str)
+        and isinstance(later, str)
+        and _COMMIT_SHA.fullmatch(earlier)
+        and _COMMIT_SHA.fullmatch(later)
+    ):
+        return "Git commit-tree comparison unavailable"
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--no-ext-diff", "--no-textconv",
+             "--name-only", "--no-renames", "-z", earlier, later, "--"],
+            cwd=root,
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "Git commit-tree comparison unavailable"
+    if result.returncode != 0:
+        return "Git commit-tree comparison unavailable"
+
+    changed = [raw for raw in result.stdout.split(b"\0") if raw]
+    if not changed:
+        return "committed Git trees are identical (commit SHA may still affect checks)"
+    sample = [
+        repr(raw.decode("utf-8", errors="backslashreplace")[:100])
+        for raw in changed[:_STALE_PATH_LIMIT]
+    ]
+    suffix = "; more paths omitted" if len(changed) > _STALE_PATH_LIMIT else ""
+    return (
+        f"committed Git paths differ ({len(changed)}): "
+        + ", ".join(sample) + suffix
+    )
+
+
+def workspace_staleness_detail(
+    root: pathlib.Path, recorded: dict, current: dict,
+) -> str:
+    """Read-only explanation of a stale fingerprint; never change its verdict."""
+    details: list[str] = []
+    old_kind = recorded.get("kind")
+    new_kind = current.get("kind")
+    if old_kind != new_kind:
+        details.append(f"workspace kind changed ({old_kind!r} -> {new_kind!r})")
+    elif new_kind == "git":
+        old_head = recorded.get("git_head")
+        new_head = current.get("git_head")
+        if old_head != new_head:
+            old_short = (
+                old_head[:12] if isinstance(old_head, str)
+                and _COMMIT_SHA.fullmatch(old_head) else "unavailable"
+            )
+            new_short = (
+                new_head[:12] if isinstance(new_head, str)
+                and _COMMIT_SHA.fullmatch(new_head) else "unavailable"
+            )
+            details.append(f"Git HEAD moved ({old_short} -> {new_short})")
+            details.append(_committed_diff_hint(root, old_head, new_head))
+        if recorded.get("dirty") != current.get("dirty"):
+            details.append(
+                "Git staged/unstaged/untracked dirty flag changed "
+                f"({recorded.get('dirty')!r} -> {current.get('dirty')!r})"
+            )
+        if recorded.get("untracked_count") != current.get("untracked_count"):
+            details.append(
+                "untracked path count changed "
+                f"({recorded.get('untracked_count')!r} -> "
+                f"{current.get('untracked_count')!r})"
+            )
+        if not details:
+            details.append(
+                "Git index/worktree identity changed; original dirty-file "
+                "details are not stored in this receipt"
+            )
+    else:
+        details.append(
+            "filesystem contents or metadata differ; the receipt does not "
+            "store individual earlier file identities"
+        )
+
+    return (
+        "; ".join(details)
+        + "; advisory only: verifier dependencies may include Git metadata, "
+        "configuration and implicit inputs; rerun verification before claiming completion"
+    )
 
 
 def verify_item(
@@ -147,7 +247,8 @@ def verify_item(
             errors.append(
                 "stale pact-run receipt "
                 f"{ref}: verified workspace {recorded_sha!r} "
-                f"does not match current workspace {current_sha!r}"
+                f"does not match current workspace {current_sha!r}; "
+                + workspace_staleness_detail(root, recorded, current_workspace)
             )
         elif recorded.get("kind") != current_workspace.get("kind"):
             errors.append(

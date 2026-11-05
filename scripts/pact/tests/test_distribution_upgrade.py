@@ -281,6 +281,10 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertFalse((self.target / "LICENSE").exists())
         self.assertFalse((self.target / "scripts" / "pact").exists())
+        guide = (self.target / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("not mandatory for every request", guide)
+        self.assertIn("leave PACT", guide)
+        self.assertIn("complete=true", guide)
 
         version = self.run_target("version", "--json")
         self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
@@ -296,7 +300,11 @@ class DistributionUpgradeTests(unittest.TestCase):
             agents.read_text(encoding="utf-8"),
             "# Existing project agent rules\n",
         )
-        self.assertTrue((self.target / ".pact" / "AGENT_BOOTSTRAP.md").is_file())
+        bootstrap = (self.target / ".pact" / "AGENT_BOOTSTRAP.md")
+        self.assertTrue(bootstrap.is_file())
+        guide = bootstrap.read_text(encoding="utf-8")
+        self.assertIn("not a required ceremony", guide)
+        self.assertIn("never mark Evidence/ACs as passing", guide)
 
     def test_corrupt_install_manifest_blocks_all_surfaces(self) -> None:
         self.scaffold()

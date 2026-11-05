@@ -60,9 +60,16 @@ An absent optional knowledge directory means "not materialized yet", not
 "healthy knowledge is missing". Do not create empty folders/templates merely
 to satisfy PACT.
 
+## Proportionate task rigor
+
+Use existing project procedures for explanations, investigations and small
+changes; PACT's Task/Change workflow is not mandatory for every request.
+When a Task Contract has been prepared, its acceptance and Evidence gates
+still apply.
+
 ## Default task workflow
 
-Use the high-level surface first:
+For work requiring a prepared PACT task, prefer the high-level surface:
 
 1. `python pact.py status` / `inspect` when project state or history is unclear.
 2. `python pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>`.
@@ -82,7 +89,14 @@ Escalate only when a decision changes user-observable behavior, business/data me
 
 ## Completion boundary
 
-"Done" requires appropriate evidence and convergence, not only code changes or green tests.
+Claim PACT-verified completion only after the prepared Task Contract, Evidence
+and Convergence gates pass; a green test alone is not enough.
+
+An Owner may explicitly accept the currently delivered scope while some
+checks remain unverified. Record the acceptance and gaps in the project's
+existing Change/owner-facing result; leave PACT `task finish` and
+`complete=true` unsatisfied. Do not relabel failed/missing tests as passed,
+or waive applicable security, permissions, legal or deployment requirements.
 
 ## Baseline boundary
 
@@ -119,6 +133,10 @@ Merge these concepts into the existing project agent guide:
 - communicate owner-facing results using the project Owner Profile in `.pact/config.toml`;
 - use product/business consequences before unnecessary implementation detail.
 
+The PACT task loop is optional orchestration for work needing a prepared
+Task Contract, not a required ceremony for every explanation or small fix.
+Once prepared, its acceptance/Evidence checks remain binding.
+
 Default PACT task loop to merge into the project guide:
 
 - prepare work with `python pact.py task prepare ...` and follow its Task Contract/Context;
@@ -126,7 +144,8 @@ Default PACT task loop to merge into the project guide:
 - create Evidence + Convergence + Owner Report before completion;
 - Convergence must bind the prepared Context, disposition every selected knowledge artifact, and review every task-changed file reported at finish;
 - if using `task draft`, explicitly resolve `knowledge_retention` pending (none/update/create/update-and-create with rationale and changed knowledge paths); do not add a Rule/Decision just because code changed;
-- finish with `python pact.py task finish <TASK-ID>`; a failed gate means the task is not done;
+- finish with `python pact.py task finish <TASK-ID>`; a failed gate means PACT-verified completion is not established;
+- if the Owner explicitly accepts a scoped delivery with missing verification, disclose remaining gaps in the existing project Change/owner-facing result, but never mark Evidence/ACs as passing or change PACT `complete=true`;
 - use `python pact.py task status <TASK-ID> --json` to recover task paths after a long conversation.
 
 Suggested knowledge router (materialize a location only when real durable
