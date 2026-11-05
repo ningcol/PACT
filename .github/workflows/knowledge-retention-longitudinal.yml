@@ -3,7 +3,11 @@ name: PACT Knowledge Retention Longitudinal Diagnostic
 on:
   pull_request:
     paths:
-      - "scripts/pact/**"
+      - "scripts/pact/audit.py"
+      - "scripts/pact/knowledge_retention.py"
+      - "scripts/pact/complete.py"
+      - "scripts/pact/task.py"
+      - "scripts/pact/task_workflow.py"
       - "scripts/benchmark/knowledge_retention_longitudinal.py"
       - "scripts/benchmark/brownfield_adr_viewer.py"
       - ".pact/schema/**"
