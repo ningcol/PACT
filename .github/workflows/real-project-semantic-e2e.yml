@@ -1,0 +1,80 @@
+name: PACT Real Project Semantic Maintenance E2E
+
+on:
+  pull_request:
+    paths:
+      - "scripts/benchmark/real_adr_decision_e2e.py"
+      - ".github/workflows/real-project-semantic-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-source-maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact PACT candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone and pin real external repository (read-only upstream)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/adr-viewer-e2e"
+          echo "PACT_E2E_EXTERNAL_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/mrwilson/adr-viewer.git "$TARGET"
+          git -C "$TARGET" checkout --quiet --detach a25f1c71e031bdaa63fe3175f969f197139f2044
+          test "$(git -C "$TARGET" rev-parse HEAD)" = "a25f1c71e031bdaa63fe3175f969f197139f2044"
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+
+      - name: Install genuine upstream pinned test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r "$PACT_E2E_EXTERNAL_TARGET/requirements.txt"
+
+      - name: Execute three successive real code tasks and fail-closed counterexamples
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          python scripts/benchmark/real_adr_decision_e2e.py \
+            --target "$PACT_E2E_EXTERNAL_TARGET" \
+            > "$RUNNER_TEMP/pact-real-adr-e2e.json" || result=$?
+          cat "$RUNNER_TEMP/pact-real-adr-e2e.json"
+          test "$result" -eq 0
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = json.loads((Path(os.environ["RUNNER_TEMP"]) / "pact-real-adr-e2e.json").read_text("utf-8"))
+          assert payload["status"] == "PASS", payload.get("error")
+          assert payload["task_count"] == 3
+          assert all(row["completed"] for row in payload["tasks"])
+          assert payload["tasks"][0]["stale_receipt_check"]
+          assert payload["negative"]["pytest_rejected"]
+          assert payload["decision_bytes_unchanged"]
+          assert payload["knowledge_growth"] == 0
+          assert payload["source_remote_pushed"] is False
+          assert payload["coding_agent_executed"] is False
+          assert payload["real_agent_decision_obedience_verified"] is False
+          print("PASS: real source/test changes with installed PACT; NOT an independent Agent/Owner efficacy trial")
+          PY
+
+      - name: Upload reproducible exact-run evaluation JSON
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: real-project-semantic-e2e-json
+          path: ${{ runner.temp }}/pact-real-adr-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
