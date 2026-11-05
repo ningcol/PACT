@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import tempfile
 import subprocess
 import sys
 import unittest
@@ -114,6 +115,65 @@ class KnowledgeRetentionTests(unittest.TestCase):
             changed_files=["docs/product/rules/order.md"],
         )
         self.assertIn("'none' conflicts", " ".join(errors))
+
+    def test_omitted_second_canonical_rule_is_rejected(self):
+        first = "docs/product/rules/first.md"
+        second = "docs/product/rules/second.md"
+        problems, _ = review(
+            {"knowledge_retention": retention("update", updated=[first])},
+            changed_files=[first, second],
+            require=True,
+        )
+        self.assertIn(second, " ".join(problems))
+        self.assertIn("not included in review", " ".join(problems))
+
+    def test_none_does_not_mistake_ordinary_readme_for_normative_truth(self):
+        problems, _ = review(
+            {"knowledge_retention": retention("none")},
+            changed_files=["README.md", "docs/changes/completed/task.md"],
+            require=True,
+        )
+        self.assertEqual(problems, [])
+
+    def test_canonical_governance_change_requires_review(self):
+        problems, _ = review(
+            {"knowledge_retention": retention("none")},
+            changed_files=["docs/governance/authority.md"],
+        )
+        self.assertIn("not included in review", " ".join(problems))
+
+    def test_created_document_must_exist_in_repo_if_root_is_known(self):
+        path = "docs/product/domains/order.md"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            entry = {"knowledge_retention": retention("create", created=[path])}
+            bad, _ = review(entry, changed_files=[path], root=root, require=True)
+            self.assertIn("created knowledge file missing", " ".join(bad))
+            target = root / path
+            target.parent.mkdir(parents=True)
+            target.write_text("# Orders\n", encoding="utf-8")
+            good, stats = review(entry, changed_files=[path], root=root, require=True)
+            self.assertEqual(good, [])
+            self.assertTrue(stats["created_paths_checked"])
+            self.assertFalse(stats["kind_of_change_verified"])
+
+    def test_symlink_created_knowledge_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            p = root / "docs/product/rules/rule.md"
+            p.parent.mkdir(parents=True)
+            (root / "real.md").write_text("# data\n", encoding="utf-8")
+            try:
+                p.symlink_to(root / "real.md")
+            except OSError:
+                self.skipTest("symlink not supported")
+            errors, _ = review(
+                {"knowledge_retention": retention("create", created=[
+                    "docs/product/rules/rule.md"])},
+                changed_files=["docs/product/rules/rule.md"],
+                root=root,
+            )
+            self.assertIn("missing or unsafe", " ".join(errors))
 
     def test_schema_accepts_retention_but_not_unknown_fields(self):
         schema = load_schema(ROOT / ".pact/schema/convergence-report.schema.json")
