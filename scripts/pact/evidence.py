@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
-import hashlib
 import re
 import subprocess
 import sys
+from functools import lru_cache
 
 from schema_validate import load_schema, validate_instance
 from workspace import workspace_snapshot
@@ -45,6 +46,7 @@ _COMMIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _STALE_PATH_LIMIT = 5
 
 
+@lru_cache(maxsize=32)
 def _committed_diff_hint(root: pathlib.Path, earlier: object, later: object) -> str:
     """Explain committed-tree changes, never certify that old Evidence is safe.
 
@@ -60,11 +62,11 @@ def _committed_diff_hint(root: pathlib.Path, earlier: object, later: object) -> 
         return "Git commit-tree comparison unavailable"
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", "--no-renames", "-z",
-             earlier, later, "--"],
+            ["git", "diff", "--no-ext-diff", "--no-textconv",
+             "--name-only", "--no-renames", "-z", earlier, later, "--"],
             cwd=root,
             capture_output=True,
-            timeout=10,
+            timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):
         return "Git commit-tree comparison unavailable"
