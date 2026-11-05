@@ -251,6 +251,8 @@ eval       validate/summarize pilot records or derive machine task observations
 
 The long list above is the advanced primitive layer, not the expected everyday interface.
 
+PACT task preparation is not mandatory for every explanation, investigation or small fix. Once a Task Contract is prepared, `task finish` remains a strict evidence-backed completion assertion. The Owner may accept the delivered scope with explicitly disclosed verification gaps through the project's existing workflow, but that does **not** mean `complete=true` or turn failed/unverified Evidence into a pass. See [Completion Contract](docs/governance/completion-contract.md#owner-accepted-delivery-versus-verified-completion).
+
 For local evidence-driven evaluation, `python pact.py eval --task <TASK-ID> --json` derives one machine observation and `python pact.py eval --all-tasks --json` summarizes all local prepared tasks. Human interaction/comprehension/overhead metrics remain explicitly outside machine inference.
 
 ## Discovery, Explain, and Context

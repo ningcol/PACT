@@ -134,6 +134,18 @@ Tracked Git submodules are supported when initialized, at the exact commit stage
 
 Git fingerprint V3 intentionally invalidates previously recorded V2 `pact run` workspace hashes. A pending task with older run receipts must rerun verification before a trustworthy completion claim; pre-V3 *task preparation* dirty-file state encodings are normalized for changed-file attribution, not elevated into new execution evidence.
 
+## Read-only stale receipt explanations
+
+When the current workspace fingerprint differs from a stored `pact run`
+receipt, the completion check still rejects that receipt. Diagnostic text may
+identify a moved Git HEAD, committed paths changed between reachable Git
+commits, or changed summary flags. Even an unchanged committed Git tree is
+not grounds to reuse a receipt: a test may read the commit ID, worktree
+content, external inputs, or build configuration. Version-2 run receipts do
+not retain enough detail to reconstruct all earlier dirty files or verifier
+dependencies. The explanation is advisory and never changes Evidence
+readiness, risk requirements or the result of `task finish`.
+
 ## Actual changed-file coverage
 
 For a prepared task in a Git worktree, PACT records the prepare-time Git HEAD plus the content state of paths that were already dirty before the task. It does **not** require a clean workspace.
@@ -178,6 +190,23 @@ PACT deliberately separates two trust layers:
 A local `pact-run` receipt is an execution-backed, workspace-bound provenance record. It is **not** a tamper-proof machine attestation. PACT can validate the receipt's structure and consistency, but an independent remote/signed attestation is required when the threat model includes a party rewriting local control-plane files.
 
 Owner Report verification text must not broaden a passing Evidence claim. Business-friendly consequence summaries belong in `summary`, `before`, and `after`; the machine-checked verification entry stays bounded by its referenced Evidence.
+
+## Owner-accepted delivery versus verified completion
+
+A project Owner may explicitly accept a **limited delivered scope** with clearly
+disclosed outstanding tests, missing acceptance, or other work, and end the
+current delivery effort through the project's existing Change/communication
+process. This is a product/delivery decision, **not** an attestation that the
+original Task Contract passed. The prepared PACT task remains unverified or
+pending if any required criteria are missing; `task finish` and `complete=true`
+must retain their strict existing meaning.
+
+Record what was delivered, the Owner's actual acceptance, the remaining
+unverified/failed claims, and any necessary follow-up in the project's
+existing authoritative record. Never manufacture Owner consent, rewrite
+failed Evidence, silently relax Task Contract conditions, or infer that an
+Owner acceptance waives security, legal, privacy, permission or deployment
+obligations. Owner communication is not authenticated approval by the CLI.
 
 ## Default definition
 

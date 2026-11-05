@@ -98,8 +98,14 @@ def workspace_staleness_detail(
         old_head = recorded.get("git_head")
         new_head = current.get("git_head")
         if old_head != new_head:
-            old_short = old_head[:12] if isinstance(old_head, str) else "none"
-            new_short = new_head[:12] if isinstance(new_head, str) else "none"
+            old_short = (
+                old_head[:12] if isinstance(old_head, str)
+                and _COMMIT_SHA.fullmatch(old_head) else "unavailable"
+            )
+            new_short = (
+                new_head[:12] if isinstance(new_head, str)
+                and _COMMIT_SHA.fullmatch(new_head) else "unavailable"
+            )
             details.append(f"Git HEAD moved ({old_short} -> {new_short})")
             details.append(_committed_diff_hint(root, old_head, new_head))
         if recorded.get("dirty") != current.get("dirty"):
