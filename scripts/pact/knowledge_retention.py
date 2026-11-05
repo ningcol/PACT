@@ -27,6 +27,15 @@ def _safe_path(value: str) -> bool:
     )
 
 
+def _knowledge_path(path: str) -> bool:
+    """Prevent source code/tests from being mislabelled as durable knowledge."""
+    return (
+        (path.startswith("docs/") and path.endswith(".md"))
+        or (path.startswith(".agents/decisions/") and path.endswith(".md"))
+        or path in {"AGENTS.md", ".pact/config.toml", ".pact/fitness.toml"}
+    )
+
+
 def review(
     convergence: dict,
     *,
@@ -61,6 +70,8 @@ def review(
             errors.append(f"knowledge retention: {name} must contain safe repository paths")
         elif len(paths) != len(set(paths)):
             errors.append(f"knowledge retention: duplicate paths in {name}")
+        elif any(not _knowledge_path(p) for p in paths):
+            errors.append(f"knowledge retention: {name} must reference durable knowledge files")
     if errors:
         return errors, {"status": "invalid", "disposition": disposition}
 
