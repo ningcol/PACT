@@ -83,6 +83,14 @@ Use `python pact.py task status <TASK-ID> --json` to recover the prepared contra
 
 ## Decision boundary
 
+Framework-managed runtime files and embedded schemas change only in an explicitly
+authorized PACT maintenance/upgrade task, through the supported upgrade flow.
+Project seeds, rules, business docs and extensions remain project-owned. Never
+edit receipt hashes/results or install ownership to manufacture completion.
+After an upgrade review applicable upstream guidance separately: customized
+project instructions are not silently replaced. Runtime capability is not proof
+that a project enabled it or that its checks executed.
+
 Do not ask the owner to choose ordinary implementation mechanisms.
 
 Escalate only when a decision changes user-observable behavior, business/data meaning, permissions/policy, irreversible outcomes, or material risk/cost.

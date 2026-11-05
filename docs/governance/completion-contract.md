@@ -16,6 +16,33 @@ Task Contract intent is task-scoped authority. It does not silently override con
 
 ## Optional mechanical completion helpers
 
+Use actual machine AC IDs in Evidence and owner communication. Imported textual
+labels are not a second namespace: assist warns about conflicting leading labels
+without rewriting the frozen contract. Advisory coverage drafts list paths to
+review, never dispositions or a claim of alignment. Criterion evidence traces
+include failed and unverified Claims. Auditing stored logs proves record checks;
+product assertions still need original execution, tested sources and reviewed
+applicability. One execution may legitimately support several criteria.
+
+When completed work needs another fix, normally prepare a linked follow-up
+Change/Task and preserve the earlier tested version. Force preparation replaces
+the current task and invalidates its completion. Retained local generations are
+audit history, not passing Evidence for the replacement. Do not use a new
+baseline to describe earlier implementation as newly verified.
+
+Replaced local generations are retained under `.pact/tasks/.history/` and shown
+by status/resume/assist as audit-only summaries (at most twenty, with truncation
+reported). Current acceptance never consumes an archived completion implicitly.
+History is local ignored state, not a portable verification certificate. Old
+tasks without retained generations remain readable; missing earlier history
+cannot be reconstructed from today's code. Unsafe or corrupt archives are
+diagnosed rather than silently described as empty history.
+
+Default replaced completion state and safe in-repository custom bundles are
+snapshotted; custom originals remain in place. An external custom bundle is
+retained as an explicit reference, not read/copied into the repository. History
+summaries distinguish those cases and never claim an external snapshot exists.
+
 `task draft <TASK-ID>` writes schema-shaped, explicitly **incomplete**
 Evidence/Convergence/Owner Report files inside a repository-owned completion
 bundle. It never overwrites an existing file, and refuses corrupt Evidence.

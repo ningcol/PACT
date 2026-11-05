@@ -20,6 +20,24 @@ There are no legacy/full install profiles or alternate runtime layouts in the su
 
 ## Ownership classes
 
+### Maintenance authority
+
+In adopted projects ordinary business tasks may read and execute PACT, but must
+not patch framework-managed files or embedded schemas. Only an explicitly
+authorized PACT maintenance/upgrade task replaces them through the supported
+upgrade procedure. Generic defects belong upstream with reproductions. The
+upstream source itself remains editable under normal review and compatibility
+testing; this is not a permanent freeze of PACT's implementation.
+
+Project seeds, governance, skills, business documents and custom checks stay
+project-owned. Agents maintain them within task authority; confirmed product
+meaning, permissions and material risk still follow the Owner decision boundary.
+An explicit Owner decision may revise product truth; code alone may not.
+Generated receipts, task state and installation bookkeeping must not be edited
+to manufacture passing hashes, results or ownership. These are collaboration
+and integrity boundaries, not OS locks or tamper-proof attestations. Location
+under `.pact/` alone does not make a project extension framework-managed.
+
 Every installed file is one of two classes.
 
 ### Framework-managed
@@ -75,6 +93,21 @@ plan
 If publishing, manifest construction, or final validation fails, PACT removes only files created by that init transaction and restores any prior install manifest. Existing project files are not part of the rollback set.
 
 ## Upgrade safety
+
+Select a fixed source, preview operations/conflicts, apply within explicit
+maintenance authority, then verify integrity and relevant project compatibility.
+Updating an upstream clone never updates an adopted project automatically.
+`doctor`/`status` expose runtime version, archive SHA256, integrity and declared
+capabilities. Equal version strings can identify different builds; source mode
+has no archive digest. Capabilities mean supported interfaces, not configured
+policy, checks executed, rule loading or business acceptance.
+
+Runtime replacement and reconciliation of project-owned guidance are separate
+results. Review relevant upstream seed/template/usage differences and merge only
+applicable guidance into existing authoritative files. Preserve customizations;
+never invent baseline reviews, add CI, or run business-wide tests merely because
+of an upgrade. Record actual results and outstanding guidance in the existing
+maintenance record, without another approval register. Unknown source stays unknown.
 
 For framework-managed files:
 

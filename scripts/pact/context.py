@@ -17,7 +17,8 @@ from risk import profile
 from schema_validate import load_schema, validate_instance
 from scope_routing import route_only
 from discover import (DOCUMENT_STOPWORDS, document_term_matches, document_tokens,
-                      exact_match_priority, has_unspaced_script)
+                      exact_match_priority, has_unspaced_script,
+                      retrieval_scope_gaps, domain_query_suggestions)
 from runtime_exec import runtime_command
 
 
@@ -1059,6 +1060,24 @@ def main() -> int:
     ]
 
     unknowns: list[str] = governance_path_hints()
+    # Diagnose the selected retrieval window only. Neither a zero result nor
+    # Change-only results prove that the project lacks durable knowledge.
+    # Domain names below are source-labelled search suggestions, never new
+    # queries, materialized artifacts, or required Rule/Domain counts.
+    retrieval_gaps = retrieval_scope_gaps({}, queries, results)
+    unknowns.extend(retrieval_gaps)
+    if retrieval_gaps:
+        try:
+            hint_index = json.loads(
+                (ROOT / ".pact/cache/project-map.json").read_text(encoding="utf-8")
+            )
+            if isinstance(hint_index, dict) and isinstance(hint_index.get("documents"), list):
+                unknowns.extend(domain_query_suggestions(hint_index, queries))
+        except (OSError, ValueError):
+            unknowns.append(
+                "Domain follow-up query hints are unavailable; inspect project "
+                "navigation manually before inferring that knowledge is missing."
+            )
     if weak_decision_hints is not None:
         unknowns.append(
             "Source-scored generic-body-only Decision matches without "

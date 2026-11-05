@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import pathlib
+import re
 import subprocess
 
 from distribution import discovery_excluded_paths
@@ -27,12 +28,16 @@ class WorkspaceError(RuntimeError):
     pass
 
 
-def _run_git(root: pathlib.Path, args: list[str], *, text: bool = False):
+def _run_git(
+    root: pathlib.Path, args: list[str], *, text: bool = False,
+    input_data: bytes | None = None,
+):
     return subprocess.run(
         ["git", *args],
         cwd=root,
         capture_output=True,
         text=text,
+        input=input_data,
         timeout=30,
         check=False,
     )
@@ -307,12 +312,13 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
     # V3 invalidates prior receipts when stronger Git file identity is in effect.
     digest.update(b"PACT-WORKSPACE-V3\n")
     digest.update(f"HEAD:{head or '<none>'}\n".encode())
+    states = _GitFileStates(root) if staged_paths or unstaged_paths else None
 
     for relative in sorted(staged_paths):
         digest.update(b"STAGED\0")
         digest.update(relative.encode("utf-8", errors="surrogateescape"))
         digest.update(b"\0")
-        digest.update(_git_index_file_state(root, relative).encode("ascii"))
+        digest.update(states.index_state(relative).encode("ascii"))
         digest.update(b"\n")
 
     filemode_enabled = _git_filemode_enabled(root) if unstaged_paths else None
@@ -321,7 +327,9 @@ def git_workspace_snapshot(cwd: pathlib.Path) -> dict | None:
         digest.update(relative.encode("utf-8", errors="surrogateescape"))
         digest.update(b"\0")
         digest.update(
-            _working_file_state(root, relative, filemode_enabled=filemode_enabled).encode("ascii")
+            _working_file_state(
+                root, relative, filemode_enabled=filemode_enabled, _states=states,
+            ).encode("ascii")
         )
         digest.update(b"\n")
 
@@ -426,12 +434,168 @@ def _decode_nul_paths(data: bytes) -> list[str]:
     ]
 
 
+def _git_input_path(relative: str) -> bytes:
+    """Quote a path for Git's C-quoted --stdin-paths protocol (not a shell)."""
+    raw = ("./" + relative).encode("utf-8", errors="surrogateescape")
+    escaped = bytearray(b'"')
+    for value in raw:
+        if value in {34, 92}:
+            escaped.extend(b"\\" + bytes([value]))
+        elif 32 <= value < 127:
+            escaped.append(value)
+        else:
+            escaped.extend(f"\\{value:03o}".encode("ascii"))
+    return bytes(escaped) + b'"\n'
+
+
+class _GitFileStates:
+    """Operation-local Git reads; never reuse an index across public calls."""
+
+    def __init__(self, root: pathlib.Path):
+        self.root = root
+        self.index: dict[str, list[tuple[str, str, str, bytes]]] = {}
+        self.normalized: dict[str, str] = {}
+        self._symlinks: bool | None = None
+        data = self.read(["ls-files", "--stage", "-z"])
+        if data and not data.endswith(b"\0"):
+            raise WorkspaceError("unterminated Git index output")
+        for record in data.split(b"\0"):
+            if not record:
+                continue
+            try:
+                header, raw_path = record.split(b"\t", 1)
+                mode, oid, stage = header.decode("ascii").split()
+                if not re.fullmatch(r"[0-3]", stage) or not self.valid_oid(oid):
+                    raise ValueError("invalid index identity")
+            except (ValueError, UnicodeError) as exc:
+                raise WorkspaceError("malformed batch Git index entry") from exc
+            path = raw_path.decode("utf-8", errors="surrogateescape")
+            self.index.setdefault(path, []).append((mode, oid, stage, record + b"\0"))
+
+    @staticmethod
+    def valid_oid(oid: str) -> bool:
+        # Both Git SHA-1 and SHA-256 repositories are supported.
+        return bool(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid))
+
+    def read(self, args: list[str], input_data: bytes | None = None) -> bytes:
+        try:
+            result = _run_git(self.root, args, input_data=input_data)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise WorkspaceError(f"cannot read batch Git state: {exc}") from exc
+        if result.returncode != 0:
+            raise WorkspaceError("batch Git state failed: " + " ".join(args))
+        return result.stdout
+
+    def entry(self, relative: str) -> tuple[str, str] | None:
+        records = self.index.get(relative, [])
+        if not records:
+            return None
+        if len(records) != 1 or records[0][2] != "0":
+            raise WorkspaceError(f"unmerged/ambiguous Git index entry {relative}")
+        mode, oid, _, _ = records[0]
+        return mode, oid
+
+    def index_state(self, relative: str) -> str:
+        data = b"".join(record[3] for record in self.index.get(relative, []))
+        return "index-sha256:" + hashlib.sha256(data).hexdigest() if data else "missing"
+
+    def symlinks_enabled(self) -> bool:
+        if self._symlinks is None:
+            self._symlinks = _git_symlinks_enabled(self.root)
+        return self._symlinks
+
+    def normalize(self, paths: list[str]) -> None:
+        selected = []
+        for relative in paths:
+            path = self.root / relative
+            if path.is_symlink() or not path.is_file():
+                continue
+            entry = self.entry(relative)
+            if entry and entry[0] == "120000" and not self.symlinks_enabled():
+                continue
+            selected.append(relative)
+        if not selected:
+            return
+        raw = self.read(
+            ["hash-object", "--stdin-paths"],
+            b"".join(_git_input_path(path) for path in selected),
+        )
+        try:
+            oids = raw.decode("ascii").splitlines()
+        except UnicodeError as exc:
+            raise WorkspaceError("invalid batch Git object identity") from exc
+        if (len(oids) != len(selected) or not raw.endswith(b"\n")
+                or any(not self.valid_oid(oid) for oid in oids)):
+            raise WorkspaceError("invalid batch Git object identity/count")
+        self.normalized.update(zip(selected, oids))
+
+    def ref_states(self, ref: str | None, paths: set[str]) -> dict[str, str]:
+        states = {path: "missing" for path in paths}
+        if not ref or not paths:
+            return states
+        data = self.read(["ls-tree", "-r", "-t", "-z", ref])
+        if data and not data.endswith(b"\0"):
+            raise WorkspaceError("unterminated Git tree output")
+        symlinks: dict[str, str] = {}
+        seen: set[str] = set()
+        for record in data.split(b"\0"):
+            if not record:
+                continue
+            try:
+                metadata, raw_path = record.split(b"\t", 1)
+                mode, kind, oid = metadata.decode("ascii").split()
+                if not self.valid_oid(oid):
+                    raise ValueError("invalid tree identity")
+            except (ValueError, UnicodeError) as exc:
+                raise WorkspaceError("malformed batch Git tree entry") from exc
+            relative = raw_path.decode("utf-8", errors="surrogateescape")
+            if relative not in paths:
+                continue
+            if relative in seen:
+                raise WorkspaceError(f"ambiguous Git tree path for {relative}")
+            seen.add(relative)
+            if mode == "160000" and kind == "commit":
+                states[relative] = "gitlink:" + oid
+            elif mode in {"100644", "100755"} and kind == "blob":
+                states[relative] = f"mode:{'111' if mode == '100755' else '0'}:git-oid:" + oid
+            elif mode == "120000" and kind == "blob":
+                symlinks[relative] = oid
+            else:
+                raise WorkspaceError(f"unsupported Git file type for {relative}: {mode}")
+        if symlinks:
+            oids = list(dict.fromkeys(symlinks.values()))
+            content = self.read(["cat-file", "--batch"], "".join(oid + "\n" for oid in oids).encode())
+            offset = 0
+            hashes = {}
+            for oid in oids:
+                newline = content.find(b"\n", offset)
+                try:
+                    actual, kind, size = content[offset:newline].decode("ascii").split()
+                    length = int(size)
+                    if newline < 0 or actual != oid or kind != "blob" or length < 0:
+                        raise ValueError("invalid blob header")
+                except (ValueError, UnicodeError) as exc:
+                    raise WorkspaceError("malformed batch Git symlink blob") from exc
+                offset = newline + 1
+                blob = content[offset:offset + length]
+                offset += length
+                if len(blob) != length or content[offset:offset + 1] != b"\n":
+                    raise WorkspaceError("truncated batch Git symlink blob")
+                offset += 1
+                hashes[oid] = "symlink:sha256:" + hashlib.sha256(b"symlink\0" + blob).hexdigest()
+            if offset != len(content):
+                raise WorkspaceError("unexpected batch Git symlink output")
+            states.update({path: hashes[oid] for path, oid in symlinks.items()})
+        return states
+
+
 def _working_file_state(
     root: pathlib.Path,
     relative: str,
     *,
     filemode_enabled: bool | None = None,
     compare_committed: bool = False,
+    _states: _GitFileStates | None = None,
 ) -> str:
     """Comparable file identity; optionally honor Git's clean filters."""
     path = root / relative
@@ -441,7 +605,7 @@ def _working_file_state(
         )
         return "symlink:sha256:" + hashlib.sha256(payload).hexdigest()
 
-    entry = _git_index_entry(root, relative)
+    entry = _states.entry(relative) if _states is not None else _git_index_entry(root, relative)
     index_mode = entry[0] if entry else None
     if path.is_dir():
         if index_mode != "160000":
@@ -466,7 +630,9 @@ def _working_file_state(
         raise WorkspaceError(f"cannot inspect workspace file {relative}: {exc}") from exc
 
     # Git with core.symlinks=false checks a tracked symlink out as text.
-    if index_mode == "120000" and not _git_symlinks_enabled(root):
+    if index_mode == "120000" and not (
+        _states.symlinks_enabled() if _states is not None else _git_symlinks_enabled(root)
+    ):
         try:
             target_bytes = path.read_bytes()
         except OSError as exc:
@@ -482,6 +648,10 @@ def _working_file_state(
         # A committed clean file is stored *after* Git's clean filters
         # (notably core.autocrlf). Compare Git blob identities, not raw
         # working bytes, to avoid a false task delta on Windows.
+        if _states is not None:
+            if relative not in _states.normalized:
+                raise WorkspaceError(f"missing batch Git object identity for {relative}")
+            return mode_prefix + "git-oid:" + _states.normalized[relative]
         try:
             normalized = _run_git(
                 root, ["hash-object", f"--path={relative}", "--", str(path)],
@@ -605,11 +775,12 @@ def task_workspace_baseline(cwd: pathlib.Path) -> dict:
     head = head_result.stdout.strip() if head_result.returncode == 0 else None
     dirty_paths = sorted(_git_changed_paths(root))
     filemode_enabled = _git_filemode_enabled(root) if dirty_paths else None
+    states = _GitFileStates(root) if dirty_paths else None
     return {
         "kind": "git",
         "git_head": head,
         "dirty_files": {
-            path: _working_file_state(root, path, filemode_enabled=filemode_enabled)
+            path: _working_file_state(root, path, filemode_enabled=filemode_enabled, _states=states)
             for path in dirty_paths
         },
     }
@@ -692,19 +863,20 @@ def task_changed_files(cwd: pathlib.Path, baseline: dict) -> dict:
 
     changed: list[str] = []
     filemode_enabled = _git_filemode_enabled(root) if candidates else None
+    states = _GitFileStates(root) if candidates else None
+    refs = states.ref_states(base_head, candidates - set(prepared_dirty)) if states else {}
+    if states:
+        states.normalize(sorted(candidates - set(prepared_dirty)))
     for path in sorted(candidates):
         was_dirty_at_prepare = path in prepared_dirty
         prepared_state = prepared_dirty.get(path)
         if prepared_state is None:
-            prepared_state = (
-                _git_ref_file_state(root, base_head, path)
-                if base_head
-                else "missing"
-            )
+            prepared_state = refs.get(path, "missing")
         current_state = _working_file_state(
             root, path,
             filemode_enabled=filemode_enabled,
             compare_committed=not was_dirty_at_prepare,
+            _states=states,
         )
         if not isinstance(prepared_state, str):
             raise WorkspaceError(f"invalid prepared Git file state for {path}")

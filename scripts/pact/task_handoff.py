@@ -306,9 +306,12 @@ def resume(args) -> int:
             warnings.append("stale or invalid Evidence must be reverified")
         if not change.get("supported"):
             warnings.append("exact Git changed-file attribution unavailable")
+        from task_history import prior_generations
+        history = prior_generations(ROOT, args.task_id)
         result = {
             "task_id": args.task_id,
             "prepared_status": manifest["status"],
+            "prior_generations": history,
             "prepared_contract_valid": not warnings or not any(
                 "contract" in item.lower() or "context" in item.lower()
                 for item in warnings

@@ -34,10 +34,10 @@ The deterministic resolver can populate:
 - discovered Decision Records;
 - durable verification targets explicitly referenced by those artifacts.
 
-It may also identify deterministic gaps such as:
-
-- no matching Product Rule found;
-- no matching artifact found.
+It may also identify retrieval gaps in the final selected Context window, such
+as no knowledge artifact selected or only Change records selected. These signals
+do not establish that the repository lacks durable requirements. A task plan
+alone does not establish product authority.
 
 ## 3. Candidate versus sufficient
 
@@ -73,6 +73,13 @@ Two independent controls are used:
 PACT estimates tokens deterministically from repository file size using `UTF-8 bytes / 4`. This is a stable budget heuristic, **not** an exact tokenizer result and not a claim about any particular model's final token count.
 
 Discovery may inspect a wider candidate pool than the final Context. Selection then prefers authority/relevance while allowing later smaller candidates to fit when an earlier large candidate would exceed the soft budget.
+
+For zero or Change-only selections, `known_unknowns` may suggest at most five
+existing Domain titles/aliases for deliberate follow-up, with source paths and
+statuses. Suggestions are lexical search hypotheses; they do not execute another
+query, promote candidates, consume selected Context budget or require additional
+Convergence coverage. Diagnose the materialized selection, not just the wider
+initial discovery results.
 
 Confirmed Product Rules and implemented Decisions are authority evidence. They are not silently dropped only because of the soft token budget; any resulting overage is recorded explicitly. Hard artifact-count limits remain hard.
 

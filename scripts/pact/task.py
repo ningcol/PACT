@@ -425,6 +425,7 @@ def _prepare_locked(
         old_completion = transaction / "old-completion"
         moved_task = False
         moved_completion = False
+        history_destination = None
 
         try:
             if task_dir.exists():
@@ -434,6 +435,15 @@ def _prepare_locked(
                 os.replace(completion_dir, old_completion)
                 moved_completion = True
 
+            from task_history import stage_history, history_root
+            archived = stage_history(ROOT, task_id, transaction, old_task, old_completion)
+            if archived is not None:
+                staged_history, destination = archived
+                history_root(ROOT, task_id).mkdir(parents=True, exist_ok=True)
+                # Recheck ancestors immediately before publishing old state.
+                history_root(ROOT, task_id)
+                os.replace(staged_history, destination)
+                history_destination = destination
             os.replace(staged_task, task_dir)
         except Exception as exc:
             if task_dir.exists() and not moved_task:
@@ -453,6 +463,9 @@ def _prepare_locked(
                 and not completion_dir.exists()
             ):
                 os.replace(old_completion, completion_dir)
+            if history_destination is not None:
+                import shutil
+                shutil.rmtree(history_destination)
             print(
                 f"PACT task prepare: atomic publish failed: {exc}",
                 file=sys.stderr,
@@ -936,6 +949,12 @@ def task_status(args) -> int:
         "acceptance_criteria": contract.get("acceptance_criteria", []) if contract else [],
         "completion_files": completion_files,
     }
+    try:
+        from task_history import prior_generations
+        result["prior_generations"] = prior_generations(ROOT, args.task_id)
+    except (OSError, ValueError) as exc:
+        print(f"PACT task status: invalid task history: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
@@ -944,6 +963,8 @@ def task_status(args) -> int:
         print(f"- acceptance criteria: {len(result['acceptance_criteria'])}")
         print(f"- context: {manifest.get('context')}")
         print(f"- impact: {manifest.get('impact_state')}")
+        print(f"- prior generations: {len(result['prior_generations']['items'])}"
+              + (" (truncated)" if result["prior_generations"]["truncated"] else ""))
         print(
             "- completion files: "
             + ", ".join(

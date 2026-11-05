@@ -440,7 +440,41 @@ def _diagnose(
         }
         for claim in passing_claims
     ] if eligible else []
+    # Do not expand one large Claim once for every AC. The full original
+    # Evidence remains authoritative; diagnostics are bounded navigation only.
+    trace_claims = evidence["claims"][:100]
+    trace_truncated = len(trace_claims) != len(evidence["claims"]) or len(criteria) > 50
+    trace_details = []
+    for claim in trace_claims:
+        refs = claim.get("evidence", [])
+        clipped_refs = [{key: str(ref.get(key, ""))[:512]
+                         for key in ("kind", "provenance", "ref")} for ref in refs[:10]]
+        trace_truncated |= len(refs) > 10 or len(claim["claim"]) > 512 or any(
+            len(str(ref.get(key, ""))) > 512
+            for ref in refs[:10] for key in ("kind", "provenance", "ref")
+        )
+        trace_details.append({"id": claim["id"], "status": claim["status"],
+                              "claim": claim["claim"][:512], "references": clipped_refs})
     return {
+        "criterion_label_warnings": [
+            {"criterion_id": criterion["id"], "body_label": match.group(1),
+             "message": "Use the machine criterion ID for Evidence; contract unchanged."}
+            for criterion in criteria
+            if (match := re.match(r"^\s*(AC-[0-9]+[a-z]?)\s*[:：]", criterion["text"]))
+            and match.group(1) != criterion["id"]
+        ],
+        "coverage_review_draft": {
+            "context": [{"path": path, "review_required": True} for path in missed_knowledge],
+            "changes": [{"path": path, "review_required": True} for path in missed_changes],
+        },
+        "criterion_evidence_trace": [{
+            "criterion_id": criterion["id"],
+            "claim_ids": [claim["id"] for claim in trace_claims
+                          if criterion["id"] in claim.get("criteria", [])],
+        } for criterion in criteria[:50]],
+        "evidence_trace_claims": trace_details,
+        "evidence_trace_truncated": bool(trace_truncated),
+        "evidence_trace_interpretation": "Bounded navigation to original Evidence; execution/record checks do not infer product correctness.",
         "task_id": manifest["task_id"],
         "status": manifest["status"],
         "risk_level": manifest["risk_level"],
@@ -485,6 +519,13 @@ def _snapshot(task_id: str):
         manifest, contract, context, evidence, convergence, owner, task_change,
         errors, gaps,
     )
+    from task_history import prior_generations
+    try:
+        diagnosis["prior_generations"] = prior_generations(ROOT, task_id)
+        diagnosis["history_errors"] = []
+    except (OSError, ValueError) as exc:
+        diagnosis["prior_generations"] = None
+        diagnosis["history_errors"] = [str(exc)]
     return diagnosis, bundle, owner, manifest
 
 

@@ -75,6 +75,7 @@ def main() -> int:
             audit_error = str(exc)
 
     result = {
+        "runtime": doctor.get("runtime") if doctor else None,
         "foundation": {
             "state": doctor.get("overall") if doctor else "error",
             "detail": doctor,
@@ -131,6 +132,10 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"PACT status: {result['overall']}")
+        identity = result["runtime"]
+        if identity:
+            print(f"- runtime identity: {identity['version']} / {identity['integrity']} / "
+                  f"{identity['sha256'] or 'source checkout'}")
         print(f"- foundation: {result['foundation']['state']}")
         print(f"- readiness: {result['readiness']['stage']}")
         pending = result["readiness"]["pending_reviews"]

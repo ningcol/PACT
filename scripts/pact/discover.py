@@ -166,6 +166,92 @@ def document_term_matches(term: str, field: str) -> bool:
     )
 
 
+UNSPACED_RUN = re.compile(
+    r"[\u3400-\u9fff\u3040-\u30ff\u31f0-\u31ff"
+    r"\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]+"
+)
+
+
+def embedded_document_name(name: str, query: str) -> bool:
+    """Recognize a registered name, including distinctive unspaced names.
+
+    This does not segment arbitrary task prose into invented business aliases.
+    Short unspaced names retain their existing exact-query behavior only.
+    """
+    distinctive = len(document_tokens(name)) >= 2 or any(
+        len(run) >= 4 for run in UNSPACED_RUN.findall(name)
+    )
+    return distinctive and document_term_matches(name, query)
+
+
+def domain_query_suggestions(index: dict, queries: list[str]) -> list[str]:
+    """At most five existing Domain names to inspect, never retrieval expansion.
+
+    A shared token or CJK bigram is deliberately only an advisory hypothesis.
+    No body/code vocabulary is fabricated or added to the executed queries.
+    """
+    query_text = " ".join(queries)
+    query_tokens = {
+        token for token in document_tokens(query_text)
+        if token not in DOCUMENT_STOPWORDS and len(token) >= 3
+    }
+    query_pairs = {
+        run[i:i + 2]
+        for run in UNSPACED_RUN.findall(norm(query_text))
+        for i in range(len(run) - 1)
+    }
+    executed = {norm(query) for query in queries}
+    candidates = []
+    for doc in index.get("documents", []):
+        if (doc.get("artifact_type") != "domain"
+                or doc.get("status") not in {"candidate", "confirmed"}):
+            continue
+        for label in [doc.get("title"), *doc.get("aliases", [])]:
+            if not isinstance(label, str) or not label.strip() or norm(label) in executed:
+                continue
+            pairs = {
+                run[i:i + 2]
+                for run in UNSPACED_RUN.findall(norm(label))
+                for i in range(len(run) - 1)
+            }
+            tokens = set(document_tokens(label)) - DOCUMENT_STOPWORDS
+            overlap = len(pairs & query_pairs) + len(tokens & query_tokens)
+            if overlap:
+                candidates.append((-overlap, str(doc.get("path", "")), label,
+                                   doc.get("status")))
+    suggestions = []
+    seen = set()
+    for _, path, label, status in sorted(candidates):
+        if norm(label) in seen:
+            continue
+        seen.add(norm(label))
+        suggestions.append(
+            f"Possible follow-up query {label!r} from Domain {path!r} "
+            f"({status}); lexical hypothesis only, not confirmed applicability."
+        )
+        if len(suggestions) == 5:
+            break
+    return suggestions
+
+
+def retrieval_scope_gaps(index: dict, queries: list[str], results: list[dict]) -> list[str]:
+    """Explain limited retrieval without asserting that project knowledge is absent."""
+    if not results:
+        message = (
+            "No knowledge artifact was selected within this retrieval window; "
+            "this does not establish that project knowledge is missing."
+        )
+    elif all(item.get("artifact_type") == "change" for item in results):
+        message = (
+            "Only Change records were selected within the retrieval budget; task plans "
+            "do not by themselves establish durable product requirements. "
+            "Other authoritative sources may exist outside these matches."
+        )
+    else:
+        return []
+    return [message, *domain_query_suggestions(index, queries)]
+
+
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
     ts = [term for term in re.findall(r"[\w\-]+", query, flags=re.UNICODE)
@@ -191,8 +277,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q == title:
         score += 140
         reasons.append("exact title")
-    elif (len(document_tokens(raw_title)) >= 2
-          and document_term_matches(raw_title, query)):
+    elif embedded_document_name(raw_title, query):
         # Distinctive multi-token names cited verbatim inside a longer task
         # are explicit references, not weak shared body keywords.
         score += 90
@@ -204,9 +289,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     if q and q in aliases:
         score += 130
         reasons.append("exact alias")
-    elif any(len(document_tokens(alias)) >= 2
-             and document_term_matches(alias, query)
-             for alias in raw_aliases):
+    elif any(embedded_document_name(alias, query) for alias in raw_aliases):
         score += 80
         reasons.append("embedded exact alias")
     elif any(document_phrase_matches(q, alias) for alias in aliases):

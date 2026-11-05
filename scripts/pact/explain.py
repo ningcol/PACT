@@ -12,6 +12,7 @@ import sys
 
 from schema_validate import load_schema, validate_instance
 from runtime_exec import runtime_command
+from discover import retrieval_scope_gaps
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / ".pact" / "schema" / "explanation-packet.schema.json"
@@ -182,6 +183,7 @@ def main() -> int:
     combined.sort(key=lambda item: (-item[1], item[0]["path"]))
     combined = combined[: max(args.limit * 2, args.limit)]
 
+    retrieval_gaps = retrieval_scope_gaps(index, queries, discovery.get("results", []))
     packet = {
         "version": 1,
         "query": args.query,
@@ -199,8 +201,8 @@ def main() -> int:
         "changes": [],
         "drift": [],
         "other": [],
-        "gaps": [],
-        "followup": [],
+        "gaps": retrieval_gaps,
+        "followup": ["semantic-search"] if retrieval_gaps else [],
     }
 
     for doc, score, reasons in combined:
@@ -220,7 +222,10 @@ def main() -> int:
         packet["gaps"].append(
             "No matching Product Truth artifact was found; do not infer normative behavior from code or architecture."
         )
-        packet["followup"].append("owner-confirmation")
+        # An empty or Change-only retrieval is a search limitation, not proof
+        # that a new Owner decision is required. Inspect sources first.
+        if not retrieval_gaps:
+            packet["followup"].append("owner-confirmation")
 
     if not packet["architecture"]:
         packet["gaps"].append(

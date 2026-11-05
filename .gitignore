@@ -1,2 +1,7 @@
 .pact/cache/
+.pact/tasks/
+.pact/runs/
+.pact/completions/
+.pact/tmp/
+__pycache__/
 .DS_Store

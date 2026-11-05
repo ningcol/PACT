@@ -12,6 +12,7 @@ import sys
 
 from distribution import read_install_manifest, resolve_install_target, sha256_file
 from runtime_exec import runtime_command
+from runtime_identity import runtime_identity
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -387,6 +388,7 @@ def main() -> int:
 
     result = {
         "overall": overall,
+        "runtime": runtime_identity(ROOT),
         "checks": checks,
         "project_map": (
             project_map.relative_to(ROOT).as_posix()
@@ -399,6 +401,9 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"PACT doctor: {overall}")
+        identity = result["runtime"]
+        print(f"- runtime identity: {identity['version']} / {identity['integrity']} / "
+              f"{identity['sha256'] or 'source checkout'}")
         for check in checks:
             print(f"- [{check['state'].upper()}] {check['check']}: {check['detail']}")
 

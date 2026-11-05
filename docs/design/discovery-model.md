@@ -109,6 +109,12 @@ Prefer, in order:
 
 Discovery ranking affects convenience, not authority.
 
+A registered title or alias can also be an explicit reference inside a longer
+question. Distinctive multi-token names and names containing a continuous run
+of at least four CJK characters qualify for this embedded match. Short unspaced
+names retain exact-query behavior. This does not segment arbitrary prose into
+new aliases or relax stable-ID, short-English-word or code-symbol boundaries.
+
 For generic queries, decisions marked `archived` or `superseded` receive a
 soft relevance penalty. They remain searchable (including exact ID, title and
 alias lookup), and results retain their lifecycle status. A rejected alternative
@@ -135,6 +141,13 @@ The owner should not need file names, class names, or stable IDs.
 ## 8. Output contract
 
 The deterministic Discovery layer returns ranked evidence, not an invented narrative.
+
+Inspection diagnoses zero or Change-only results as limitations of the current
+retrieval window, not proof of missing project knowledge or a required Owner
+decision. It may propose at most five existing Domain titles/aliases, labelled
+with source path and status, as follow-up hypotheses. These suggestions never
+execute queries or promote candidate knowledge into normative truth. Context
+reports the same limitation after its final materialization budget is applied.
 
 An AI may then produce an owner-readable explanation grounded in that evidence.
 

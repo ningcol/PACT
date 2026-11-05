@@ -62,6 +62,11 @@ Product Truth, and guessed vocabulary must never be promoted to authority.
 
 ## Decision policy
 
+In adopted projects, ordinary business tasks must not patch framework-managed
+runtime files or embedded schemas; use an explicitly authorized PACT maintenance
+or upgrade task. Project-owned configuration, knowledge and extensions retain
+their existing authority boundaries. See [distribution ownership and upgrades](docs/design/distribution-upgrades.md).
+
 Do not ask the owner to choose implementation patterns, classes, state mechanisms, cache strategies, or other internal engineering choices.
 
 Escalate only when the decision changes product meaning, user-observable behavior, data meaning, permissions/policy, irreversible outcomes, or material risk/cost.

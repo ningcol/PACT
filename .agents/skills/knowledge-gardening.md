@@ -2,6 +2,16 @@
 
 ## Purpose
 
+At task close, distinguish new confirmed requirements, current-state updates,
+irreplaceable rationale and deferred issues. Use existing knowledge-retention
+review; none is a valid result for routine work. Record a locatable real authority
+source in the existing authority/evidence section (a message, verified revision
+or official source), not a guessed confirmation. Incomplete sources stay unknown.
+Ordinary project documents may retain their unique content: link them through
+the relevant Domain rather than copying them into parallel Rules. Domain match
+does not confirm its candidates. Project deployment state and custom checks stay
+the project's responsibility, not a generic automatic repair operation.
+
 Keep current project knowledge **small, accurate and easy to find**. This is
 a replaceable Agent procedure, not a PACT rule, autonomous truth editor, or
 reason to write more Decision Records.
