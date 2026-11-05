@@ -91,6 +91,15 @@ class KnowledgeRetentionTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_existing_business_document_outside_docs_is_allowed(self):
+        for path in ("README.md", "requirements/checkout.md", "product/terms.md"):
+            with self.subTest(path=path):
+                errors, _ = review(
+                    {"knowledge_retention": retention("update", updated=[path])},
+                    changed_files=[path], require=True,
+                )
+                self.assertEqual(errors, [])
+
     def test_declared_paths_must_be_changed(self):
         doc = "docs/product/rules/order.md"
         errors, _ = review(
