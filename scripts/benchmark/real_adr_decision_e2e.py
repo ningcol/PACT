@@ -234,6 +234,9 @@ def run_task(target, task, number):
     stale = None
     if number == 1:
         previous_tree = pilot.git_output(target, "rev-parse", "HEAD^{tree}")
+        # Test-only identity, confined to the disposable external clone.
+        exec_cmd(target, ["git", "config", "--local", "user.name", "PACT Evaluation"])
+        exec_cmd(target, ["git", "config", "--local", "user.email", "pact-eval@example.invalid"])
         exec_cmd(target, ["git", "commit", "--allow-empty", "-qm", "test HEAD-only freshness"])
         if pilot.git_output(target, "rev-parse", "HEAD^{tree}") != previous_tree:
             raise ValueError("empty commit changed source tree")
