@@ -205,6 +205,16 @@ def run(target: pathlib.Path, progress: dict) -> dict:
     if pilot.git_output(target, "status", "--porcelain", "--untracked-files=no"):
         raise ValueError("upstream code was already edited before the task replay")
 
+    # The real source has no Git rules for generated Python/pytest caches.
+    # Keep transient test output out of the task change envelope using a
+    # TEST-WORKTREE-LOCAL exclude file. Never change the upstream .gitignore.
+    exclude = target / ".git/info/exclude"
+    if not exclude.is_file() or exclude.is_symlink():
+        raise ValueError("expected a plain Git info/exclude file")
+    current_exclude = exclude.read_text("utf-8")
+    test_ignores = "\n# PACT disposable pilot: Python test caches only\n__pycache__/\n*.pyc\n.pytest_cache/\n"
+    exclude.write_text(current_exclude + test_ignores, encoding="utf-8")
+
     # Earlier read-only knowledge replay has installed PACT and projected
     # source-authored ADRs; capture their content to detect any unrequested
     # long-term Decision change during REAL code maintenance.
