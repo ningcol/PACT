@@ -119,6 +119,14 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
         )
         self.assertEqual(result["possible_knowledge_overlaps"], [])
 
+    def test_alias_collisions_are_bounded(self):
+        names = [f"shared-alias-{i}" for i in range(70)]
+        a = doc("domain", "DOMAIN-A", aliases=names)
+        b = doc("domain", "DOMAIN-B", aliases=names)
+        result = audit.evaluate({"documents": [a, b]}, deterministic_check="pass")
+        self.assertEqual(len(result["domain_alias_collisions"]), 60)
+        self.assertEqual(result["alias_collisions_suppressed"], 10)
+
     def test_comparison_budget_reports_incompleteness(self):
         docs = [self.order] + [
             doc("rule", f"RULE-ORDER-{n}", "DOMAIN-ORDER",
