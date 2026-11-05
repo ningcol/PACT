@@ -42,6 +42,16 @@ def _linked_decisions(a: dict, b: dict) -> bool:
     )
 
 
+def _router_ids(router: dict) -> set[str]:
+    """Only explicit machine IDs; arbitrary prose never becomes authority."""
+    ids = set(router.get("related") or [])
+    ids.update(re.findall(
+        r"\b(?:RULE|DEC)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b",
+        str(router.get("text") or ""),
+    ))
+    return ids
+
+
 def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) -> dict:
     """Generate bounded, review-only domain evidence; no automatic truth edits.
 
@@ -72,6 +82,26 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
         for ident in sorted(set(doc.get("domains") or [])):
             if ident in domains and (domain is None or ident == domain):
                 groups.setdefault(ident, []).append(doc)
+
+    # Domain links may refer to legacy Decisions without a domains[] field.
+    # Include them as review candidates, not automatically applicable authority.
+    for ident, router in sorted(domains.items()):
+        if domain is not None and ident != domain:
+            continue
+        seen = {d.get("path") for d in groups.get(ident, [])}
+        for linked_id in sorted(_router_ids(router)):
+            linked = by_id.get(linked_id)
+            if (
+                linked is not None
+                and linked.get("artifact_type") in {"rule", "decision"}
+                and linked.get("status") in {
+                    "candidate", "confirmed", "proposed", "implemented",
+                    "rejected", "superseded", "archived",
+                }
+                and linked.get("path") not in seen
+            ):
+                groups.setdefault(ident, []).append(linked)
+                seen.add(linked["path"])
 
     candidates = []
     suppressed = 0
@@ -142,11 +172,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
     if domain is not None:
         router = domains[domain]
         # Explicit ID references in the Domain router are hints, not approval.
-        linked_ids = set(router.get("related") or [])
-        linked_ids.update(
-            re.findall(r"\b(?:RULE|DEC)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b",
-                       str(router.get("text") or ""))
-        )
+        linked_ids = _router_ids(router)
         selected = {d["path"]: d for d in groups.get(domain, [])}
         for ident in linked_ids:
             d = by_id.get(ident)
@@ -167,6 +193,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
 
     return {
         "domain": domain,
+        "domain_status": domains[domain].get("status") if domain else None,
         "possible_knowledge_overlaps": candidates,
         "overlap_candidates_suppressed": suppressed,
         "overlap_scan_truncated": overlap_scan_truncated,
@@ -333,7 +360,9 @@ def main() -> int:
         print(f"Possible same-domain knowledge overlaps: {len(result['possible_knowledge_overlaps'])}")
         print(f"Confirmed Domain alias collisions: {len(result['domain_alias_collisions'])}")
         if args.domain:
-            print(f"Domain {args.domain} review sources: {result['scoped_sources_count']}")
+            print(f"Domain {args.domain} ({result['domain_status']}) review sources: {result['scoped_sources_count']}")
+            if result["domain_status"] != "confirmed":
+                print("WARNING: Domain is not confirmed; linked sources are review hints only")
             for item in result["scoped_sources"]:
                 print(f"- {item['path']}: {item['artifact_type']} / {item['status']}")
             if result["scoped_sources_truncated"]:
