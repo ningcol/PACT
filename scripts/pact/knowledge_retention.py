@@ -142,6 +142,21 @@ def review(
                 + (" ..." if len(unreported) > 8 else "")
             )
 
+    if verified_removed_paths is not None:
+        # Git attribution is optional for low-risk tasks without Git, but
+        # Convergence still knows which prepared canonical sources disappeared.
+        # A "none" claim must not hide a source-verified Rule/Decision removal.
+        undeclared_removals = sorted(
+            path for path in set(verified_removed_paths) - removed_set
+            if (path in DURABLE_FILES
+                or (path.startswith(DURABLE_HOMES) and path.endswith(".md")))
+        )
+        if undeclared_removals:
+            errors.append(
+                "knowledge retention: source-verified canonical removals "
+                "not declared: " + ", ".join(undeclared_removals[:8])
+            )
+
     if removed_set:
         # Reuse Convergence's existing source-bound "removed" coverage:
         # a deleted Rule/Decision must have been present in prepared Context,
