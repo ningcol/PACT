@@ -41,7 +41,7 @@ def resolve_ref(root: pathlib.Path, ref: str) -> pathlib.Path:
     return path
 
 
-_COMMIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\\Z")
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _STALE_PATH_LIMIT = 5
 
 
