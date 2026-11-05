@@ -109,7 +109,10 @@ def review(
         # so those remain explicitly Agent-reviewed rather than auto-promoted.
         canonical = {
             p for p in changed
-            if p.startswith(DURABLE_HOMES) or p in DURABLE_FILES
+            if (
+                p in DURABLE_FILES
+                or (p.startswith(DURABLE_HOMES) and p.endswith(".md"))
+            )
         }
         unreported = sorted(canonical - declared)
         if unreported:
