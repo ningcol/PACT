@@ -150,6 +150,23 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
                         ["RULE-GOOD-1"],
                     )
 
+    def test_malformed_supersedes_does_not_crash_decision_comparison(self):
+        old = doc(
+            "decision", "DEC-OLD", "DOMAIN-ORDER",
+            title="Stock invariant",
+        )
+        new = doc(
+            "decision", "DEC-NEW", "DOMAIN-ORDER",
+            title="Stock invariant",
+            supersedes=[{"untrusted": "DEC-OLD"}, None],
+        )
+        result = audit.evaluate(
+            {"documents": [self.order, old, new]},
+            deterministic_check="fail",
+        )
+        self.assertEqual(len(result["possible_knowledge_overlaps"]), 1)
+        self.assertEqual(result["possible_knowledge_overlaps"][0]["signal"], "same-title")
+
     def test_malformed_related_containers_do_not_crash(self):
         for malformed in ("RULE-GOOD-1", 5, {"RULE-GOOD-1": True}, None):
             with self.subTest(value=malformed):
@@ -177,7 +194,7 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
             domain.parent.mkdir(parents=True)
             domain.write_text(
                 '+++\n[pact]\ntype = "domain"\nid = "DOMAIN-BROKEN"\n'
-                'status = "confirmed"\nrelated = ["RULE-ONE", 42]\n+++\n'
+                'status = "confirmed"\nrelated = ["RULE-ONE", 42, { invalid = "record" }]\n+++\n'
                 '# Broken domain\n',
                 encoding="utf-8",
             )
