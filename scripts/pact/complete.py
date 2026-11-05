@@ -24,6 +24,7 @@ from report import (
 from task_contract import acceptance_review, validate as validate_contract
 from convergence_coverage import review as review_convergence_coverage
 from change_coverage import review as review_change_coverage
+from knowledge_retention import review as review_knowledge_retention
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -78,6 +79,7 @@ def main() -> int:
         default=[],
         help="file changed by the prepared task; repeatable",
     )
+    parser.add_argument("--require-knowledge-retention", action="store_true", help="require an explicit reviewed knowledge-retention decision in Convergence")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -181,6 +183,7 @@ def main() -> int:
     acceptance_stats = None
     convergence_coverage_stats = None
     change_coverage_stats = None
+    knowledge_retention_stats = None
     if not errors:
         provenance_errors, policy_gaps, provenance_stats = provenance_review(
             evidence, root
@@ -227,6 +230,13 @@ def main() -> int:
             errors.extend(
                 f"change coverage: {error}" for error in change_errors
             )
+
+        retention_errors, knowledge_retention_stats = review_knowledge_retention(
+            convergence,
+            changed_files=args.changed_file if args.check_change_coverage else None,
+            require=args.require_knowledge_retention,
+        )
+        errors.extend(retention_errors)
 
     risk = evidence.get("risk_level")
     evidence_state = (
@@ -302,6 +312,7 @@ def main() -> int:
         "convergence_coverage": convergence_coverage_stats,
         "changed_files": list(args.changed_file) if args.check_change_coverage else None,
         "change_coverage": change_coverage_stats,
+        "knowledge_retention": knowledge_retention_stats,
         "bundle": str(bundle),
     }
 
@@ -338,6 +349,8 @@ def main() -> int:
                 f"{change_coverage_stats['covered_changed_files']}/"
                 f"{change_coverage_stats['required_changed_files']} task files reviewed"
             )
+        if knowledge_retention_stats is not None:
+            print("- knowledge retention: " + str(knowledge_retention_stats.get("disposition") or "not reviewed"))
         if policy_gaps:
             print("Policy gaps:")
             for gap in policy_gaps:
