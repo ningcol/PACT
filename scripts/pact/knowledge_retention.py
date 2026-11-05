@@ -22,7 +22,13 @@ DURABLE_FILES = frozenset({"AGENTS.md", ".pact/config.toml", ".pact/fitness.toml
 
 
 def _safe_path(value: str) -> bool:
-    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\\" in value
+        or ":" in value
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+    ):
         return False
     return (
         not value.startswith("/")
@@ -130,12 +136,22 @@ def review(
         repository_root = root.resolve()
         for path in sorted(created_set):
             candidate = root / path
-            resolved = candidate.resolve()
-            if (
-                not resolved.is_relative_to(repository_root)
-                or candidate.is_symlink()
-                or not candidate.is_file()
-            ):
+            try:
+                resolved = candidate.resolve(strict=False)
+                # Reject leaf and parent symlinks, not only an eventual
+                # escape; durable source identity must not be aliased.
+                has_symlink = any(
+                    (root.joinpath(*candidate.relative_to(root).parts[:i])).is_symlink()
+                    for i in range(1, len(candidate.relative_to(root).parts) + 1)
+                )
+                safe = (
+                    resolved.is_relative_to(repository_root)
+                    and not has_symlink
+                    and candidate.is_file()
+                )
+            except (OSError, RuntimeError, ValueError):
+                safe = False
+            if not safe:
                 errors.append(
                     f"knowledge retention: created knowledge file missing or unsafe: {path!r}"
                 )
