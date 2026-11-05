@@ -117,6 +117,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
 
     # A shared alias across confirmed Domains can route a request ambiguously.
     alias_pairs = []
+    alias_suppressed = 0
     alias_sources: dict[str, list[str]] = {}
     for ident, d in sorted(domains.items()):
         if d.get("status") != "confirmed":
@@ -128,10 +129,14 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
     for alias, owners in sorted(alias_sources.items()):
         ids = sorted(set(owners))
         if len(ids) > 1 and (domain is None or domain in ids):
-            alias_pairs.append({
+            item = {
                 "alias": alias, "domains": ids,
                 "reason": "same alias in distinct confirmed Domains; clarify retrieval meaning",
-            })
+            }
+            if len(alias_pairs) < 60:
+                alias_pairs.append(item)
+            else:
+                alias_suppressed += 1
 
     scoped_sources = []
     if domain is not None:
@@ -166,6 +171,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
         "overlap_candidates_suppressed": suppressed,
         "overlap_scan_truncated": overlap_scan_truncated,
         "domain_alias_collisions": alias_pairs,
+        "alias_collisions_suppressed": alias_suppressed,
         "scoped_sources": scoped_sources,
         "scoped_sources_count": total_scoped,
         "scoped_sources_truncated": len(scoped_sources) < total_scoped,
@@ -338,6 +344,8 @@ def main() -> int:
             print(f"- [{item['signal']}] {item['domain']}: {', '.join(item['paths'])} (review only)")
         for item in result["domain_alias_collisions"]:
             print(f"- alias {item['alias']!r}: {', '.join(item['domains'])} (review only)")
+        if result["alias_collisions_suppressed"]:
+            print("WARNING: extra alias collision candidates suppressed; scope by Domain")
         if result["semantic_review_targets"]:
             print("Semantic review targets:")
             for item in result["semantic_review_targets"]:
