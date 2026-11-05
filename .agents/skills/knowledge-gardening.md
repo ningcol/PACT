@@ -53,6 +53,11 @@ of `none`, `update`, `create`, `update-and-create`, with the
 reason and any changed durable knowledge paths. A routine bug fix usually
 requires no new Rule or Decision. A new or revised Rule still needs product
 authority; a Decision still needs non-derivable, long-term rationale.
+Removing or renaming an existing canonical source is an `update` (or
+`update-and-create` for a replacement) with optional `removed` paths.
+Those old paths must also appear in source-bound Convergence coverage as
+`removed`; reprepare the task if a source was not in its Context. Product
+Truth must not be deleted simply because its current code differs.
 
 `task draft` sets retention to `pending` rather than inventing an
 approval. Use `task finish <TASK-ID> --require-knowledge-retention` when
