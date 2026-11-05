@@ -78,9 +78,18 @@ class KnowledgeRetentionTests(unittest.TestCase):
             retention("update", updated=["../escape.md"]),
             retention("update", updated=["docs\\rule.md"]),
             retention("update", updated=["/etc/passwd"]),
+            retention("create", created=["src/main.py"]),
         ]:
             with self.subTest(item=item):
                 self.assertTrue(review({"knowledge_retention": item})[0])
+
+    def test_existing_project_requirements_document_is_allowed(self):
+        errors, _ = review(
+            {"knowledge_retention": retention(
+                "create", created=["docs/requirements/checkout.md"])},
+            changed_files=["docs/requirements/checkout.md"], require=True,
+        )
+        self.assertEqual(errors, [])
 
     def test_declared_paths_must_be_changed(self):
         doc = "docs/product/rules/order.md"
