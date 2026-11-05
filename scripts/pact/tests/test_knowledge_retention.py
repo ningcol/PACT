@@ -177,6 +177,29 @@ class KnowledgeRetentionTests(unittest.TestCase):
             )
             self.assertIn("not source-verified", " ".join(errors))
 
+    def test_no_git_changes_cannot_hide_prepared_canonical_removal(self):
+        canonical = "docs/product/rules/old.md"
+        data = {
+            "knowledge_retention": retention("none"),
+            "coverage": [{
+                "path": canonical, "disposition": "removed",
+                "rationale": "Prepared source retired",
+            }],
+        }
+        errors, _ = review(
+            data, changed_files=None,
+            verified_removed_paths=[canonical], require=True,
+        )
+        self.assertIn("canonical removals not declared", " ".join(errors))
+
+        # Ordinary noncanonical task notes must not become Product Truth.
+        untracked_note = "docs/changes/completed/task.md"
+        errors, _ = review(
+            data, changed_files=None,
+            verified_removed_paths=[untracked_note], require=True,
+        )
+        self.assertEqual(errors, [])
+
     def test_removal_without_original_convergence_proof_is_rejected(self):
         path = ".agents/decisions/implemented/retired.md"
         base = retention("update", removed=[path])
