@@ -750,6 +750,8 @@ def _finish_locked(args) -> int:
     )
     if args.require_ci_metadata:
         command.append("--require-ci-metadata")
+    if args.require_knowledge_retention:
+        command.append("--require-knowledge-retention")
 
     command.extend(["--contract", str(contract_path)])
     command.extend(["--context", str(context_path)])
@@ -1010,6 +1012,7 @@ def main() -> int:
     finish_parser.add_argument("task_id")
     finish_parser.add_argument("--bundle")
     finish_parser.add_argument("--require-ci-metadata", action="store_true")
+    finish_parser.add_argument("--require-knowledge-retention", action="store_true", help="require reviewed knowledge retention inside Convergence")
     finish_parser.add_argument("--json", action="store_true")
 
     status_parser = sub.add_parser("status", help="show one prepared task")
