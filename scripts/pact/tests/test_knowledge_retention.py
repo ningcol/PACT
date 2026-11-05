@@ -56,7 +56,7 @@ class KnowledgeRetentionTests(unittest.TestCase):
             with self.subTest(disp=disp):
                 problems, summary = review(
                     {"knowledge_retention": retention(disp, updated, created)},
-                    changed_files=[old, new],
+                    changed_files=updated + created,
                     require=True,
                 )
                 self.assertEqual(problems, [])
