@@ -6,15 +6,19 @@ cannot decide that a new rule is authoritative or that a Decision is needed.
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 
+# Only PACT's normative/project-governance homes can be identified by path
+# alone. Ordinary README/PRD updates may be retained voluntarily but must not
+# be automatically classified as changes to normative Product Truth.
 DURABLE_HOMES = (
-    "docs/product/domains/",
-    "docs/product/rules/",
+    "docs/product/",
     "docs/architecture/",
+    "docs/governance/",
     ".agents/decisions/",
 )
+DURABLE_FILES = frozenset({"AGENTS.md", ".pact/config.toml", ".pact/fitness.toml"})
 
 
 def _safe_path(value: str) -> bool:
@@ -43,6 +47,7 @@ def review(
     *,
     changed_files: list[str] | None = None,
     require: bool = False,
+    root: Path | None = None,
 ) -> tuple[list[str], dict]:
     """Review optional knowledge disposition; legacy reports remain readable."""
     item = convergence.get("knowledge_retention")
@@ -94,14 +99,38 @@ def review(
 
     if changed_files is not None:
         changed = set(changed_files)
-        for path in sorted((updated_set | created_set) - changed):
+        declared = updated_set | created_set
+        for path in sorted(declared - changed):
             errors.append(f"knowledge retention: declared path not changed by task: {path!r}")
-        if disposition == "none":
-            durable_changes = sorted(p for p in changed if p.startswith(DURABLE_HOMES))
-            if durable_changes:
+
+        # The task-scoped review must not omit any changed canonical Rule,
+        # Domain, Decision, Architecture, or governance file. The filesystem
+        # does not tell us whether an ordinary README is an authoritative PRD,
+        # so those remain explicitly Agent-reviewed rather than auto-promoted.
+        canonical = {
+            p for p in changed
+            if p.startswith(DURABLE_HOMES) or p in DURABLE_FILES
+        }
+        unreported = sorted(canonical - declared)
+        if unreported:
+            errors.append(
+                "knowledge retention: changed canonical knowledge paths "
+                "not included in review: " + ", ".join(unreported[:8])
+                + (" ..." if len(unreported) > 8 else "")
+            )
+
+    if root is not None:
+        repository_root = root.resolve()
+        for path in sorted(created_set):
+            candidate = root / path
+            resolved = candidate.resolve()
+            if (
+                not resolved.is_relative_to(repository_root)
+                or candidate.is_symlink()
+                or not candidate.is_file()
+            ):
                 errors.append(
-                    "knowledge retention: 'none' conflicts with changed durable "
-                    "knowledge paths: " + ", ".join(durable_changes[:8])
+                    f"knowledge retention: created knowledge file missing or unsafe: {path!r}"
                 )
 
     return errors, {
@@ -110,5 +139,7 @@ def review(
         "updated": sorted(updated_set),
         "created": sorted(created_set),
         "changed_paths_checked": changed_files is not None,
+        "created_paths_checked": root is not None,
+        "kind_of_change_verified": False,
         "semantic_verification": False,
     }
