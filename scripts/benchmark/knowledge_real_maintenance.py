@@ -108,20 +108,51 @@ def do_round(target: pathlib.Path, task: tuple, round_index: int) -> dict:
     if len(claims) != 1 or claims[0]["status"] != "pass":
         raise ValueError("missing passing execution-backed pytest receipt")
 
+    # In addition to selected Context artifacts, PACT can expose
+    # source-bound but not materialized Decision hints. They are NOT
+    # automatically applicable authority; however Task Finish requires the
+    # Agent to inspect and disposition every one, even for routine edits.
+    sources = {item["path"]: item for item in context["artifacts"]}
+    for field in ("weak_decision_hints", "nonfunctional_decision_hints"):
+        packet = context.get(field)
+        if packet is None:
+            continue
+        if packet.get("truncated_candidates"):
+            raise ValueError(f"{field} omitted sources; reprepare with more context")
+        for item in packet.get("candidates", []):
+            earlier = sources.get(item["path"])
+            if earlier is not None and earlier["sha256"] != item["sha256"]:
+                raise ValueError(f"conflicting fingerprint for {item['path']}")
+            sources[item["path"]] = item
+
+    scope = context.get("scope_route") or {}
+    if scope.get("status") == "unique":
+        for item in scope.get("candidates", []):
+            earlier = sources.get(item["path"])
+            if earlier is not None and earlier["sha256"] != item["sha256"]:
+                raise ValueError(f"conflicting routed source: {item['path']}")
+            sources[item["path"]] = item
+
     coverage = []
-    for item in context["artifacts"]:
-        current_file = target / item["path"]
+    for source_path, item in sorted(sources.items()):
+        current_file = target / source_path
         if not current_file.is_file():
-            raise ValueError("prepared knowledge disappeared from task context")
+            raise ValueError(f"knowledge source vanished before review: {source_path}")
         changed = sha256(current_file) != item["sha256"]
+        # The script physically reads and hashes the exact source; it cannot
+        # independently establish semantic correctness or owner approval.
+        body = current_file.read_text("utf-8")
+        if not body.strip():
+            raise ValueError("empty knowledge source cannot be certified as reviewed")
         coverage.append({
-            "path": item["path"],
+            "path": source_path,
             "disposition": "updated" if changed else "aligned",
             "rationale": (
-                "Prepared knowledge file hash changed; reviewed the nonfunctional "
-                "source-only or README wording change"
+                "Read the original source and checked the changed content against "
+                "this narrow task; no new product authority was inferred"
                 if changed else
-                "Original prepared knowledge file remains unchanged"
+                "Read source-bound current/historical knowledge; its original "
+                "prepared source hash remains unchanged"
             ),
         })
 
