@@ -189,7 +189,12 @@ def validate_artifacts(artifacts: list[Artifact], root: pathlib.Path) -> list[st
                 f"{path}: type '{typ}' must live under one of: {', '.join(prefixes)}"
             )
 
-        errors.extend(lifecycle_errors(path, typ, status))
+        # Invalid TOML status objects are already schema errors. Do not let
+        # lifecycle set-membership checks raise TypeError on unhashable input.
+        if status is not None and not isinstance(status, str):
+            errors.append(f"{path}: status must be a string")
+        else:
+            errors.extend(lifecycle_errors(path, typ, status))
 
     for artifact in artifacts:
         path = rel(artifact.path, root)
