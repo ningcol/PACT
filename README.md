@@ -94,8 +94,14 @@ Task-close knowledge retention is reviewed inside the existing Convergence
 report (none/update/create/update-and-create with a rationale and changed
 knowledge paths). `task draft` leaves it pending. To require the explicit
 review, run `python3 pact.py task finish <TASK-ID> --require-knowledge-retention`.
-Legacy reports without this optional field remain readable; the machine
-cannot certify that an Agent's knowledge judgment is semantically correct.
+To delete or rename a confirmed Rule/Decision, use the optional
+`knowledge_retention.removed` list with `disposition = update` (or
+`update-and-create` for a replacement) and the same source-bound
+`Convergence.coverage` entry with `disposition = removed`. The removed
+source must have been present in the prepared Task Context and verified by
+PACT. Never silently reclassify a removed Rule as an unrelated new Rule.
+Legacy reports without the optional `removed` field remain readable; the
+machine cannot certify an Agent's product-meaning judgment.
 
 `task prepare` also writes a machine-readable Task Contract. The required `--success` becomes the first acceptance criterion; use repeatable `--accept` for additional observable criteria and repeatable `--constraint` for conditions that must remain true. Evidence claims that prove acceptance list the relevant `AC-*` IDs. `task finish` rejects completion when any criterion lacks passing Evidence or when verified acceptance is omitted from the Owner Report.
 
