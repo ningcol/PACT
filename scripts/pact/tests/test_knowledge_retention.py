@@ -175,7 +175,7 @@ class KnowledgeRetentionTests(unittest.TestCase):
             root = pathlib.Path(temp)
             entry = {"knowledge_retention": retention("create", created=[path])}
             bad, _ = review(entry, changed_files=[path], root=root, require=True)
-            self.assertIn("created knowledge file missing", " ".join(bad))
+            self.assertIn("knowledge file missing", " ".join(bad))
             target = root / path
             target.parent.mkdir(parents=True)
             target.write_text("# Orders\n", encoding="utf-8")
@@ -183,6 +183,23 @@ class KnowledgeRetentionTests(unittest.TestCase):
             self.assertEqual(good, [])
             self.assertTrue(stats["created_paths_checked"])
             self.assertFalse(stats["kind_of_change_verified"])
+
+    def test_deleted_file_cannot_masquerade_as_updated_knowledge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            path = "docs/product/rules/order.md"
+            declared = {"knowledge_retention": retention("update", updated=[path])}
+            problems, _ = review(
+                declared, changed_files=[path], root=root, require=True,
+            )
+            self.assertIn("declared knowledge file missing", " ".join(problems))
+            source = root / path
+            source.parent.mkdir(parents=True)
+            source.write_text("# Reviewed order rule\n", encoding="utf-8")
+            problems, _ = review(
+                declared, changed_files=[path], root=root, require=True,
+            )
+            self.assertEqual(problems, [])
 
     def test_symlink_created_knowledge_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
