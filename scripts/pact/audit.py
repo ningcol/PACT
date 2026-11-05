@@ -35,8 +35,8 @@ def _text_key(doc: dict) -> str:
 def _linked_decisions(a: dict, b: dict) -> bool:
     left, right = a.get("id"), b.get("id")
     return bool(
-        (left and left in (b.get("supersedes") or []))
-        or (right and right in (a.get("supersedes") or []))
+        (left and left in _string_ids(b.get("supersedes")))
+        or (right and right in _string_ids(a.get("supersedes")))
         or (left and b.get("superseded_by") == left)
         or (right and a.get("superseded_by") == right)
     )
@@ -87,9 +87,9 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
 
     groups: dict[str, list[dict]] = {}
     for doc in docs:
-        if doc.get("artifact_type") not in {"rule", "decision"}:
+        if not isinstance(doc.get("artifact_type"), str) or doc["artifact_type"] not in {"rule", "decision"}:
             continue
-        if doc.get("status") not in {
+        if not isinstance(doc.get("status"), str) or doc["status"] not in {
             "candidate", "confirmed", "proposed", "implemented",
             "rejected", "superseded", "archived",
         }:
@@ -168,7 +168,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
         if d.get("status") != "confirmed":
             continue
         aliases = d.get("aliases")
-        for alias in aliases if isinstance(aliases, list) else []:
+        for alias in (aliases if isinstance(aliases, list) else []):
             if not isinstance(alias, str):
                 continue
             norm = re.sub(r"\s+", " ", alias.casefold().strip())
