@@ -39,6 +39,8 @@ def convergence_outcome(report: dict) -> str:
         return "needs-owner"
     if any(c in {"missing", "partial", "contradicts"} for c in classes):
         return "needs-reconciliation"
+    if report.get("knowledge_retention", {}).get("disposition") == "pending":
+        return "needs-reconciliation"
     if "stale" in classes or "stale" in dispositions:
         return "nonblocking-drift"
     return "aligned"

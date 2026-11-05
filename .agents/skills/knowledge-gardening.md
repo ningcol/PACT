@@ -46,6 +46,19 @@ For completed Changes and resolved Drift, propose cleanup **only after**
 checking related links, evidence retention and Product Truth ownership; Audit
 is a candidate list, not a deletion queue.
 
+## Task-close knowledge retention
+
+Reuse the existing Convergence report: give `knowledge_retention` one
+of `none`, `update`, `create`, `update-and-create`, with the
+reason and any changed durable knowledge paths. A routine bug fix usually
+requires no new Rule or Decision. A new or revised Rule still needs product
+authority; a Decision still needs non-derivable, long-term rationale.
+
+`task draft` sets retention to `pending` rather than inventing an
+approval. Use `task finish <TASK-ID> --require-knowledge-retention` when
+the project wants this as an explicit gate. The optional field leaves legacy
+completion bundles readable. Path checks are mechanical, not semantic proof.
+
 ## Workflow
 
 1. Identify the relevant source, scope and owner of truth (Product Rule,

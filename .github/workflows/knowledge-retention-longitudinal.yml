@@ -1,0 +1,132 @@
+name: PACT Knowledge Retention Longitudinal Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "scripts/pact/audit.py"
+      - "scripts/pact/knowledge_retention.py"
+      - "scripts/pact/complete.py"
+      - "scripts/pact/task.py"
+      - "scripts/pact/task_workflow.py"
+      - "scripts/benchmark/knowledge_retention_longitudinal.py"
+      - "scripts/benchmark/knowledge_real_maintenance.py"
+      - "scripts/benchmark/brownfield_adr_viewer.py"
+      - ".pact/schema/**"
+      - ".github/workflows/knowledge-retention-longitudinal.yml"
+      - "docs/evaluation/knowledge-retention-*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-real-adr-knowledge-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PACT commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Clone pinned public source in isolated temporary runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/pact-knowledge-longitudinal"
+          echo "PACT_KNOWLEDGE_TARGET=$TARGET" >> "$GITHUB_ENV"
+          git clone --quiet https://github.com/mrwilson/adr-viewer.git "$TARGET"
+          git -C "$TARGET" checkout --quiet --detach \
+            a25f1c71e031bdaa63fe3175f969f197139f2044
+          test "$(git -C "$TARGET" rev-parse HEAD)" = \
+            "a25f1c71e031bdaa63fe3175f969f197139f2044"
+          test -z "$(git -C "$TARGET" status --porcelain --untracked-files=no)"
+
+      - name: Run three successive no-model knowledge-maintenance rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          python scripts/benchmark/knowledge_retention_longitudinal.py \
+            --target "$PACT_KNOWLEDGE_TARGET" \
+            > "$RUNNER_TEMP/pact-knowledge-longitudinal.json" || result=$?
+          cat "$RUNNER_TEMP/pact-knowledge-longitudinal.json"
+          test "$result" -eq 0
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          result = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "pact-knowledge-longitudinal.json").read_text("utf-8")
+          )
+          assert result["engineering_gate"] == "PASS", result["gate_failures"]
+          assert len(result["tasks"]) == 3
+          assert result["source_tracked_clean"]
+          assert result["source_adr_projection_unchanged"]
+          assert result["current_and_historical_status_preserved"]
+          assert result["no_unnecessary_decision_growth"]
+          assert result["new_confirmed_product_rules"] == 0
+          assert result["real_agent_executed"] is False
+          assert result["owner_confirmation_observed"] is False
+          assert result["agent_decision_obedience_verified"] is False
+          assert result["long_term_effectiveness_proven"] is False
+          print("Engineering-only evidence: NOT independent Agent/Owner efficacy.")
+          PY
+
+      - name: Install pinned upstream test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r "$PACT_KNOWLEDGE_TARGET/requirements.txt"
+
+      - name: Run three real-source edits through PACT Task Finish
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_code=0
+          python scripts/benchmark/knowledge_real_maintenance.py \
+            --target "$PACT_KNOWLEDGE_TARGET" \
+            > "$RUNNER_TEMP/pact-real-maintenance.json" || exit_code=$?
+          cat "$RUNNER_TEMP/pact-real-maintenance.json"
+          test "$exit_code" -eq 0
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          result = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "pact-real-maintenance.json").read_text("utf-8")
+          )
+          assert result["engineering_gate"] == "PASS", result.get("gate_failures")
+          assert result["round_count"] == 3
+          assert all(row["task_finished"] for row in result["tasks"])
+          assert all(row["knowledge_retention"] == "none" for row in result["tasks"])
+          assert all(row["acceptance_verified"] == 1 for row in result["tasks"])
+          assert result["durable_decisions_unchanged"]
+          assert not result["real_coding_agent_executed"]
+          assert not result["agent_decision_obedience_verified"]
+          print("Actual source edits and installed Task Finish validated; NO independent Agent efficacy claim")
+          PY
+
+      - name: Retain real-source maintenance diagnosis
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: knowledge-real-maintenance-json
+          path: ${{ runner.temp }}/pact-real-maintenance.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Retain longitudinal diagnosis even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: knowledge-retention-longitudinal-json
+          path: ${{ runner.temp }}/pact-knowledge-longitudinal.json
+          if-no-files-found: warn
+          retention-days: 14

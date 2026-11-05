@@ -69,7 +69,8 @@ Use the high-level surface first:
 3. Implement ordinary technical details autonomously within the prepared Task Contract and Context.
 4. Run relevant verification through `python pact.py run ...` so Evidence can bind to machine receipts.
 5. Before completion, create Evidence, Convergence, and Owner Report in the task's expected completion bundle. Convergence must bind the prepared Context, explicitly disposition every selected knowledge artifact, and provide `change_coverage` rationale for every file PACT identifies as changed by the task; an empty finding list is not a substitute for coverage.
-6. `python pact.py task finish <TASK-ID>` is the completion gate. Do not claim done if it fails.
+6. Review long-term knowledge only when needed: if using `task draft`, resolve Convergence `knowledge_retention` from `pending` to `none`, `update`, `create`, or `update-and-create` with a reason and changed knowledge paths. Ordinary bug fixes usually need no new Rule/Decision; never infer product approval from code or tests.
+7. `python pact.py task finish <TASK-ID>` is the completion gate. Use `--require-knowledge-retention` when an explicit review is required. Do not claim done if it fails.
 
 Use `python pact.py task status <TASK-ID> --json` to recover the prepared contract/context paths and expected bundle location.
 
@@ -124,6 +125,7 @@ Default PACT task loop to merge into the project guide:
 - verify observable outcomes through `python pact.py run ...` where practical;
 - create Evidence + Convergence + Owner Report before completion;
 - Convergence must bind the prepared Context, disposition every selected knowledge artifact, and review every task-changed file reported at finish;
+- if using `task draft`, explicitly resolve `knowledge_retention` pending (none/update/create/update-and-create with rationale and changed knowledge paths); do not add a Rule/Decision just because code changed;
 - finish with `python pact.py task finish <TASK-ID>`; a failed gate means the task is not done;
 - use `python pact.py task status <TASK-ID> --json` to recover task paths after a long conversation.
 

@@ -223,6 +223,12 @@ def draft(args) -> int:
                 "evidence": [],
                 "coverage": [],
                 "change_coverage": [],
+                "knowledge_retention": {
+                    "disposition": "pending",
+                    "rationale": "Review whether this task needs durable knowledge changes.",
+                    "updated": [],
+                    "created": [],
+                },
                 "findings": [{
                     "classification": "partial",
                     "severity": "medium",

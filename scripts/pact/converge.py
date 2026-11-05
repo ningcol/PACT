@@ -39,6 +39,8 @@ def outcome(report: dict) -> str:
         return "needs-owner"
     if any(f.get("classification") in BLOCKING_CLASSES for f in findings):
         return "needs-reconciliation"
+    if report.get("knowledge_retention", {}).get("disposition") == "pending":
+        return "needs-reconciliation"
     if (
         any(f.get("classification") == "stale" for f in findings)
         or "stale" in dispositions

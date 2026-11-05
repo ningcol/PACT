@@ -20,5 +20,11 @@
       "recommended_action": "No reconciliation required."
     }
   ],
-  "task_id": "example-province-switch"
+  "task_id": "example-province-switch",
+  "knowledge_retention": {
+    "disposition": "none",
+    "rationale": "The current confirmed Product Rule remains authoritative; no new durable project knowledge was created.",
+    "updated": [],
+    "created": []
+  }
 }

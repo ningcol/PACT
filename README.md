@@ -90,6 +90,13 @@ python3 pact.py task verify <TASK-ID> \
 python3 pact.py task finish <TASK-ID>
 ```
 
+Task-close knowledge retention is reviewed inside the existing Convergence
+report (none/update/create/update-and-create with a rationale and changed
+knowledge paths). `task draft` leaves it pending. To require the explicit
+review, run `python3 pact.py task finish <TASK-ID> --require-knowledge-retention`.
+Legacy reports without this optional field remain readable; the machine
+cannot certify that an Agent's knowledge judgment is semantically correct.
+
 `task prepare` also writes a machine-readable Task Contract. The required `--success` becomes the first acceptance criterion; use repeatable `--accept` for additional observable criteria and repeatable `--constraint` for conditions that must remain true. Evidence claims that prove acceptance list the relevant `AC-*` IDs. `task finish` rejects completion when any criterion lacks passing Evidence or when verified acceptance is omitted from the Owner Report.
 
 These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.

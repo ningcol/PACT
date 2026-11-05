@@ -98,6 +98,48 @@
           }
         }
       }
+    },
+    "knowledge_retention": {
+      "description": "Optional Agent-reviewed durable knowledge retention conclusion inside existing Convergence; legacy bundles may omit.",
+      "type": "object",
+      "required": [
+        "disposition",
+        "rationale",
+        "updated",
+        "created"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "disposition": {
+          "enum": [
+            "pending",
+            "none",
+            "update",
+            "create",
+            "update-and-create"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "updated": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "created": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   },
   "$defs": {
