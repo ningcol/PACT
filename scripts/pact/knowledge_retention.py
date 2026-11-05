@@ -134,7 +134,10 @@ def review(
 
     if root is not None:
         repository_root = root.resolve()
-        for path in sorted(created_set):
+        # Both newly created and updated knowledge must remain source-backed.
+        # Removing an authoritative record is a separate Convergence "removed"
+        # review, not an "update" disguised as a missing file.
+        for path in sorted(updated_set | created_set):
             candidate = root / path
             try:
                 resolved = candidate.resolve(strict=False)
@@ -153,7 +156,8 @@ def review(
                 safe = False
             if not safe:
                 errors.append(
-                    f"knowledge retention: created knowledge file missing or unsafe: {path!r}"
+                    "knowledge retention: declared knowledge file missing or unsafe: "
+                    + repr(path)
                 )
 
     return errors, {
