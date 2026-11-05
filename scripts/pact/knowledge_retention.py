@@ -113,9 +113,13 @@ def review(
         }
         unreported = sorted(canonical - declared)
         if unreported:
+            prefix = (
+                "knowledge retention: 'none' conflicts with changed durable knowledge paths: "
+                if disposition == "none"
+                else "knowledge retention: changed canonical knowledge paths not included in review: "
+            )
             errors.append(
-                "knowledge retention: changed canonical knowledge paths "
-                "not included in review: " + ", ".join(unreported[:8])
+                prefix + ", ".join(unreported[:8])
                 + (" ..." if len(unreported) > 8 else "")
             )
 
