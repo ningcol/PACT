@@ -135,6 +135,31 @@ class KnowledgeRetentionTests(unittest.TestCase):
         )
         self.assertEqual(problems, [])
 
+    def test_business_document_attachments_are_not_normative_rules(self):
+        problems, stats = review(
+            {"knowledge_retention": retention("none")},
+            changed_files=[
+                "docs/product/assets/order-flow.png",
+                "docs/product/prds/specification.pdf",
+                "docs/architecture/diagram.svg",
+                "src/order.py",
+            ],
+            require=True,
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(stats["status"], "reviewed")
+
+    def test_all_changed_markdown_rules_still_require_coverage(self):
+        problems, _ = review(
+            {"knowledge_retention": retention("none")},
+            changed_files=[
+                "docs/product/assets/screenshot.png",
+                "docs/product/rules/order.md",
+            ],
+            require=True,
+        )
+        self.assertIn("docs/product/rules/order.md", " ".join(problems))
+
     def test_canonical_governance_change_requires_review(self):
         problems, _ = review(
             {"knowledge_retention": retention("none")},
