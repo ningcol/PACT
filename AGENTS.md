@@ -77,6 +77,7 @@ Done requires, as applicable:
 - observable behavior verified;
 - every prepared Task Context knowledge artifact explicitly reviewed for convergence;
 - relevant truth converged;
+- when using a Convergence draft, explicitly resolve its pending knowledge-retention review (normally none for a routine fix, or a justified update/create);
 - no unresolved blocking ambiguity;
 - evidence exists for completion claims.
 
