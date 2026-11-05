@@ -80,6 +80,8 @@ class KnowledgeRetentionTests(unittest.TestCase):
             retention("update", updated=["docs\\rule.md"]),
             retention("update", updated=["/etc/passwd"]),
             retention("create", created=["src/main.py"]),
+            retention("create", created=["docs/product/rules/line\nfeed.md"]),
+            retention("create", created=["docs/product/rules/nul\x00byte.md"]),
         ]:
             with self.subTest(item=item):
                 self.assertTrue(review({"knowledge_retention": item})[0])
@@ -197,6 +199,25 @@ class KnowledgeRetentionTests(unittest.TestCase):
                     "docs/product/rules/rule.md"])},
                 changed_files=["docs/product/rules/rule.md"],
                 root=root,
+            )
+            self.assertIn("missing or unsafe", " ".join(errors))
+
+    def test_parent_symlink_alias_is_not_valid_retained_knowledge(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            real = root / "actual"
+            real.mkdir()
+            (real / "order.md").write_text("# Orders\n", encoding="utf-8")
+            parent = root / "docs/product/rules"
+            parent.parent.mkdir(parents=True)
+            try:
+                parent.symlink_to(real, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlink not supported")
+            path = "docs/product/rules/order.md"
+            errors, _ = review(
+                {"knowledge_retention": retention("create", created=[path])},
+                changed_files=[path], root=root, require=True,
             )
             self.assertIn("missing or unsafe", " ".join(errors))
 
