@@ -236,6 +236,10 @@ def main() -> int:
             changed_files=args.changed_file if args.check_change_coverage else None,
             require=args.require_knowledge_retention,
             root=root,
+            verified_removed_paths=(
+                convergence_coverage_stats["removed_verified"]
+                if convergence_coverage_stats is not None else None
+            ),
         )
         errors.extend(retention_errors)
 
