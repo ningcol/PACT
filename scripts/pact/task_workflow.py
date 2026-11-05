@@ -228,6 +228,7 @@ def draft(args) -> int:
                     "rationale": "Review whether this task needs durable knowledge changes.",
                     "updated": [],
                     "created": [],
+                    "removed": [],
                 },
                 "findings": [{
                     "classification": "partial",
