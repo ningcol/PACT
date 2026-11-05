@@ -29,10 +29,12 @@ def _safe_path(value: str) -> bool:
 
 def _knowledge_path(path: str) -> bool:
     """Prevent source code/tests from being mislabelled as durable knowledge."""
+    # Ordinary project documentation can live outside docs/ (for example
+    # product/requirements/, README.md or .agents/decisions/). Do not force
+    # users to relocate their existing business documents.
     return (
-        (path.startswith("docs/") and path.endswith(".md"))
-        or (path.startswith(".agents/decisions/") and path.endswith(".md"))
-        or path in {"AGENTS.md", ".pact/config.toml", ".pact/fitness.toml"}
+        (path.endswith(".md") and not path.startswith((".pact/", ".git/")))
+        or path in {".pact/config.toml", ".pact/fitness.toml"}
     )
 
 
