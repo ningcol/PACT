@@ -75,10 +75,16 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
 
     candidates = []
     suppressed = 0
+    comparisons_left = 5000
+    overlap_scan_truncated = False
     for ident, members in sorted(groups.items()):
         for a, b in itertools.combinations(
             sorted(members, key=lambda d: str(d.get("path") or "")), 2
         ):
+            if comparisons_left <= 0:
+                overlap_scan_truncated = True
+                break
+            comparisons_left -= 1
             if a.get("artifact_type") != b.get("artifact_type"):
                 continue
             if a.get("artifact_type") == "decision" and _linked_decisions(a, b):
@@ -86,7 +92,10 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
             topic_a, topic_b = _topic(a), _topic(b)
             body_a, body_b = _text_key(a), _text_key(b)
             signal = None
-            if topic_a == topic_b and len(topic_a) >= 5:
+            if topic_a == topic_b and (
+                len(topic_a) >= 5
+                or (len(topic_a) >= 2 and any("\u3400" <= c <= "\u9fff" for c in topic_a))
+            ):
                 signal = "same-title"
             elif body_a == body_b and len(body_a) >= 100:
                 signal = "same-body"
@@ -103,6 +112,8 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
                     candidates.append(item)
                 else:
                     suppressed += 1
+        if overlap_scan_truncated:
+            break
 
     # A shared alias across confirmed Domains can route a request ambiguously.
     alias_pairs = []
@@ -146,13 +157,18 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
             ),
         } for d in sorted(selected.values(), key=lambda d: d["path"])]
 
+    total_scoped = len(scoped_sources)
+    scoped_sources = scoped_sources[:100]
+
     return {
         "domain": domain,
         "possible_knowledge_overlaps": candidates,
         "overlap_candidates_suppressed": suppressed,
+        "overlap_scan_truncated": overlap_scan_truncated,
         "domain_alias_collisions": alias_pairs,
         "scoped_sources": scoped_sources,
-        "scoped_sources_count": len(scoped_sources),
+        "scoped_sources_count": total_scoped,
+        "scoped_sources_truncated": len(scoped_sources) < total_scoped,
     }
 
 
@@ -314,6 +330,10 @@ def main() -> int:
             print(f"Domain {args.domain} review sources: {result['scoped_sources_count']}")
             for item in result["scoped_sources"]:
                 print(f"- {item['path']}: {item['artifact_type']} / {item['status']}")
+            if result["scoped_sources_truncated"]:
+                print("WARNING: scoped sources truncated; review the full Domain before completion")
+        if result["overlap_scan_truncated"]:
+            print("WARNING: overlap scan truncated at 5000 pairs; no completeness claim")
         for item in result["possible_knowledge_overlaps"]:
             print(f"- [{item['signal']}] {item['domain']}: {', '.join(item['paths'])} (review only)")
         for item in result["domain_alias_collisions"]:
