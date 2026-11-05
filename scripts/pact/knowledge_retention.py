@@ -207,6 +207,9 @@ def review(
         "changed_paths_checked": changed_files is not None,
         "created_paths_checked": root is not None,
         "kind_of_change_verified": False,
-        "removed_source_verified": bool(removed_set) and verified_removed_paths is not None,
+        "removed_source_verified": bool(removed_set) and (
+            verified_removed_paths is not None
+            and removed_set.issubset(set(verified_removed_paths))
+        ),
         "semantic_verification": False,
     }
