@@ -235,6 +235,7 @@ def main() -> int:
             convergence,
             changed_files=args.changed_file if args.check_change_coverage else None,
             require=args.require_knowledge_retention,
+            root=root,
         )
         errors.extend(retention_errors)
 
