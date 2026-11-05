@@ -831,9 +831,9 @@ class TaskSurfaceTests(unittest.TestCase):
         after_path = self.root / "docs/product/rules/new-route.md"
         before_path.parent.mkdir(parents=True)
         before_path.write_text(
-            '+++\\n[pact]\\ntype = "rule"\\nid = "RULE-RENAME-001"\\n'
-            'status = "confirmed"\\n+++\\n\\n# Existing Rule\\n'
-            "The same confirmed invariant remains operative.\\n",
+            '+++\n[pact]\ntype = "rule"\nid = "RULE-RENAME-001"\n'
+            'status = "confirmed"\n+++\n\n# Existing Rule\n'
+            "The same confirmed invariant remains operative.\n",
             encoding="utf-8",
         )
         for cmd in (
