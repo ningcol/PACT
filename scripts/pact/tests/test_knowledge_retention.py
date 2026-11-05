@@ -140,7 +140,7 @@ class KnowledgeRetentionTests(unittest.TestCase):
             {"knowledge_retention": retention("none")},
             changed_files=["docs/governance/authority.md"],
         )
-        self.assertIn("not included in review", " ".join(problems))
+        self.assertIn("'none' conflicts", " ".join(problems))
 
     def test_created_document_must_exist_in_repo_if_root_is_known(self):
         path = "docs/product/domains/order.md"
