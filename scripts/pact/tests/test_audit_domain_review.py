@@ -122,6 +122,42 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
         self.assertEqual(result["possible_knowledge_overlaps"][0]["signal"], "same-title")
         self.assertEqual(result["scoped_sources_count"], 2)
 
+    def test_malformed_related_and_domains_are_not_promoted_or_crashing(self):
+        domain = doc(
+            "domain", "DOMAIN-BROKEN",
+            related=["RULE-GOOD-1", None, 42, {"not": "an-id"}, ["nested"]],
+            aliases=[None, {"bad": "alias"}, "safe alias"],
+        )
+        good = doc(
+            "rule", "RULE-GOOD-1", None, title="Stable policy",
+            domains=["DOMAIN-BROKEN", None, {"invalid": "domain"}],
+        )
+        unrelated = doc("rule", "RULE-OTHER-1", None)
+        for selected in (None, "DOMAIN-BROKEN"):
+            with self.subTest(selected=selected):
+                result = audit.evaluate(
+                    {"documents": [domain, good, unrelated]},
+                    deterministic_check="fail", domain=selected,
+                )
+                self.assertEqual(result["deterministic_check"], "fail")
+                self.assertEqual(result["possible_knowledge_overlaps"], [])
+                if selected:
+                    self.assertEqual(
+                        [x["id"] for x in result["scoped_sources"]],
+                        ["RULE-GOOD-1"],
+                    )
+
+    def test_malformed_related_containers_do_not_crash(self):
+        for malformed in ("RULE-GOOD-1", 5, {"RULE-GOOD-1": True}, None):
+            with self.subTest(value=malformed):
+                router = doc("domain", "DOMAIN-TEST", related=malformed)
+                result = audit.evaluate(
+                    {"documents": [router]}, deterministic_check="fail",
+                    domain="DOMAIN-TEST",
+                )
+                self.assertEqual(result["scoped_sources"], [])
+                self.assertEqual(result["possible_knowledge_overlaps"], [])
+
     def test_unknown_domain_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown Domain"):
             audit.evaluate({"documents": []}, deterministic_check="pass",
