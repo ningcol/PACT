@@ -104,6 +104,24 @@ class DomainKnowledgeAuditTests(unittest.TestCase):
         ))
         self.assertEqual(result["possible_knowledge_overlaps"], [])
 
+    def test_router_links_without_domains_are_compared_for_review_only(self):
+        router = doc(
+            "domain", "DOMAIN-RETURNS", status="candidate",
+            related=["RULE-RETURNS-1", "RULE-RETURNS-2"],
+        )
+        left = doc("rule", "RULE-RETURNS-1", title="退款规则",
+                   text="Refund before settlement.")
+        right = doc("rule", "RULE-RETURNS-2", title="退款规则",
+                    text="Refund after settlement.")
+        result = audit.evaluate(
+            {"documents": [router, left, right]}, deterministic_check="pass",
+            domain="DOMAIN-RETURNS",
+        )
+        self.assertEqual(result["domain_status"], "candidate")
+        self.assertEqual(len(result["possible_knowledge_overlaps"]), 1)
+        self.assertEqual(result["possible_knowledge_overlaps"][0]["signal"], "same-title")
+        self.assertEqual(result["scoped_sources_count"], 2)
+
     def test_unknown_domain_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown Domain"):
             audit.evaluate({"documents": []}, deterministic_check="pass",
