@@ -100,7 +100,7 @@
       }
     },
     "knowledge_retention": {
-      "description": "Optional Agent-reviewed durable knowledge retention conclusion inside existing Convergence; legacy bundles may omit.",
+      "description": "Optional Agent-reviewed durable knowledge retention inside Convergence. Disposition update includes removal-only maintenance when optional removed is nonempty. Legacy reports can omit this field and/or removed.",
       "type": "object",
       "required": [
         "disposition",
@@ -138,6 +138,15 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "removed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional paths of previously prepared canonical knowledge explicitly removed; must match verified Convergence removed coverage. Absence means no removals (legacy v1 compatibility)."
         }
       }
     }
