@@ -1,0 +1,13 @@
+; Optional OUTER sandbox example, not automatically installed or enabled.
+; Parameters must be canonical absolute paths in an isolated snapshot.
+; Only BUSINESS and STATE are writable. Their ancestors and this policy are not.
+; Reject pre-existing hardlinks to protected files before launching. See the
+; coverage report: this fixture policy is not full agent host certification.
+(version 1)
+(deny default)
+(allow process*)
+(allow sysctl-read)
+(allow file-read*)
+(allow mach-lookup)
+(allow file-write* (subpath (param "BUSINESS")))
+(allow file-write* (subpath (param "STATE")))

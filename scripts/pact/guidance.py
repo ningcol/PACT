@@ -41,6 +41,9 @@ locations. The routes below are defaults; do not relocate or duplicate knowledge
 
 - Governance extensions: `docs/governance/`
 - Product Truth and vocabulary: `docs/product/`
+- Concept/alias routers: `docs/product/domains/`; coherent business explanations:
+  `docs/product/specs/` (ordinary Markdown); independently useful constraints:
+  `docs/product/rules/`
 - Current architecture: `docs/architecture/`
 - Durable engineering rationale: `.agents/decisions/`
 - Active/completed change intent: `docs/changes/`
@@ -52,6 +55,17 @@ Create a location only for real durable knowledge, not empty folders/templates.
 Absent optional directories are not failures. Init does not certify knowledge.
 Treat pending baseline reviews as incomplete/unknown; never infer missing truth
 or product approval from code or tests.
+
+Keep one current authoritative body per fact, scope and effective state. Keep
+flow context, conditions and exceptions together; extract only important Rules
+worth separate confirmation/reference/verification, replacing duplicated rule
+prose with links. Domains route, Architecture describes implementation, Decisions
+retain irreplaceable rationale under existing admission rules, Changes hold plan
+deltas and Drift holds disagreements. Ordinary specs have no blanket confirmed
+status; label candidates, code observations and history separately. Existing
+authoritative locations remain effective until an explicit reviewed cutover;
+ordinary README/operations documents need not move. Never create empty libraries
+or Markdown mirrors of source files.
 
 ## Proportionate task workflow
 
@@ -76,6 +90,41 @@ PACT does not identify authors. Continue with status/resume. `prepare --force`
 starts a new baseline including current edits and archives old state without
 automatically carrying Evidence forward. Current bindings/provenance still need
 verification; force does not revoke every old receipt.
+
+Knowledge reuse without body changes is `none`, citing the existing source in
+the rationale. Updates explain their authority/delta; creations explain why
+existing records are insufficient. Only unchanged original Context sources can
+be aligned; reconcile genuinely new constraints and Evidence instead of forcing
+repreparation to remove warnings. Assist candidates are bounded review hints,
+not confirmation or complete duplicate recall. Ordinary `none` needs no extra
+scan, registration or summary.
+
+For a knowledge migration, use one existing Change with scope/exclusions,
+recoverable Git revision/path, source-to-target/reference mapping, per-file
+results and actual verification. Preserve stable IDs on moves; cite provenance
+across types without cross-type supersedes. Before retiring old prose, preserve
+original bytes through Git; dirty/untracked sources need the project's normal
+checkpoint process, never an automatic commit. Without history, defer retirement.
+An unresolved business chapter defers its entire source file unchanged; move
+independent files first and root navigation last. Old paths may be short redirects
+without another stable ID/body. Interrupted work remains reviewable in the
+isolated Git tree; no automatic replay or cleanup is implied.
+
+One business dispute gets one Drift across sources/plans. Record exact sources,
+scope, consequences, known/unknown facts, options and interim authority. A genuine
+Owner decision and completed implementation are separate: retain the deviation
+until verified. Postponement without authority selection remains open; accepted
+needs explicit authority/risk treatment, resolved needs implementation/verification.
+Optional `check --drift-closure PATH` checks structure and direct references only,
+not authentic approval or semantics, and adds no default historic closure gate.
+
+Sequential plans reuse the latest body. In a multi-agent plan designate a page
+integrator in existing assignments; workers need not each create full task records.
+Use worktrees for independently accepted plans and review related knowledge in
+the final merged tree, including same-meaning different IDs and legitimately
+different years/roles/conditions. Record this in the original PR/Change, without
+a global lock. Distinguish migration applied, structural cutover, business behavior
+verified and Task completion.
 
 ## Ownership and decision boundaries
 

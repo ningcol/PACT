@@ -62,6 +62,14 @@ Examples:
 
 Seeds become project-owned immediately after creation and are never silently overwritten by upgrade.
 
+Business explanations, Rules, conflict decisions and other project knowledge
+are not framework install targets. Standard routes for new knowledge and a
+reviewed migration do not authorize upgrades to relocate or overwrite business
+content. Projects reference version-matched framework guidance instead of
+maintaining rewritten copies; keep only necessary project-specific additions.
+See [knowledge maintenance](knowledge-maintenance.md) for pre-cutover, deferred
+and post-cutover authority.
+
 ## Version-matched agent guidance
 
 `python3 pact.py guidance` reads the standard instructions carried by the running
@@ -105,6 +113,10 @@ root launcher, and both file tools and Shell execution paths. Its policy must
 itself be protected. PACT neither changes that policy nor claims it is active.
 An authorized upgrade uses the maintenance context; ordinary business tasks
 cannot patch framework files to work around defects.
+
+An optional [outer-sandbox sample and probe coverage](../evaluation/framework-protection-2026-11-06.md)
+keeps configuration delivery separate from actual host protection. It changes no
+global settings and certifies neither native file tools nor external MCP/plugins.
 
 Project knowledge/configuration and tool-generated execution state retain their
 existing ownership. Do not make all of `.pact/` read-only. A future host-native

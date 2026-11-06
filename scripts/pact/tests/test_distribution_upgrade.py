@@ -31,15 +31,20 @@ class DistributionUpgradeTests(unittest.TestCase):
         self.root = pathlib.Path(self.temp.name)
         self.target = self.root / "target"
         self.new_source = self.root / "new-source"
+        def source_ignores(directory, names):
+            ignored = set(shutil.ignore_patterns(
+                ".git", "__pycache__", "*.pyc", "cache",
+            )(directory, names))
+            if pathlib.Path(directory) == PROJECT_ROOT / ".pact":
+                # Local receipts and retained real-project pilots are not
+                # distribution inputs. Never copy them into every unit fixture.
+                ignored.update({"tmp", "tasks", "runs", "completions"} & set(names))
+            return ignored
+
         shutil.copytree(
             PROJECT_ROOT,
             self.new_source,
-            ignore=shutil.ignore_patterns(
-                ".git",
-                "__pycache__",
-                "*.pyc",
-                "cache",
-            ),
+            ignore=source_ignores,
         )
 
     def tearDown(self) -> None:

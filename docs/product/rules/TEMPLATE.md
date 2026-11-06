@@ -23,6 +23,11 @@ What would a user or business stakeholder observe if this rule is followed or vi
 
 - ...
 
+Keep the necessary year, role, conditions, exclusions and exceptions together.
+Extract only constraints worth independently confirming, citing or verifying.
+The related business explanation should link here instead of repeating this
+normative body. Different scopes are not duplicates merely because titles match.
+
 ## Authority / evidence
 
 What authoritative source or owner confirmation supports this rule?

@@ -41,6 +41,18 @@ What was actually checked?
 
 ## Convergence
 
+For knowledge migrations, record the declared inventory/exclusions, original
+Git revisions and paths, reviewed source-to-target/reference mapping and each
+migrated/deferred/excluded result. Preserve whole files with unresolved chapters;
+switch shared navigation last. Record review of related topics in the final
+integration tree, including same-meaning records with different IDs and scopes
+that must remain distinct. Do not start another permanent knowledge ledger.
+
+Distinguish migration applied, structure switched, business behavior verified
+and PACT Task completed. A business decision with implementation still pending
+is not resolved Drift. Cite actual evidence and disclose unverified anchors,
+host imports and special link syntax.
+
 - Product truth:
 - Architecture:
 - Tests:

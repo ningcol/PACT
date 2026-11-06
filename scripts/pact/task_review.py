@@ -522,6 +522,10 @@ def _snapshot(task_id: str):
         manifest, contract, context, evidence, convergence, owner, task_change,
         errors, gaps,
     )
+    from knowledge_reuse import review as review_knowledge_reuse
+    diagnosis["knowledge_reuse_review"] = review_knowledge_reuse(
+        ROOT, context, convergence, task_change, manifest["workspace_baseline"],
+    )
     from task_history import prior_generations
     try:
         diagnosis["prior_generations"] = prior_generations(ROOT, task_id)
@@ -623,6 +627,11 @@ def assist(args) -> int:
             print(f"- policy gaps: {len(result['policy_gaps'])}")
             print("- baseline: " + result["baseline_summary"])
             print("- next: " + result["next"])
+            reuse = result["knowledge_reuse_review"]
+            print("- knowledge reuse: " + reuse["status"])
+            if reuse["status"] != "skipped-no-knowledge-output":
+                print(f"- possible overlaps to review: {len(reuse['possible_overlaps'])}")
+                print("- reuse review is bounded; unlinked/unread sources and semantic equivalence remain unverified")
             print("- semantic review required before task finish")
         return 0
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:

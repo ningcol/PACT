@@ -8,6 +8,7 @@ import collections
 import json
 import itertools
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
@@ -30,6 +31,38 @@ def _topic(doc: dict) -> str:
 
 def _text_key(doc: dict) -> str:
     return re.sub(r"[\W_]+", "", str(doc.get("text") or "").casefold())
+
+
+def overlap_signal(a: dict, b: dict) -> str | None:
+    """Bounded lexical hints shared by Audit and task-local reuse review.
+
+    Scope, approval and semantic equivalence still require a person/Agent to
+    read the sources. In particular, matching yearly/role-specific rules must
+    never be merged merely because this function emits a hint.
+    """
+    topic_a, topic_b = _topic(a), _topic(b)
+    if topic_a == topic_b and (
+        len(topic_a) >= 5
+        or (len(topic_a) >= 2 and any("\u3400" <= c <= "\u9fff" for c in topic_a))
+    ):
+        return "same-title"
+    body_a, body_b = _text_key(a), _text_key(b)
+    if body_a == body_b and len(body_a) >= 100:
+        return "same-body"
+
+    def terms(doc):
+        text = str(doc.get("text") or "")[:12000].casefold()
+        words = set(re.findall(r"[a-z][a-z0-9]{2,}", text))
+        words.difference_update({"the", "and", "for", "with", "must", "this", "that"})
+        for run in re.findall(r"[\u3400-\u9fff]+", text):
+            words.update(run[i:i + 2] for i in range(len(run) - 1))
+        return words
+
+    left, right = terms(a), terms(b)
+    shared = left & right
+    if len(shared) >= 6 and len(shared) / max(1, len(left | right)) >= 0.6:
+        return "shared-body-terms"
+    return None
 
 
 def _linked_decisions(a: dict, b: dict) -> bool:
@@ -82,6 +115,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
         d["id"]: d for d in docs
         if isinstance(d.get("id"), str)
     }
+    by_path = {d.get("path"): d for d in docs if isinstance(d.get("path"), str)}
     if domain is not None and domain not in domains:
         raise ValueError(f"unknown Domain ID: {domain}")
 
@@ -118,6 +152,20 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
                 groups.setdefault(ident, []).append(linked)
                 seen.add(linked["path"])
 
+        # Standard business explanations remain plain documents. A Domain's
+        # explicit file link routes review, never grants confirmed status.
+        for link in router.get("links", []) if isinstance(router.get("links"), list) else []:
+            if not isinstance(link, str) or ":" in link or link.startswith("/"):
+                continue
+            target = posixpath.normpath(posixpath.join(
+                posixpath.dirname(str(router.get("path") or "")), link.split("#", 1)[0],
+            ))
+            linked = by_path.get(target)
+            if (linked and target.startswith("docs/product/specs/")
+                    and linked.get("artifact_type") == "document" and target not in seen):
+                groups.setdefault(ident, []).append(linked)
+                seen.add(target)
+
     candidates = []
     suppressed = 0
     comparisons_left = 5000
@@ -130,26 +178,19 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
                 overlap_scan_truncated = True
                 break
             comparisons_left -= 1
-            if a.get("artifact_type") != b.get("artifact_type"):
+            if (a.get("artifact_type") != b.get("artifact_type")
+                    and "document" not in {a.get("artifact_type"), b.get("artifact_type")}):
                 continue
             if a.get("artifact_type") == "decision" and _linked_decisions(a, b):
                 continue
-            topic_a, topic_b = _topic(a), _topic(b)
-            body_a, body_b = _text_key(a), _text_key(b)
-            signal = None
-            if topic_a == topic_b and (
-                len(topic_a) >= 5
-                or (len(topic_a) >= 2 and any("\u3400" <= c <= "\u9fff" for c in topic_a))
-            ):
-                signal = "same-title"
-            elif body_a == body_b and len(body_a) >= 100:
-                signal = "same-body"
+            signal = overlap_signal(a, b)
             if signal:
                 item = {
                     "domain": ident,
                     "paths": [a["path"], b["path"]],
                     "ids": [a.get("id"), b.get("id")],
                     "statuses": [a.get("status"), b.get("status")],
+                    "scopes": [a.get("domains", []), b.get("domains", [])],
                     "signal": signal,
                     "reason": "review possible same-topic redundancy or contradiction; no semantic verdict",
                 }
@@ -202,6 +243,7 @@ def knowledge_review_candidates(docs: list[dict], *, domain: str | None = None) 
             "status": d.get("status"),
             "routing_evidence": (
                 "declared-domain" if domain in _string_ids(d.get("domains"))
+                else "explicit-router-link" if d.get("artifact_type") == "document"
                 else "explicit-router-id"
             ),
         } for d in sorted(selected.values(), key=lambda d: d["path"])]

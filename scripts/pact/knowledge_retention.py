@@ -55,6 +55,8 @@ def review(
     require: bool = False,
     root: Path | None = None,
     verified_removed_paths: list[str] | None = None,
+    prepared_paths: list[str] | None = None,
+    prepared_file_states: dict[str, str] | None = None,
 ) -> tuple[list[str], dict]:
     """Review optional knowledge disposition; legacy reports remain readable."""
     item = convergence.get("knowledge_retention")
@@ -93,6 +95,26 @@ def review(
         return errors, {"status": "invalid", "disposition": disposition}
 
     updated_set, created_set, removed_set = set(updated), set(created), set(removed)
+    # Reuse already available source/baseline facts. Do not invoke Git or
+    # retrieval merely to validate an ordinary `none` review. Missing proof
+    # remains unknown; a file operation never proves first knowledge/authorship.
+    known_existing = set(prepared_paths or [])
+    known_missing = set()
+    for path, state in (prepared_file_states or {}).items():
+        if state == "missing":
+            known_missing.add(path)
+        elif isinstance(state, str):
+            known_existing.add(path)
+    for path in sorted(created_set & known_existing):
+        errors.append(
+            "knowledge retention: created path already existed at preparation; "
+            "declare updated instead: " + repr(path)
+        )
+    for path in sorted(updated_set & known_missing):
+        errors.append(
+            "knowledge retention: updated path was absent at preparation; "
+            "declare created instead: " + repr(path)
+        )
     if (updated_set & created_set or updated_set & removed_set
             or created_set & removed_set):
         errors.append(
@@ -221,7 +243,13 @@ def review(
         "removed": sorted(removed_set),
         "changed_paths_checked": changed_files is not None,
         "created_paths_checked": root is not None,
-        "kind_of_change_verified": False,
+        "kind_of_change_verified": bool(updated_set | created_set) and (
+            updated_set <= known_existing and created_set <= known_missing
+        ),
+        "operation_kind_unknown": sorted(
+            (updated_set - known_existing) | (created_set - known_missing)
+        ),
+        "operation_kind_interpretation": "File existence only; not knowledge novelty or authorship.",
         "removed_source_verified": bool(removed_set) and (
             verified_removed_paths is not None
             and removed_set.issubset(set(verified_removed_paths))

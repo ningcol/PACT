@@ -15,6 +15,13 @@ PACT uses a small set of durable artifact types. The goal is not to add metadata
 
 Do not assign PACT metadata to ordinary source files, tests, comments, or trivial docs.
 
+Coherent business explanations normally live in `docs/product/specs/` as ordinary
+Markdown. There is no `spec` artifact type and no whole-document confirmed state
+for a mixed explanation. Label confirmed requirements, candidates, code-derived
+observations and history separately; link independently useful constraints to
+Rules instead of repeating their normative bodies. See
+[knowledge maintenance](knowledge-maintenance.md) for migration and granularity.
+
 ## 2. Stable IDs
 
 Stable IDs are required only for durable artifacts that other artifacts may reference.
@@ -30,6 +37,9 @@ DRIFT-NNN
 ```
 
 IDs should survive file renames and directory moves.
+
+Cross-type extractions retain source references, not cross-type `supersedes`.
+Short redirects at old paths do not retain another stable ID or effective body.
 
 ## 3. Front matter
 

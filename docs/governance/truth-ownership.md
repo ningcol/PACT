@@ -16,12 +16,20 @@ PACT avoids a single global "source of truth" ranking. Different questions have 
 
 ## Rules
 
-1. One fact should have one owner.
+1. One fact, applicable scope and effective state should have one current authoritative body.
 2. Prefer references over duplicated explanations.
 3. Generated facts should be regenerated, not manually synchronized.
 4. Product truth must not be inferred from implementation alone.
 5. Architecture documents describe current structure; historical rationale belongs in decisions.
 6. Tests are evidence, not automatically normative product truth.
+
+Business explanations preserve coherent flows and context; important constraints
+worth independent confirmation, reference or verification belong in Rules.
+Domains route without copying bodies. New knowledge follows the
+[product routes](../product/README.md); established project authority stays in
+place until a reviewed cutover. A different year, role, condition or status can
+legitimately require another record. A mixed explanation is never confirmed
+solely by location or a Domain link.
 
 ## Conflict example
 

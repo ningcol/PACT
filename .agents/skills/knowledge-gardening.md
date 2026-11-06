@@ -24,7 +24,13 @@ every trivial implementation or introduce a new CLI.
 
 ## Inputs and discovery
 
-Start with `pact audit --json` and the relevant `pact inspect`/Task Context.
+Start with the prepared Task Context and relevant task delta. Use bounded
+`task assist --json` candidates when available; run a scoped Audit or inspect
+only when needed. Ordinary `none` adds no retrieval or Git calls and needs no
+persistent registration. Reuse with unchanged prose is `none`, citing the
+existing source in its rationale; a creation explains why that source does not
+cover the genuinely new knowledge. Follow the
+[migration procedure](../../docs/design/knowledge-maintenance.md) for a cutover.
 Review only the targets relevant to the task:
 
 - `active_changes`: determine if the actual work completed or was abandoned.

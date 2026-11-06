@@ -73,6 +73,11 @@ python scripts/pact/pact.py upgrade --target ../existing-project --apply
 python scripts/pact/pact.py doctor
 python scripts/pact/pact.py readiness
 python scripts/pact/pact.py audit --json
+# Optional: explicit closed Drift records and direct references only.
+python scripts/pact/pact.py check --root ../existing-project \
+  --drift-closure docs/drift/resolved/example.md --json
+# Bounded task-output/prepared-source reuse hints; no full inspect rerun.
+python3 pact.py task assist <TASK-ID> --json
 python scripts/pact/pact.py owner --json
 python scripts/pact/pact.py risk high --json
 python scripts/pact/pact.py fitness

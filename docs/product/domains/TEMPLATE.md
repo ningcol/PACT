@@ -38,6 +38,12 @@ Do not try to map every file.
 
 - `RULE-...`
 
+## Business explanations
+
+Link coherent flows and topic explanations at their authoritative paths (new
+knowledge normally uses `docs/product/specs/`). A linked explanation remains
+ordinary Markdown; this router does not confirm its requirements or observations.
+
 ## Relevant architecture
 
 - ...

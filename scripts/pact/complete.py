@@ -240,6 +240,11 @@ def main() -> int:
                 convergence_coverage_stats["removed_verified"]
                 if convergence_coverage_stats is not None else None
             ),
+            prepared_paths=[
+                item["path"] for item in (context or {}).get("artifacts", [])
+                if isinstance(item, dict) and isinstance(item.get("path"), str)
+                and isinstance(item.get("sha256"), str)
+            ],
         )
         errors.extend(retention_errors)
 

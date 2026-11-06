@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+import json
 import pathlib
 import re
 import sys
@@ -361,20 +362,43 @@ def main() -> int:
         "--root",
         help="repository root to validate; defaults to the repository containing this script",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--artifact-only",
         action="store_true",
         help="validate PACT artifact metadata/IDs/lifecycle without repository Markdown-link checks",
     )
+    mode.add_argument(
+        "--drift-closure", action="append", metavar="PATH",
+        help="check only named Drift closure records and their direct references (repeatable)",
+    )
+    parser.add_argument("--json", action="store_true", help="emit structured check results")
     args = parser.parse_args()
 
     default_root = pathlib.Path(__file__).resolve().parents[2]
     root = pathlib.Path(args.root).expanduser().resolve() if args.root else default_root
 
+    if args.drift_closure:
+        from drift_closure import check_closure
+        result = check_closure(root, args.drift_closure)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"PACT Drift closure: {result['status']} ({len(result['drifts'])} record(s))")
+            for error in result["errors"]:
+                print(f"  - {error}", file=sys.stderr)
+            for warning in result["unverified"]:
+                print(f"  - UNVERIFIED: {warning}")
+            print("Structure and direct locators only; Owner confirmation and business semantics are unverified.")
+        return 1 if result["errors"] else 0
+
     schema = root / ".pact" / "schema" / "artifact.schema.json"
     try:
         load_schema(schema)
     except Exception as exc:
+        if args.json:
+            print(json.dumps({"status": "error", "errors": [f"cannot load artifact schema: {exc}"]}))
+            return 2
         print(f"PACT: cannot load artifact schema: {exc}", file=sys.stderr)
         return 2
 
@@ -396,11 +420,21 @@ def main() -> int:
             break
         except OSError as exc:
             if attempt == 2:
+                if args.json:
+                    print(json.dumps({"status": "error", "errors": [f"unstable Markdown source snapshot: {exc}"]}))
+                    return 2
                 print(
                     f"PACT check: unstable Markdown source snapshot: {exc}",
                     file=sys.stderr,
                 )
                 return 2
+
+    if args.json:
+        print(json.dumps({
+            "status": "fail" if errors else "pass",
+            "artifact_count": len(artifacts), "errors": errors,
+        }, ensure_ascii=False, indent=2))
+        return 1 if errors else 0
 
     print(f"PACT: discovered {len(artifacts)} machine-readable artifact(s).")
 
