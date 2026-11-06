@@ -6,8 +6,60 @@ They do **not** version a project's Product Truth, Architecture, Decisions, Owne
 
 ## Unreleased
 
-Reserved for changes after the RC2 release candidate. This heading does
+Reserved for changes after the RC3 release candidate. This heading does
 not create a tag, downloadable release or Stable approval.
+
+## 0.4.0-rc.3 (experimental pilot release candidate)
+
+**Scope:** the runtime changes since published `v0.4.0-rc.2`, including
+knowledge retention and Domain audit, completion performance and diagnostics,
+and clearer project/framework maintenance boundaries. This remains an
+experimental prerelease for controlled project trials.
+
+- Batch Git index/object queries for workspace snapshots and task deltas,
+  preserving the existing V3 fingerprint, final-content attribution, file modes,
+  unusual paths and fail-closed submodule behavior. This reduces repeated Git
+  subprocess work; it does not remove project verification or semantic review.
+- Connect existing read-only `task assist` to default guides, draft output and
+  relevant completion errors. Its optional partial-report fill copies trusted
+  Claim/criterion text into empty machine fields; reviewed fields and final
+  completion remain manual semantic judgments. Unsupported completed/external
+  bundles receive appropriate navigation without relaxing write boundaries.
+- Explain prepared dirty paths, shared-checkout attribution and `--force`
+  consequences before finish. Preserve prior task generations in bounded
+  audit history; archived Evidence is not automatically carried into a new
+  bundle and still needs current binding/provenance validation.
+- Explain otherwise unreasoned partial body-term matches, including numeric
+  matches, without changing scores, ranking or weak-Decision safeguards.
+  Expand registered CJK aliases conservatively and report limited/Change-only
+  retrieval without promoting guessed vocabulary into product authority.
+- Add optional Convergence v1 knowledge-retention review (`none`, updates,
+  creation and source-verified removal/rename). Prefer existing knowledge homes;
+  routine fixes need no new Rule/Decision. Legacy reports remain readable;
+  new drafts retain pending review, and `--require-knowledge-retention` makes
+  explicit review binding. Removal requires the prepared source and coverage.
+- Add bounded `audit --domain` review and deterministic invalid-reference
+  diagnostics. Audit never silently deletes, confirms or rewrites knowledge.
+- Explain stale receipt/workspace mismatches and distinguish Owner-accepted
+  limited delivery from evidence-backed `complete=true`; neither explanations
+  nor explicit delivery acceptance turn missing verification into a pass.
+- Clarify framework-managed runtime versus project-owned configuration,
+  business knowledge and extensions. Surface runtime identity/integrity and
+  capabilities; upgrades preserve project-owned guides, which need applicable
+  usage changes merged separately.
+
+**Compatibility and evidence:** no third-party runtime dependency or new
+mandatory task loop. Existing strict Evidence/AC/Convergence requirements stay
+binding. See [completion](docs/governance/completion-contract.md),
+[upgrade ownership](docs/design/distribution-upgrades.md), and the
+[engineering evaluation](docs/evaluation/pact-upstream-maintenance-2026-11-05.md).
+Local regressions, independent code review and scripted real-source trials do
+not establish independently observed Agent obedience or Owner time savings.
+
+**Publication:** this source/changelog does not create a Release. The final
+main commit must pass PACT Check, the 3 OS × 3 Python Core Matrix, tagged
+release checks and asset/Bootstrap smoke before RC3 is published as a
+prerelease, not latest. Stable acceptance remains a separate gate.
 
 ## 0.4.0-rc.2 (experimental pilot release candidate)
 
@@ -45,10 +97,10 @@ metadata and RC1-to-RC2 upgrade verification. **Not a stable release.**
   preferences, Product Rules and Decision rationale; unsupported legacy
   YAML and locally modified managed files must fail closed.
 
-**Release boundary:** `v0.4.0-rc.1` is immutable and already published.
-`v0.4.0-rc.2` is **not** published by this changelog. Its release requires
-a new tag pointing to exactly the approved green RC2 `main` SHA and
-successful tagged matrix/asset/Bootstrap checks. Real independent Agent
+**Release record:** [v0.4.0-rc.2](https://github.com/ningcol/PACT/releases/tag/v0.4.0-rc.2)
+was published on 2026-11-01. RC1 and RC2 tags must not be overwritten.
+The preparation evidence above records the RC2 development history; future
+releases require their own exact-main and tagged checks. Real independent Agent
 compliance and Owner benefit remain unverified (#214/#28/#32); stable
 `v0.4.0` stays HOLD. See [releasing](docs/releasing.md).
 

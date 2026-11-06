@@ -364,11 +364,18 @@ The rule is:
 
 ## Status
 
-**Main runtime source:** 0.4.0-rc.2 (experimental; publication tracked in GitHub Releases)  
-**Previous immutable release:** v0.4.0-rc.1 (experimental prerelease)  
+**Main runtime source:** 0.4.0-rc.3 (experimental; publication tracked in GitHub Releases)
+
+**Previous immutable release:** v0.4.0-rc.2 (experimental prerelease)
+
 **Control-plane protocol:** v1
 
-The RC2 candidate retains the compact 0.3+ control-plane foundation and includes the reviewed nonrestricting Domain-first fallback correction from PR #246:
+The RC3 candidate retains the compact control-plane foundation and RC2's
+nonrestricting Domain-first fallback correction. It adds batched Git workspace
+checks, clearer assist/baseline/retrieval diagnostics, optional knowledge
+retention with source-verified removal, defensive Domain audit and explicit
+project/framework maintenance boundaries. See the [changelog](CHANGELOG.md)
+and [release procedure](docs/releasing.md). The foundation includes:
 
 - compact single-file `.pact/pact.pyz` runtime with embedded protocol schemas;
 - minimal/lazy brownfield adoption (8 managed files in the real pilot);

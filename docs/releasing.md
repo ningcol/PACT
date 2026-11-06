@@ -2,13 +2,13 @@
 
 PACT runtime versions describe distributable framework/runtime behavior. They do not version a downstream project's Product Truth, Architecture, Decisions, Owner Profile, or other project-owned knowledge.
 
-**RC2 preparation status (2026-10-31):** `v0.4.0-rc.1` was
-published on 2026-10-27 and remains an immutable experimental prerelease.
-The source currently prepares **`v0.4.0-rc.2`**, which includes only the
-reviewed `--scope-first` unmapped/ambiguous fallback correction from
-[PR #246](https://github.com/ningcol/PACT/pull/246), plus release
-metadata and upgrade checks. A version-file change or merged PR does **not**
-publish RC2. Genuine real-Agent/Owner acceptance is still pending.
+**RC3 release line (2026-11-06):** `v0.4.0-rc.1` was published on
+2026-10-27 and [v0.4.0-rc.2](https://github.com/ningcol/PACT/releases/tag/v0.4.0-rc.2)
+on 2026-11-01. Preserve both existing tags. The source release identifier is
+**`v0.4.0-rc.3`**, covering all post-RC2 runtime changes listed in
+[CHANGELOG.md](../CHANGELOG.md). The actual GitHub Release and successful
+tagged workflow establish publication; a version-file change does not.
+Independent real-Agent/Owner acceptance remains a separate stable-release gate.
 
 The `main` branch may carry a prerelease development version such as `0.4.0-dev.1`. That is a moving development identifier, not a published release.
 
@@ -23,9 +23,9 @@ The `main` branch may carry a prerelease development version such as `0.4.0-dev.
 
 ## Two release channels: simple prerelease, protected stable
 
-`v0.4.0-rc.1` is an **already published experimental controlled-pilot
-prerelease**; `v0.4.0-rc.2` is its next proposed patch candidate. Neither
-is a stable release or independently verified Agent/Owner efficacy claim.
+RC1 and RC2 are published experimental controlled-pilot prereleases;
+RC3 continues that channel. An RC is not a stable release or an
+independently verified Agent/Owner efficacy claim.
 The tag-pushing maintainer initiates RC publication; **no**
 `pact-rc-approval` Environment, `PACT_RC_RELEASE_GO`, SHA-approval variable
 or secondary human deployment review is required.
@@ -84,7 +84,8 @@ using the original PACT installers in disposable GitHub Actions targets:
 | `0.1.0` and `0.2.0`, with a valid `.pact/install.json` | Explicit `--migrate-legacy` preview, then reviewed apply for YAML Owner seeds / PACT Decision metadata | No silent YAML/TOML shadowing or invented Decision/Owner status |
 | `0.3.0`, with a valid install manifest | Ordinary upgrade if fully modern; explicit `--migrate-legacy` if historical YAML/Decision sources are present | Original rationale and project-owned config remain authoritative |
 | Early **unpublished** `0.4.0-rc.1` development install | Ordinary preview and apply | Existing TOML Decisions, including Windows CRLF frontmatter, stay byte-identical |
-| Published `v0.4.0-rc.1` at exact source SHA `7592efd` | RC2 preview and apply; repeat and fault-injected rollback | Current Owner preferences, Decisions and custom AGENTS guidance remain byte-identical; only unchanged framework-managed files may update |
+| Published `v0.4.0-rc.1` at exact source SHA `7592efd` | Historical RC2 preview/apply evidence; repeat against each new candidate | Current Owner preferences, Decisions and custom AGENTS guidance remain byte-identical; only unchanged framework-managed files may update |
+| Published `v0.4.0-rc.2` | Verify RC3 preview/apply, repeat and rollback in a disposable copy | Preserve project knowledge and custom guides; reconcile relevant new usage guidance separately |
 | No trustworthy `.pact/install.json`, incompatible custom YAML, conflicting local framework edits or incomplete historical Task state | **Do not auto-upgrade**; review a backed-up isolated copy manually | Fail closed instead of inventing ownership or rewriting policy |
 
 [Four pinned original installations, Bootstrap and failure/rollback checks](https://github.com/ningcol/PACT/actions/runs/40153967276)
@@ -106,20 +107,20 @@ push the RC tag after exact-main CI succeeds. **After publication**, repeat
 checksum/installation and representative 0.1/0.2/0.3/0.4-to-tag upgrades
 using the immutable `v0.4.0-rc.1` source, not moving `main`.
 
-### RC1 → RC2 pilot upgrade (once RC2 is published)
+### RC1 / RC2 → RC3 pilot upgrade
 
-Check the actual published `v0.4.0-rc.2` GitHub Release assets and their
+After RC3 publication, check its actual GitHub Release assets and their
 `SHA256SUMS` first; work from a **backed-up/disposable project copy**.
-Normal tracked RC1 installations with intact `.pact/install.json` use
+Normal tracked RC1/RC2 installations with intact `.pact/install.json` use
 dry-run preview, inspect the planned managed files and ensure project-owned
 Owner/Decision sources are untouched, then apply deliberately:
 
 ```bash
-python pact-bootstrap.py upgrade --ref v0.4.0-rc.2 --target ../rc1-pilot-project
-python pact-bootstrap.py upgrade --ref v0.4.0-rc.2 --target ../rc1-pilot-project --apply
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.3 --target ../pact-pilot-project
+python pact-bootstrap.py upgrade --ref v0.4.0-rc.3 --target ../pact-pilot-project --apply
 ```
 
-Never supply `--migrate-legacy` automatically for a modern RC1 project.
+Never supply `--migrate-legacy` automatically for a modern RC1/RC2 project.
 For projects still containing actual legacy YAML, inspect a separate
 `--migrate-legacy` preview and apply only after Owner review.
 After the upgrade rerun `doctor --strict`, `owner --strict`,
@@ -127,11 +128,11 @@ After the upgrade rerun `doctor --strict`, `owner --strict`,
 The project-owned content must not silently change; conflicts or absent
 ownership manifests require manual recovery rather than bypass.
 
-The historical upgrade matrix checks four old source generations and also
-the **published RC1** original source `7592efd3393ff568758400ff06d7e2e5b3315a2f`
-against the new RC2 source, including rollback/retry, idempotence, SHA256
-Bootstrap and Owner/Decision/guide preservation. Its CI evidence must be
-observed rather than presumed.
+The earlier RC2 historical matrix checked four old source generations and
+the **published RC1** original source `7592efd3393ff568758400ff06d7e2e5b3315a2f`,
+including rollback/retry, idempotence, SHA256 Bootstrap and
+Owner/Decision/guide preservation. Each new release needs its own upgrade
+checks; the historical run is not RC3 evidence.
 
 ### Previously published RC1 upgrade examples (historical)
 
@@ -163,9 +164,9 @@ verify `pact.py doctor --strict`, `owner --strict`, `readiness`,
 `check`, and exact-ID `discover` of the important Decisions in that
 project. See [Distribution and Safe Upgrades](design/distribution-upgrades.md).
 
-**RC2 publication boundary:** a maintainer must push a new valid
-`v0.4.0-rc.2` tag pointing to the exact, fully tested `main` commit.
-Do **not** retag or overwrite the published `v0.4.0-rc.1`.
+**RC3 publication boundary:** a maintainer must push a new valid
+`v0.4.0-rc.3` tag pointing to the exact, fully tested `main` commit.
+Preserve the published RC1 and RC2 tags.
 The tagged GitHub Actions workflow validates the same-source push CI,
 repeats the 9-cell matrix and builds/smokes assets automatically; it
 must finish **successfully** before the prerelease is considered
@@ -177,7 +178,8 @@ Stable `v0.4.0` retains the independent human Agent/Owner gates.
 Use an immutable semantic-version tag **matching `.pact/VERSION`
 exactly**. Only stable `vMAJOR.MINOR.PATCH` and RC `vMAJOR.MINOR.PATCH-rc.N`
 are publishable by this workflow; `-dev.N`, `-alpha` and arbitrary
-suffixes are rejected. The RC2 preparation source version is `0.4.0-rc.2` (unpublished until the tagged release workflow succeeds).
+suffixes are rejected. The source release version is `0.4.0-rc.3`;
+publication requires its successful tagged release workflow and GitHub Release.
 No tag or GitHub Release is created by merely merging this workflow.
 
 Once main Check + Core Matrix are green on the exact intended SHA,
@@ -192,8 +194,8 @@ cat .pact/VERSION
 git rev-parse HEAD
 
 # Only the authorized maintainer does this; the push triggers the guarded workflow.
-git tag -a v0.4.0-rc.2 -m "PACT v0.4.0-rc.2 pilot prerelease"
-git push origin refs/tags/v0.4.0-rc.2
+git tag -a v0.4.0-rc.3 -m "PACT v0.4.0-rc.3 pilot prerelease"
+git push origin refs/tags/v0.4.0-rc.3
 ```
 
 Do not tag a stale or unrelated commit: the tag **must** resolve to
