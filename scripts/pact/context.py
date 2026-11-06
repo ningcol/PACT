@@ -1347,7 +1347,7 @@ def main() -> int:
         path.write_text(rendered, encoding="utf-8")
         print(f"PACT context: candidate envelope -> {path}")
     else:
-        print(rendered, end="")
+        print(json.dumps(envelope, ensure_ascii=True, indent=2))
 
     return 0
 

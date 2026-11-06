@@ -111,6 +111,11 @@ machine cannot certify an Agent's product-meaning judgment.
 
 These commands compose the lower-level PACT primitives; they do not replace them. Stronger agents may use `discover`, `context`, `impact`, `run`, `evidence`, `converge`, `report`, and `complete` directly when that is more efficient.
 
+CLI JSON stdout uses ASCII Unicode escapes so non-ASCII values survive
+locale-dependent subprocess pipes, including Windows legacy code pages.
+JSON decoding restores the original text, including non-BMP characters;
+persisted artifacts keep their existing UTF-8 serialization.
+
 `task draft` creates clearly incomplete Evidence, Convergence and Owner Report
 templates without overwriting user edits; `task verify` executes a real check
 through `pact run` and appends an Evidence claim only for the explicitly

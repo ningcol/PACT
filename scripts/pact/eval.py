@@ -656,7 +656,7 @@ def main() -> int:
             if not args.json:
                 print(f"PACT eval machine summary: {path}")
         if args.json or not args.output:
-            print(rendered, end="")
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
 
     if args.task:
@@ -678,7 +678,7 @@ def main() -> int:
             if not args.json:
                 print(f"PACT eval observation: {path}")
         if args.json or not args.output:
-            print(rendered, end="")
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
 
     if not args.records:
@@ -722,7 +722,7 @@ def main() -> int:
         }
 
     if args.json or args.summary:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT eval: {len(records)} valid record(s)")
         for record in records:

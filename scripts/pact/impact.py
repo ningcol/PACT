@@ -344,7 +344,7 @@ def main() -> int:
         return 0
 
     if args.json:
-        print(rendered, end="")
+        print(json.dumps(report, ensure_ascii=True, indent=2))
         return 0
 
     print(f"PACT impact: {len(changed)} changed file(s)")

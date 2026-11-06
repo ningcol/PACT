@@ -794,7 +794,7 @@ def main() -> int:
             result["applied"] = False
             result["rolled_back"] = False
             if args.json:
-                print(json.dumps(result, ensure_ascii=False, indent=2))
+                print(json.dumps(result, ensure_ascii=True, indent=2))
             else:
                 print(
                     "PACT upgrade: conflicts detected; no files were changed.",
@@ -819,7 +819,7 @@ def main() -> int:
             result["rolled_back"] = exc.rolled_back
             result["apply_error"] = str(exc)
             if args.json:
-                print(json.dumps(result, ensure_ascii=False, indent=2))
+                print(json.dumps(result, ensure_ascii=True, indent=2))
             else:
                 print(f"PACT upgrade: {exc}", file=sys.stderr)
             return 2
@@ -828,7 +828,7 @@ def main() -> int:
         result["rolled_back"] = False
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
 
     print(

@@ -64,7 +64,7 @@ def main() -> int:
 
     result = profile(args.level)
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT risk: {args.level}")
         print(f"- knowledge limit: {result['knowledge_limit']}")

@@ -586,7 +586,7 @@ def _prepare_locked(
         )
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT task prepared: {task_id}")
         print(f"- risk: {args.risk}")
@@ -938,7 +938,7 @@ def _finish_locked(args) -> int:
             return 2
 
     if args.json and output is not None:
-        print(json.dumps(output, ensure_ascii=False, indent=2))
+        print(json.dumps(output, ensure_ascii=True, indent=2))
     else:
         if completed.stdout:
             print(completed.stdout, end="")
@@ -1078,7 +1078,7 @@ def task_status(args) -> int:
         print(f"PACT task status: invalid task history: {exc}", file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT task {args.task_id}: {manifest.get('status')}")
         print(f"- risk: {manifest.get('risk_level')}")

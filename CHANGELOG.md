@@ -33,6 +33,9 @@ experimental prerelease for controlled project trials.
   matches, without changing scores, ranking or weak-Decision safeguards.
   Expand registered CJK aliases conservatively and report limited/Change-only
   retrieval without promoting guessed vocabulary into product authority.
+- Emit ASCII-escaped JSON on CLI stdout so Chinese and other Unicode values
+  survive locale-dependent process pipes on Windows. Decoded values remain
+  unchanged; file artifacts keep their existing UTF-8 serialization.
 - Add optional Convergence v1 knowledge-retention review (`none`, updates,
   creation and source-verified removal/rename). Prefer existing knowledge homes;
   routine fixes need no new Rule/Decision. Legacy reports remain readable;

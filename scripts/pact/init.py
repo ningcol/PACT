@@ -671,7 +671,7 @@ def main() -> int:
     }
 
     if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(json.dumps(summary, ensure_ascii=True, indent=2))
     else:
         print(f"PACT init: {summary['mode']} -> {target}")
         print(f"Source runtime: {summary['source_runtime_version']}")

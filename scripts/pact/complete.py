@@ -322,7 +322,7 @@ def main() -> int:
     }
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT complete: {'PASS' if result['complete'] else 'FAIL'}")
         print(f"- task: {result['task_id']}")

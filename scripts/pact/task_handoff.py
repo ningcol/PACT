@@ -218,7 +218,7 @@ def checkpoint(args) -> int:
             "owner_completed_automatically": False,
         }
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT task checkpoint: {args.task_id} ({result['checkpoint_count']})")
         return 0
@@ -335,7 +335,7 @@ def resume(args) -> int:
             "owner_completed_automatically": False,
         }
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT task resume: {args.task_id}")
             print(f"- checkpoints: {len(handoff['entries'])}")

@@ -932,7 +932,7 @@ def main() -> int:
         result["intent"] = args.intent
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
 
     if not ranked and not code_results:

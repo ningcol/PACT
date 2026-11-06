@@ -264,7 +264,7 @@ def main() -> int:
                    ) else "pass")
         result = {"overall": overall, "checks": checks, "host_ci_executed": False}
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT doctor host wiring: {overall}")
             for check in checks:
@@ -398,7 +398,7 @@ def main() -> int:
     }
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT doctor: {overall}")
         identity = result["runtime"]

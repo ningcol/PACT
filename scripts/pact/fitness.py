@@ -147,7 +147,7 @@ def main() -> int:
             "results": [],
         }
         if args.json:
-            print(json.dumps(summary, ensure_ascii=False, indent=2))
+            print(json.dumps(summary, ensure_ascii=True, indent=2))
         else:
             print("PACT fitness: config valid")
             print(f"- source: {source} ({config_format})")
@@ -177,7 +177,7 @@ def main() -> int:
     }
 
     if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(json.dumps(summary, ensure_ascii=True, indent=2))
     else:
         print(f"PACT fitness: {summary['overall']}")
         if not configured:

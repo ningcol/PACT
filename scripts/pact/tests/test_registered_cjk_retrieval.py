@@ -159,7 +159,7 @@ class RegisteredCjkRetrievalTests(unittest.TestCase):
                 cwd=root, capture_output=True, text=True,
             )
             self.assertEqual(prepared.returncode, 0, prepared.stderr)
-            context = json.loads((root / ".pact/tasks/TASK-RETRIEVAL/context.json").read_text())
+            context = json.loads((root / ".pact/tasks/TASK-RETRIEVAL/context.json").read_text(encoding="utf-8"))
             self.assertEqual(context["discovery_queries"], [task_query])
             self.assertTrue(context["artifacts"])
             self.assertTrue(all(item["artifact_type"] == "change" for item in context["artifacts"]))
@@ -188,7 +188,7 @@ class RegisteredCjkRetrievalTests(unittest.TestCase):
                 cwd=root, capture_output=True, text=True,
             )
             self.assertEqual(budgeted.returncode, 0, budgeted.stderr)
-            final = json.loads((root / ".pact/tasks/TASK-BUDGETED-RETRIEVAL/context.json").read_text())
+            final = json.loads((root / ".pact/tasks/TASK-BUDGETED-RETRIEVAL/context.json").read_text(encoding="utf-8"))
             self.assertGreater(final["context_budget"]["dropped_for_token_budget"], 0)
             self.assertTrue(final["artifacts"])
             self.assertTrue(all(item["artifact_type"] == "change" for item in final["artifacts"]))

@@ -140,7 +140,7 @@ def main() -> int:
     baseline_errors = result["errors"]
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT readiness: {stage}")
         print(f"- foundation valid: {foundation_valid}")

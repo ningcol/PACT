@@ -614,7 +614,7 @@ def assist(args) -> int:
                     )
                 result["draft_written"] = changed
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT task assist: {args.task_id}")
             print(f"- unverified ACs: {', '.join(result['unverified_criteria']) or 'none'}")
@@ -754,7 +754,7 @@ def export(args) -> int:
             "completion_attestation": False,
         }
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT task export: {result['output']} (audit metadata only)")
         return 0

@@ -275,7 +275,7 @@ def draft(args) -> int:
         "next": assist_guidance(args.task_id),
     }
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT task draft: {args.task_id} ({', '.join(created) or 'unchanged'})")
         print("Review required: Evidence does not establish all acceptance or alignment.")
@@ -460,7 +460,7 @@ def verify(args) -> int:
         "requires_semantic_review": True,
     }
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(
             f"PACT task verify: {receipt['status']} ({claim_id}); "

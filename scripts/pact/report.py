@@ -232,7 +232,7 @@ def main() -> int:
         return 2
 
     if args.json:
-        print(json.dumps(owner, ensure_ascii=False, indent=2))
+        print(json.dumps(owner, ensure_ascii=True, indent=2))
     else:
         render(owner)
 

@@ -66,7 +66,7 @@ def main() -> int:
     }
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         state = "project config" if configured else "example fallback"
         print(f"PACT owner profile: {state}")

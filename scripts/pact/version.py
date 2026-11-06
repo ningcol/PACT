@@ -47,7 +47,7 @@ def main() -> int:
             result["tracked_files"] = 0
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=True, indent=2))
     else:
         print(f"PACT runtime: {result['source_runtime_version']}")
         if args.target:
