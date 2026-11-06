@@ -105,7 +105,8 @@ Owner decision. Changing the release workflow or merging documentation
 never creates a tag or downloadable assets: an authorized maintainer must
 push the RC tag after exact-main CI succeeds. **After publication**, repeat
 checksum/installation and representative 0.1/0.2/0.3/0.4-to-tag upgrades
-using the immutable `v0.4.0-rc.1` source, not moving `main`.
+against the immutable `v0.4.0-rc.3` target source, with each original
+installation pinned separately rather than taken from moving `main`.
 
 ### RC1 / RC2 → RC3 pilot upgrade
 
