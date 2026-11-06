@@ -74,12 +74,13 @@ For work requiring a prepared PACT task, prefer the high-level surface:
 1. `python pact.py status` / `inspect` when project state or history is unclear.
 2. `python pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>`.
 3. Implement ordinary technical details autonomously within the prepared Task Contract and Context.
-4. Run relevant verification through `python pact.py run ...` so Evidence can bind to machine receipts.
-5. Before completion, create Evidence, Convergence, and Owner Report in the task's expected completion bundle. Convergence must bind the prepared Context, explicitly disposition every selected knowledge artifact, and provide `change_coverage` rationale for every file PACT identifies as changed by the task; an empty finding list is not a substitute for coverage.
+4. Run relevant verification through `python pact.py task verify <TASK-ID> --criterion AC-1 --claim "<specific check>" -- <command>` or the lower-level `run` primitive.
+5. Before completion, create Evidence, Convergence, and Owner Report in the expected bundle. Optional: `task draft <TASK-ID>` creates incomplete drafts, `task assist <TASK-ID> --json` diagnoses without writes, and `task assist <TASK-ID> --write-draft` fills empty machine fields from trusted Evidence while keeping the Owner Report `partial`. Review nonempty fields manually. Review acceptance and Convergence before marking the report completed. Correct manually reviewed bundles may finish directly. Convergence must bind the prepared Context, explicitly disposition every selected knowledge artifact, and provide `change_coverage` rationale for every path differing from preparation; an empty finding list is not a substitute for coverage.
 6. Review long-term knowledge only when needed: if using `task draft`, resolve Convergence `knowledge_retention` from `pending` to `none`, `update`, `create`, or `update-and-create` with a reason and changed knowledge paths. Ordinary bug fixes usually need no new Rule/Decision; never infer product approval from code or tests.
 7. `python pact.py task finish <TASK-ID>` is the completion gate. Use `--require-knowledge-retention` when an explicit review is required. Do not claim done if it fails.
 
 Use `python pact.py task status <TASK-ID> --json` to recover the prepared contract/context paths and expected bundle location.
+Preparation includes existing dirty content in its baseline; unchanged pre-existing content is excluded from the final-content delta. Other writes in the same checkout may enter it; PACT does not identify the writer. Continue with `task status` / `task resume`; `prepare --force` starts a new baseline including current edits and archives prior state for audit without automatically carrying Evidence forward. Current bindings/provenance still need verification; force does not revoke every old receipt.
 
 ## Decision boundary
 
@@ -149,12 +150,13 @@ Default PACT task loop to merge into the project guide:
 
 - prepare work with `python pact.py task prepare ...` and follow its Task Contract/Context;
 - verify observable outcomes through `python pact.py run ...` where practical;
-- create Evidence + Convergence + Owner Report before completion;
+- create Evidence + Convergence + Owner Report before completion; optional `task draft` creates partial drafts, read-only `task assist <TASK-ID> --json` diagnoses gaps, and `task assist <TASK-ID> --write-draft` fills empty machine fields from trusted Evidence without completing the Owner Report; review nonempty fields manually and review acceptance/Convergence before marking it completed; a correct manual bundle can finish directly;
 - Convergence must bind the prepared Context, disposition every selected knowledge artifact, and review every task-changed file reported at finish;
 - if using `task draft`, explicitly resolve `knowledge_retention` pending (none/update/create/update-and-create with rationale and changed knowledge paths); do not add a Rule/Decision just because code changed;
 - finish with `python pact.py task finish <TASK-ID>`; a failed gate means PACT-verified completion is not established;
 - if the Owner explicitly accepts a scoped delivery with missing verification, disclose remaining gaps in the existing project Change/owner-facing result, but never mark Evidence/ACs as passing or change PACT `complete=true`;
 - use `python pact.py task status <TASK-ID> --json` to recover task paths after a long conversation.
+- preparation includes existing dirty content in the baseline; unchanged pre-existing content is excluded from its delta, but other writes in the same checkout may enter it without writer attribution; continue with status/resume, since `prepare --force` starts a new baseline including current edits and archives prior state for audit without automatically carrying Evidence forward; current bindings/provenance still need verification, and force does not revoke every old receipt.
 
 Suggested knowledge router (materialize a location only when real durable
 project knowledge exists):

@@ -9,6 +9,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import unicodedata
 
 from runtime_exec import runtime_command
 
@@ -252,6 +253,39 @@ def retrieval_scope_gaps(index: dict, queries: list[str], results: list[dict]) -
     return [message, *domain_query_suggestions(index, queries)]
 
 
+PARTIAL_BODY_PREFIX = "partial body terms: "
+PARTIAL_BODY_SUFFIX = " (lexical only)"
+PARTIAL_BODY_LIMIT = 3
+PARTIAL_BODY_TERM_LIMIT = 40
+
+
+def is_partial_body_reason(reason: str) -> bool:
+    """Recognize only our bounded direct diagnostic, never fused/unknown reasons.
+
+    Context consumes reasons as evidence of exactness. Quoted terms and a fixed
+    suffix also prevent query text from forging an exact-match priority label.
+    """
+    if (type(reason) is not str or len(reason) > 320
+            or not reason.startswith(PARTIAL_BODY_PREFIX)
+            or not reason.endswith(PARTIAL_BODY_SUFFIX)):
+        return False
+    payload = reason[len(PARTIAL_BODY_PREFIX):-len(PARTIAL_BODY_SUFFIX)]
+    try:
+        values = json.loads(payload)
+    except (ValueError, TypeError):
+        return False
+    return (
+        isinstance(values, list) and 1 <= len(values) <= PARTIAL_BODY_LIMIT
+        and all(type(term) is str and 1 <= len(term) <= PARTIAL_BODY_TERM_LIMIT
+                and all(ch.isalnum() or ch in "_-" or unicodedata.category(ch).startswith("M")
+                        for ch in term)
+                and norm(term) == term
+                for term in values)
+        and len(set(values)) == len(values)
+        and payload == json.dumps(values, ensure_ascii=False)
+    )
+
+
 def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     q = norm(query)
     ts = [term for term in re.findall(r"[\w\-]+", query, flags=re.UNICODE)
@@ -305,6 +339,7 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         reasons.append("body contains query")
 
     matched_terms = 0
+    partial_body_terms: list[str] = []
     for term in ts:
         term_score = 0
         if ident and norm(term) == ident:
@@ -324,6 +359,10 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
         if term_score:
             matched_terms += 1
             score += term_score
+            if term_score == 8 and len(partial_body_terms) < PARTIAL_BODY_LIMIT:
+                label = norm(term)[:PARTIAL_BODY_TERM_LIMIT]
+                if label not in partial_body_terms:
+                    partial_body_terms.append(label)
 
     if ts and matched_terms == len(ts):
         score += 20
@@ -344,6 +383,12 @@ def score_document(doc: dict, query: str) -> tuple[int, list[str]]:
     ):
         score = max(score // 2, 1)
         reasons.append("historical decision (not current guidance)")
+
+    if (not reasons and partial_body_terms and score == matched_terms * 8):
+        reasons.append(
+            PARTIAL_BODY_PREFIX + json.dumps(partial_body_terms, ensure_ascii=False)
+            + PARTIAL_BODY_SUFFIX
+        )
 
     return score, reasons
 

@@ -18,6 +18,7 @@ from schema_validate import load_schema, validate_instance
 from scope_routing import route_only
 from discover import (DOCUMENT_STOPWORDS, document_term_matches, document_tokens,
                       exact_match_priority, has_unspaced_script,
+                      is_partial_body_reason,
                       retrieval_scope_gaps, domain_query_suggestions)
 from runtime_exec import runtime_command
 
@@ -533,7 +534,8 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
     Return True only for the weakest evidence, still as a mandatory hint.
     """
     # The source scorer's "body contains query" and "all query terms
-    # matched" describe lexical overlap, not a title/ID/alias or a verified
+    # matched", plus controlled partial-body diagnostics, describe lexical
+    # overlap, not a title/ID/alias or a verified
     # governing Decision. Treat them like an unreasoned body hit, then apply
     # the existing source-authenticated title/phrase safeguards below.
     # Preserve any other explicit scorer reason and reject malformed/fused
@@ -541,7 +543,9 @@ def _weak_source_unconfirmed(item: dict, task: str) -> bool:
     reasons = item.get("reasons")
     generic_body_reasons = {"body contains query", "all query terms matched"}
     if (not isinstance(reasons, list)
-            or any(type(reason) is not str or reason not in generic_body_reasons
+            or any(type(reason) is not str or (
+                       reason not in generic_body_reasons
+                       and not is_partial_body_reason(reason))
                    for reason in reasons)
             or has_unspaced_script(task)
             or type(item.get("score")) is not int

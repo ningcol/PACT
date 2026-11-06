@@ -17,11 +17,42 @@ from unittest.mock import patch
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pact"))
 import context
+import discover
 import convergence_coverage
 import task_review
 
 
 class WeakLexicalScoringTests(unittest.TestCase):
+    def test_partial_body_explanation_preserves_source_safeguards(self):
+        with tempfile.TemporaryDirectory(prefix="pact-body-reason-") as td:
+            root = pathlib.Path(td)
+            rel = ".agents/decisions/opaque.md"
+            path = root / rel
+            path.parent.mkdir(parents=True)
+            path.write_text("Bugs are recorded. auto_accept_rules stays explicit.", encoding="utf-8")
+            doc = {"path": rel, "title": "Opaque policy", "text": path.read_text(),
+                   "id": "DEC-OPAQUE", "artifact_type": "decision", "status": "implemented"}
+            task = "Fix code bugs with tests"
+            score, reasons = discover.score_document(doc, task)
+            self.assertTrue(discover.is_partial_body_reason(reasons[0]))
+            with patch.object(context, "ROOT", root):
+                hit = {**doc, "score": score}
+                self.assertTrue(context._weak_source_unconfirmed({**hit, "reasons": []}, task))
+                self.assertTrue(context._weak_source_unconfirmed({**hit, "reasons": reasons}, task))
+                material, weak = context.split_weak_lexical_decisions([{**hit, "reasons": reasons}], task)
+                self.assertEqual(material, [])
+                self.assertEqual([row["id"] for row in weak], ["DEC-OPAQUE"])
+                # Actual distinctive source vocabulary still preserves full Context.
+                self.assertFalse(context._weak_source_unconfirmed(
+                    {**hit, "reasons": reasons}, "Change startup silently migrate auto_accept_rules",
+                ))
+                for reason in ("unknown diagnostic", "q: " + reasons[0],
+                               'partial body terms: [null] (lexical only)'):
+                    self.assertFalse(context._weak_source_unconfirmed({**hit, "reasons": [reason]}, task))
+                self.assertFalse(context._weak_source_unconfirmed(
+                    {**hit, "reasons": reasons}, "修改登录流程保持认证行为",
+                ))
+
     def hit(self, ident, score, reasons=None, kind="decision", status="implemented"):
         return {
             "id": ident, "artifact_type": kind, "status": status,

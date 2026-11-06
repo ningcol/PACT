@@ -37,12 +37,24 @@ python3 pact.py task prepare "<task>" --success "<observable outcome>" --risk <l
 # Add repeatable --accept / --constraint when the task has multiple explicit conditions.
 python3 pact.py task draft <TASK-ID>    # optional, explicitly incomplete scaffold
 python3 pact.py task verify <TASK-ID> --criterion AC-1 --claim "<specific check>" -- <command>
+python3 pact.py task assist <TASK-ID> --json  # optional, read-only diagnostics
+# Optional: task assist <TASK-ID> --write-draft fills empty machine fields in a partial Owner Report.
+# Review acceptance, Convergence and knowledge retention before marking it completed.
 python3 pact.py task finish <TASK-ID>
 ```
 
 These are default orchestration helpers, not mandatory workflow steps. For explanations or small changes, use proportionate project procedures without automatically preparing a PACT task. Once a Task Contract is prepared, its Evidence and acceptance requirements still apply; use lower-level `discover/context/impact/run/evidence/converge/report/complete` primitives where more precise. Never bypass truth/evidence requirements merely to reduce steps.
 
 ## Before changing behavior
+
+For a prepared task, `prepare` captures existing dirty content as its baseline.
+Unchanged pre-existing content is excluded from the final-content delta; other
+writes in a shared checkout can enter it, and PACT does not identify authors.
+Continue with `task status` / `task resume`; `prepare --force` starts a new
+baseline including current edits and archives old state for audit without
+automatically carrying its Evidence forward; current bindings/provenance still
+need verification. Correct manually reviewed bundles may finish directly;
+draft/assist are optional and never replace semantic review.
 
 Determine the affected product/domain scope and retrieve only the relevant rules, architecture, decisions, code, tests, and history needed for high confidence.
 

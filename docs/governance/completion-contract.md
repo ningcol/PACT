@@ -76,6 +76,17 @@ Each derived claim includes exact criterion/receipt/Contract/Context SHA
 metadata **in advisory diagnostics**; these are not extra Owner Report v1
 schema fields.
 
+The draft/assist path is optional: keep the draft Owner Report `partial` while
+machine fields are filled, then review acceptance, Convergence and knowledge
+retention before marking it completed and calling `task finish`. Correct manual
+bundles may finish directly. Nonempty reviewed fields require manual
+reconciliation, not clearing or downgrading to make them eligible for filling.
+After a failed finish, read-only assist diagnoses the Manifest's saved bundle;
+it does not inspect a different `finish --bundle` override.
+Assist retains its prepared-task and safe repository-local bundle scope;
+completed tasks, external bundles and aliased saved paths need direct review
+of the reported errors/bundle, with status/resume for stored context.
+
 `task export <TASK-ID> --filename <safe-name.json>` writes **minimal audit-only**
 Claim and receipt hash metadata inside PACT-owned `.pact/runs/<TASK-ID>/`.
 It is atomic, no-overwrite and subject to the task Evidence lock. It neither
@@ -176,6 +187,17 @@ readiness, risk requirements or the result of `task finish`.
 ## Actual changed-file coverage
 
 For a prepared task in a Git worktree, PACT records the prepare-time Git HEAD plus the content state of paths that were already dirty before the task. It does **not** require a clean workspace.
+
+`task prepare` and `task status` explain this stored baseline without rescanning
+current Git state; `task assist` reuses its current delta calculation. These
+differences do not identify authors: other writes in a shared checkout may
+enter them, and an unchanged HEAD does not imply an unchanged workspace.
+Continue existing work with status/resume. `prepare --force` starts a new
+baseline including current edits and archives prior state for audit without
+automatically carrying Evidence forward. Evidence must still satisfy the
+current Contract/Context and provenance checks; force does not revoke every
+old receipt. Replacement/archive success is
+reported only after successful publication.
 
 At `task finish`, PACT derives the paths whose final content differs from that prepared baseline. This includes uncommitted and committed additions, modifications, and deletions while excluding generated/installed PACT control-plane state such as local task/run/cache state and `.pact/install.json`. Project-owned seed files re-enter project state once customized.
 

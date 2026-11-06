@@ -72,10 +72,12 @@ class TaskHistoryTests(unittest.TestCase):
                 stack.enter_context(patch)
             if failure is not None:
                 stack.enter_context(mock.patch.object(task.os, "replace", side_effect=failure))
-            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            output = io.StringIO()
+            stack.enter_context(contextlib.redirect_stdout(output))
             errors = io.StringIO()
             stack.enter_context(contextlib.redirect_stderr(errors))
             result = task.prepare(self.args)
+            self.last_output = output.getvalue()
             self.last_error = errors.getvalue()
             return result
 
@@ -115,6 +117,8 @@ class TaskHistoryTests(unittest.TestCase):
             return original(source, destination)
 
         self.assertEqual(self.prepare(replace), 2)
+        self.assertNotIn("reprepare_note", self.last_output)
+        self.assertNotIn("previous_generation", self.last_output)
         self.assertEqual(json.loads((self.task_dir / "task.json").read_text()), self.old)
         self.assertEqual((self.bundle / "evidence.json").read_bytes(), b"old evidence bytes\n")
         self.assertEqual(prior_generations(self.root, "TASK-HISTORY")["items"], [])

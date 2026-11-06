@@ -20,6 +20,64 @@ spec.loader.exec_module(discover)
 
 
 class MultiQueryRetrievalTests(unittest.TestCase):
+    def test_numeric_partial_body_reason_preserves_scores_and_order(self) -> None:
+        docs = [{
+            "path": f"docs/changes/{index}.md", "artifact_type": "change",
+            "title": "Unrelated plan", "text": "line 133 passed checks.",
+        } for index in reversed(range(6))]
+        results = discover.ranked_knowledge_results(
+            {"documents": docs}, "修复 Bug 133 相关业务问题", limit=6,
+        )
+        self.assertEqual([row["score"] for row in results], [8] * 6)
+        self.assertEqual([row["path"] for row in results], sorted(d["path"] for d in docs))
+        for row in results:
+            self.assertEqual(row["reasons"], ['partial body terms: ["133"] (lexical only)'])
+            self.assertEqual(discover.exact_match_priority(row["reasons"]), 0)
+
+    def test_partial_body_diagnostic_is_bounded_and_cannot_forge_exactness(self) -> None:
+        long_term = "z" * 500
+        query = f"exact stable id title alias {long_term} absent"
+        doc = {"title": "Opaque", "text": query.removesuffix(" absent")}
+        score, reasons = discover.score_document(doc, query)
+        self.assertEqual(score, 40)
+        self.assertEqual(len(reasons), 1)
+        self.assertTrue(discover.is_partial_body_reason(reasons[0]))
+        self.assertEqual(discover.exact_match_priority(reasons), 0)
+        self.assertEqual(discover.exact_match_priority([f"{query}: {reasons[0]}"]), 0)
+        self.assertFalse(discover.is_partial_body_reason(f"{query}: {reasons[0]}"))
+        _, bounded = discover.score_document(
+            {"title": "Opaque", "text": long_term}, f"{long_term} {long_term} missing",
+        )
+        self.assertLess(len(bounded[0]), 100)
+        self.assertIn('"' + "z" * 40 + '"', bounded[0])
+        self.assertTrue(discover.is_partial_body_reason(bounded[0]))
+        # Casefold may introduce combining marks into an otherwise valid token.
+        _, unicode_reasons = discover.score_document(
+            {"title": "Opaque", "text": "İDENT"}, "İDENT missing",
+        )
+        self.assertTrue(discover.is_partial_body_reason(unicode_reasons[0]))
+        for malformed in (
+            'partial body terms: ["a", "a"] (lexical only)',
+            'partial body terms: ["exact stable id"] (lexical only)',
+            'partial body terms: ["x"]',
+            'partial body terms: ["x", "y", "z", "w"] (lexical only)',
+            'partial body terms: ["' + long_term + '"] (lexical only)',
+            'partial body terms: [null] (lexical only)',
+        ):
+            self.assertFalse(discover.is_partial_body_reason(malformed), malformed)
+
+    def test_partial_body_explanation_does_not_replace_stronger_or_historical_reasons(self):
+        for doc, query, reason in (
+            ({"id": "DEC-133", "title": "Opaque", "text": "133"}, "DEC-133", "exact stable id"),
+            ({"title": "Bug 133", "text": "133"}, "Bug 133", "exact title"),
+            ({"title": "Opaque", "aliases": ["Bug 133"], "text": "133"}, "Bug 133", "exact alias"),
+            ({"title": "Opaque", "artifact_type": "decision", "status": "archived", "text": "133"},
+             "Fix bug 133", "historical decision (not current guidance)"),
+        ):
+            _, reasons = discover.score_document(doc, query)
+            self.assertIn(reason, reasons)
+            self.assertFalse(any(discover.is_partial_body_reason(r) for r in reasons))
+
     def test_queries_are_trimmed_deduplicated_and_ordered(self) -> None:
         self.assertEqual(
             discover.normalize_queries(

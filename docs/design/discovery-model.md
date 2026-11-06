@@ -77,6 +77,14 @@ Multi-query retrieval has two important boundaries:
 
 Single-query behavior remains backward compatible. Multi-query mode adds cross-query evidence and deduplicates results before the final budget is applied.
 
+Otherwise unexplained scores coming entirely from partial body-term matches
+include a bounded `partial body terms: ["133"] (lexical only)` reason: at most
+three distinct normalized terms, each limited to 40 characters. This explains
+lexical sources, not verified applicability; scores, numeric matching and
+ordering are unchanged. Context recognizes only the controlled direct format
+as a generic body diagnostic, preserving existing weak-Decision safeguards.
+Unknown, malformed or query-fused reasons keep their prior conservative treatment.
+
 Typical Agent expansion:
 
 ```text

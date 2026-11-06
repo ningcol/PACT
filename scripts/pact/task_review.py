@@ -29,6 +29,7 @@ from task import (
     read_task_manifest, validate_finish_manifest, write_json,
     task_generation_lock,
     assert_same_task_generation,
+    baseline_summary, assist_guidance,
 )
 from task_workflow import (
     RUN_ROOT, _existing_evidence, _exclusive_bundle, _prepared,
@@ -477,6 +478,8 @@ def _diagnose(
         "evidence_trace_interpretation": "Bounded navigation to original Evidence; execution/record checks do not infer product correctness.",
         "task_id": manifest["task_id"],
         "status": manifest["status"],
+        "baseline_summary": baseline_summary(manifest.get("workspace_baseline", {}), task_change),
+        "next": assist_guidance(manifest["task_id"]),
         "risk_level": manifest["risk_level"],
         "contract_sha256": manifest["contract_sha256"],
         "context_sha256": manifest["context_sha256"],
@@ -618,6 +621,8 @@ def assist(args) -> int:
             print(f"- missing Context coverage: {len(result['missing_context_coverage'])}")
             print(f"- missing changed-file coverage: {len(result['missing_change_coverage'])}")
             print(f"- policy gaps: {len(result['policy_gaps'])}")
+            print("- baseline: " + result["baseline_summary"])
+            print("- next: " + result["next"])
             print("- semantic review required before task finish")
         return 0
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:

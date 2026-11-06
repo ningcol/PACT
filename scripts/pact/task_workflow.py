@@ -37,6 +37,7 @@ from task import (
     ROOT,
     TASK_ROOT,
     COMPLETION_ROOT,
+    assist_guidance,
     completion_bundle_path,
     read_status_contract,
     read_task_manifest,
@@ -271,12 +272,14 @@ def draft(args) -> int:
         "bundle": bundle.relative_to(ROOT).as_posix(),
         "created": created,
         "requires_semantic_review": True,
+        "next": assist_guidance(args.task_id),
     }
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"PACT task draft: {args.task_id} ({', '.join(created) or 'unchanged'})")
         print("Review required: Evidence does not establish all acceptance or alignment.")
+        print("- next: " + result["next"])
     return 0
 
 

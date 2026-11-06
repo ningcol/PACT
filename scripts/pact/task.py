@@ -202,7 +202,8 @@ def completion_blockers(errors: list[str]) -> list[str]:
     checks = [
         ("stale-workspace", ("stale pact-run receipt", "verified workspace")),
         ("stale-task-contract", ("task_contract_sha256",)),
-        ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance")),
+        ("acceptance-gap", ("acceptance criterion", "Owner Report acceptance",
+                            "owner verification claim")),
         ("convergence-coverage", ("convergence coverage:",)),
         ("change-coverage", ("change coverage:", "Task changed file missing")),
         ("ci-metadata-required", ("CI-metadata Evidence",)),
@@ -211,6 +212,89 @@ def completion_blockers(errors: list[str]) -> list[str]:
         if any(needle in text for needle in needles):
             blockers.append(code)
     return blockers
+
+
+def assist_guidance(task_id: str) -> str:
+    return (
+        f"Use 'pact task assist {task_id} --json' for read-only diagnostics. "
+        "Optional draft path: use task draft when useful and record checks with "
+        "task verify; keep the Owner Report "
+        f"partial while 'pact task assist {task_id} --write-draft' fills empty machine fields "
+        "from trusted Evidence. Review nonempty fields manually; review acceptance, "
+        "Convergence and knowledge retention before marking the Owner Report "
+        "completed and running task finish. A correct manually reviewed bundle "
+        "can finish directly; these helpers are optional."
+    )
+
+
+def assist_scope_issue(manifest: dict, bundle: pathlib.Path) -> str | None:
+    """Keep navigation within assist's existing prepared/local bundle scope."""
+    if manifest.get("status") != "prepared":
+        return "Task assist supports prepared tasks only; this task is not prepared."
+    try:
+        confined_state_root(ROOT, bundle, field="completion bundle")
+    except (OSError, ValueError):
+        return (
+            "Task assist requires a repository-local saved bundle without path "
+            "aliases or symlinked parents."
+        )
+    return None
+
+
+def finish_guidance(manifest: dict, task_id: str, bundle: pathlib.Path) -> str:
+    """Offer diagnostics, never change task state or bundle permissions."""
+    review = f"Review the reported errors and selected bundle at {bundle}. "
+    try:
+        saved_bundle = completion_bundle_path(manifest, task_id)
+    except (OSError, ValueError):
+        return review + "The saved bundle path is invalid; reconcile it before using task assist."
+    issue = assist_scope_issue(manifest, saved_bundle)
+    if issue:
+        return review + issue + f" Use 'pact task resume {task_id}' to inspect stored context."
+    same_bundle = bundle == saved_bundle
+    if not same_bundle:
+        try:
+            # Identity comparison only: assist still reads the original, safe
+            # saved path. Do not normalize away its write/confinement checks.
+            same_bundle = bundle.resolve(strict=True) == saved_bundle.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            pass
+    if same_bundle:
+        return assist_guidance(task_id)
+    return (
+        review + f"Task assist is scoped to the saved bundle at {saved_bundle}; "
+        "review this --bundle override directly."
+    )
+
+
+def baseline_summary(baseline: dict, task_change: dict | None = None) -> str:
+    """Explain stored preparation facts; never scan Git or infer authorship."""
+    continuation = (
+        " Continue with status/resume; prepare --force includes current edits in a "
+        "new baseline and archives old completion state for audit without "
+        "carrying Evidence forward."
+    )
+    if not isinstance(baseline, dict) or baseline.get("kind") != "git":
+        return (
+            "Git preparation baseline unavailable; exact changed-file attribution "
+            "is unavailable, not zero dirty paths."
+        ) + continuation
+    dirty = baseline.get("dirty_files")
+    count = str(len(dirty)) if isinstance(dirty, dict) else "unknown"
+    summary = (
+        f"Prepared Git HEAD: {baseline.get('git_head') or 'unborn'}; "
+        f"pre-existing dirty paths: {count}. "
+        "Pre-existing content left unchanged is excluded from the final-content "
+        "delta. Other writes in this same checkout may enter that delta; "
+        "PACT does not identify the writer."
+    )
+    if task_change is not None and task_change.get("supported"):
+        summary += (
+            f" Current Git HEAD: {task_change.get('current_git_head') or 'unborn'}; "
+            f"paths differing from preparation: {len(task_change.get('changed_files', []))}. "
+            "An unchanged HEAD does not imply an unchanged workspace."
+        )
+    return summary + continuation
 
 
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -250,7 +334,11 @@ def _prepare_locked(
         existing = task_dir if task_dir.exists() else completion_dir
         print(
             f"PACT task prepare: generated task state already exists: {existing} "
-            "(use --force to rebuild preparation and invalidate old completion state)",
+            f"(continue with 'pact task status {task_id}' or 'pact task resume {task_id}'; "
+            "--force starts a new preparation baseline including current edits, "
+            "archives prior state for audit without automatically carrying old "
+            "Evidence into the new completion bundle; bindings/provenance must "
+            "be checked against the current preparation)",
             file=sys.stderr,
         )
         return 2
@@ -475,6 +563,7 @@ def _prepare_locked(
     result = {
         **manifest,
         "task_dir": task_dir.relative_to(ROOT).as_posix(),
+        "baseline_summary": baseline_summary(workspace_baseline),
         "next": (
             "Implement and verify every Task Contract acceptance criterion. "
             "Evidence claims that prove acceptance must list the relevant "
@@ -483,13 +572,18 @@ def _prepare_locked(
             "source-bound deferred Decision hints in weak/default or explicit "
             "--nonfunctional Context. Unlisted hints require re-preparing "
             "with --full-decisions or without --nonfunctional. At finish, "
-            "PACT will derive the files actually changed by this task and "
-            "require convergence.change_coverage rationale for each one. Create "
-            "evidence.json, convergence.json, and owner-report.json in the "
-            "completion bundle, then run "
-            f"'pact task finish {task_id}'."
+            "PACT will derive final-content differences from the prepared baseline and "
+            "require convergence.change_coverage rationale for each one. "
+            + assist_guidance(task_id)
         ),
     }
+    if history_destination is not None:
+        result["previous_generation"] = history_destination.relative_to(ROOT).as_posix()
+        result["reprepare_note"] = (
+            "Preparation replaced successfully: current edits are now the new "
+            "baseline. Prior state is audit-only; old Evidence is not carried "
+            "into the new completion bundle. Verify against the new Contract/Context."
+        )
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -511,6 +605,10 @@ def _prepare_locked(
                 "low-level impact later or rebuild preparation with --files/--base."
             )
         print(f"- completion bundle: {manifest['completion_bundle']}")
+        print("- baseline: " + result["baseline_summary"])
+        if "reprepare_note" in result:
+            print("- " + result["reprepare_note"])
+            print("- archived generation: " + result["previous_generation"])
         print("- next: " + result["next"])
 
     return 0
@@ -777,14 +875,24 @@ def _finish_locked(args) -> int:
 
     completed = run(command)
     output = None
+    navigation = None
     if completed.stdout.strip():
         try:
             output = json.loads(completed.stdout)
             output["task_change"] = task_change
             output["final_impact"] = manifest.get("final_impact")
             output["trust_warnings"] = trust_warnings
+            if completed.returncode != 0:
+                output["blockers"] = completion_blockers(output.get("errors", []))
+                navigation = finish_guidance(manifest, args.task_id, bundle)
+                output["next"] = navigation
         except json.JSONDecodeError:
             pass
+    if (output is None and completed.returncode == 2
+            and completed.stderr.startswith("PACT complete: missing bundle file(s): ")):
+        # This known error precedes complete's JSON result. Keep its original
+        # exit/stdout contract and add only a safe stderr recovery hint.
+        navigation = finish_guidance(manifest, args.task_id, bundle)
 
     attempt = {
         "version": 1,
@@ -838,6 +946,8 @@ def _finish_locked(args) -> int:
             print(completed.stderr, end="", file=sys.stderr)
         for warning in trust_warnings:
             print(f"PACT task finish WARNING: {warning}", file=sys.stderr)
+        if navigation:
+            print("PACT task finish next: " + navigation, file=sys.stderr)
 
     return completed.returncode
 
@@ -948,7 +1058,19 @@ def task_status(args) -> int:
         **manifest,
         "acceptance_criteria": contract.get("acceptance_criteria", []) if contract else [],
         "completion_files": completion_files,
+        "baseline_summary": baseline_summary(manifest.get("workspace_baseline", {})),
+        "next": (
+            "This is the stored preparation baseline, not a current workspace scan. "
+            f"Use 'pact task assist {args.task_id}' for current differences or "
+            f"'pact task resume {args.task_id}' to continue."
+        ),
     }
+    assist_issue = assist_scope_issue(manifest, bundle)
+    if assist_issue:
+        result["next"] = (
+            f"Use 'pact task resume {args.task_id}' to inspect stored context. "
+            + assist_issue + f" Review the saved bundle at {bundle} directly."
+        )
     try:
         from task_history import prior_generations
         result["prior_generations"] = prior_generations(ROOT, args.task_id)
@@ -963,6 +1085,8 @@ def task_status(args) -> int:
         print(f"- acceptance criteria: {len(result['acceptance_criteria'])}")
         print(f"- context: {manifest.get('context')}")
         print(f"- impact: {manifest.get('impact_state')}")
+        print("- baseline: " + result["baseline_summary"])
+        print("- next: " + result["next"])
         print(f"- prior generations: {len(result['prior_generations']['items'])}"
               + (" (truncated)" if result["prior_generations"]["truncated"] else ""))
         print(
@@ -1022,7 +1146,10 @@ def main() -> int:
     prep.add_argument("--files", nargs="+")
     prep.add_argument("--base")
     prep.add_argument("--head", default="HEAD")
-    prep.add_argument("--force", action="store_true")
+    prep.add_argument("--force", action="store_true", help=(
+        "replace existing preparation with a new baseline including current edits; "
+        "archive prior state for audit without automatically carrying its Evidence forward"
+    ))
     code = prep.add_mutually_exclusive_group()
     code.add_argument("--code", dest="code", action="store_true")
     code.add_argument("--no-code", dest="code", action="store_false")

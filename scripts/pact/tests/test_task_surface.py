@@ -56,6 +56,31 @@ class TaskSurfaceTests(unittest.TestCase):
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         return path
 
+    def test_prepare_and_assist_explain_existing_dirty_content_and_current_delta(self):
+        for args in (("init", "-q"), ("add", "-A"),
+                     ("-c", "user.name=PACT Test", "-c", "user.email=test@example.invalid",
+                      "commit", "-qm", "baseline")):
+            result = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        path = self.root / "README.md"
+        path.write_text(path.read_text() + "\nExisting uncommitted content.\n", encoding="utf-8")
+        task_id = "TASK-DIRTY-GUIDANCE"
+        prepared = self.pact("task", "prepare", "Check guidance", "--success", "Baseline explained",
+                             "--risk", "low", "--task-id", task_id, "--no-code", "--json")
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        baseline = json.loads(prepared.stdout)
+        self.assertIn("pre-existing dirty paths: 1", baseline["baseline_summary"])
+        self.assertIn(f"task assist {task_id} --json", baseline["next"])
+        for expected, extra in ((0, ""), (1, "\nA later edit.\n")):
+            if extra:
+                path.write_text(path.read_text() + extra, encoding="utf-8")
+            diagnosed = self.pact("task", "assist", task_id, "--json")
+            self.assertEqual(diagnosed.returncode, 0, diagnosed.stdout + diagnosed.stderr)
+            info = json.loads(diagnosed.stdout)
+            self.assertIn(f"paths differing from preparation: {expected}", info["baseline_summary"])
+            self.assertIn("pre-existing dirty paths: 1", info["baseline_summary"])
+            self.assertFalse(info["draft_written"])
+
     def test_task_id_cannot_escape_pact_state_roots(self) -> None:
         outside = self.root.parent / "escaped-task-state"
         prepared = self.pact(
@@ -300,9 +325,11 @@ class TaskSurfaceTests(unittest.TestCase):
             "low",
             "--task-id",
             task_id,
+            "--force",
             "--json",
         )
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertNotIn("reprepare_note", json.loads(first.stdout))
 
         completion = self.root / ".pact" / "completions" / task_id
         completion.mkdir(parents=True, exist_ok=True)
@@ -322,6 +349,10 @@ class TaskSurfaceTests(unittest.TestCase):
             "--json",
         )
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        replacement = json.loads(second.stdout)
+        self.assertTrue((self.root / replacement["previous_generation"]).is_dir())
+        self.assertIn("audit-only", replacement["reprepare_note"])
+        self.assertIn("old Evidence is not carried", replacement["reprepare_note"])
         self.assertFalse(completion.exists())
 
         contract = json.loads(
@@ -762,6 +793,7 @@ class TaskSurfaceTests(unittest.TestCase):
         final_status = self.pact("task", "status", task_id, "--json")
         self.assertEqual(final_status.returncode, 0, final_status.stdout + final_status.stderr)
         self.assertEqual(json.loads(final_status.stdout)["status"], "completed")
+        self.assertNotIn(f"task assist {task_id}", json.loads(final_status.stdout)["next"])
 
         observation = self.pact("eval", "--task", task_id, "--json")
         self.assertEqual(observation.returncode, 0, observation.stdout + observation.stderr)

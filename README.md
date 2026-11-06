@@ -86,6 +86,10 @@ python3 pact.py task verify <TASK-ID> \
   --source tests/test_feature.py \
   -- python3 -m unittest tests.test_feature
 
+# Diagnose without writes; optionally fill empty machine fields in the partial report:
+python3 pact.py task assist <TASK-ID> --json
+# python3 pact.py task assist <TASK-ID> --write-draft
+
 # After reviewing Evidence + Convergence + Owner Report semantically:
 python3 pact.py task finish <TASK-ID>
 ```
@@ -113,6 +117,24 @@ through `pact run` and appends an Evidence claim only for the explicitly
 selected `AC-*` criteria. A passing command is **not** proof of business meaning
 or alignment. Agents must review claims, explain how checks establish observable
 acceptance, and finish Convergence/Owner Report before a task can complete.
+
+Use read-only `task assist` to find missing acceptance/coverage or stale Evidence.
+Its optional `--write-draft` copies trusted Claim/criterion text into empty
+machine fields of a `partial` Owner Report, reducing manual transcription.
+Keep that report partial until semantic review is complete; resolve Convergence
+and knowledge retention, then mark the reviewed report completed and finish.
+Nonempty manual fields require manual reconciliation. A correct manually
+reviewed bundle can finish directly; draft and assist are optional helpers.
+
+`prepare` records existing dirty content in its baseline. Unchanged pre-existing
+content is excluded from the final-content delta; other writes in the same
+checkout may enter it, and PACT does not identify the writer. `task status`
+shows stored preparation facts without scanning the current workspace;
+`task assist` diagnoses current differences. Continue with status/resume rather
+than reprepare: `prepare --force` starts a new baseline including current edits,
+archives old state for audit without automatically carrying Evidence forward.
+Evidence must still satisfy the current Contract/Context and provenance checks;
+force does not revoke every previously recorded receipt.
 
 `task prepare` does **not** invent Product Truth or completion evidence. `task finish` validates an existing completion bundle rather than generating semantic claims for the Agent. In Git projects it also derives the files whose final content changed since preparation, writes a final Impact report, and requires Convergence `change_coverage` rationale for every task-changed path.
 
@@ -224,6 +246,7 @@ Recommended:
 status             project foundation/readiness/health summary
 inspect            inspect a remembered feature/business behavior
 task prepare       prepare risk-adaptive task context
+task assist        diagnose completion; optionally fill a partial draft
 task finish        validate an existing completion bundle
 task status        show one prepared task
 ```

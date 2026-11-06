@@ -55,6 +55,7 @@ RECOMMENDED = [
     ("status", "project foundation/readiness/health summary"),
     ("inspect", "inspect a remembered feature/business behavior"),
     ("task prepare", "prepare risk-adaptive context for a task"),
+    ("task assist", "read-only completion diagnostics; optional partial draft filling"),
     ("task finish", "validate an existing completion bundle"),
     ("task status", "show one prepared task"),
 ]
