@@ -2,6 +2,11 @@
 
 PACT is the project-level AI control plane for this repository.
 
+Read the version-matched standard instructions with `python3 pact.py guidance`
+in a new session and after a runtime upgrade. Use the project-approved Python
+interpreter. The repository-specific guidance below remains project-owned;
+there is no need to reload the standard guide at every task finish.
+
 When evolving PACT itself, follow the [core-focus and feature-scope guidance](CONTRIBUTING.md#core-focus-and-feature-scope); it is not an extra approval or task step for projects using PACT.
 
 ## Constitution

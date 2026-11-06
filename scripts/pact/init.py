@@ -24,154 +24,27 @@ from distribution import (
     sha256_file,
 )
 from runtime_bundle import ensure_runtime_bundle
+from guidance import bootstrap_snippet, entry_reference_present, minimal_project_entry
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 INSTALL_MANIFEST = pathlib.Path(".pact/install.json")
 
-TARGET_AGENTS = """# Project Agent Guide
-
-This repository uses PACT (Project AI Control Plane).
-
-## Core rules
-
-1. Preserve confirmed Product Truth.
-2. Acquire sufficient context before changing behavior; do not read everything by default.
-3. AI owns implementation decisions unless they change product meaning, permissions/policy, irreversible outcomes, material risk, or cost.
-4. Distinguish what should be true from what the system currently does.
-5. Verify observable outcomes before claiming completion.
-6. Reconcile drift by authority; never make Product Truth follow code automatically.
-7. Report owner-facing results in product/business language by default.
-
-## Knowledge router
-
-PACT starts physically minimal. These durable locations are created only when
-the project has real knowledge worth preserving:
-
-- Governance extensions: `docs/governance/`
-- Product Truth and vocabulary: `docs/product/`
-- Current architecture: `docs/architecture/`
-- Durable engineering rationale: `.agents/decisions/`
-- Active/completed change intent: `docs/changes/`
-- Drift: `docs/drift/`
-- Reusable procedures: `.agents/skills/`
-- Adoption readiness: `.pact/baseline.toml`
-
-An absent optional knowledge directory means "not materialized yet", not
-"healthy knowledge is missing". Do not create empty folders/templates merely
-to satisfy PACT.
-
-## Proportionate task rigor
-
-Use existing project procedures for explanations, investigations and small
-changes; PACT's Task/Change workflow is not mandatory for every request.
-When a Task Contract has been prepared, its acceptance and Evidence gates
-still apply.
-
-## Default task workflow
-
-For work requiring a prepared PACT task, prefer the high-level surface:
-
-1. `python pact.py status` / `inspect` when project state or history is unclear.
-2. `python pact.py task prepare "<task>" --success "<observable outcome>" --risk <level>`.
-3. Implement ordinary technical details autonomously within the prepared Task Contract and Context.
-4. Run relevant verification through `python pact.py task verify <TASK-ID> --criterion AC-1 --claim "<specific check>" -- <command>` or the lower-level `run` primitive.
-5. Before completion, create Evidence, Convergence, and Owner Report in the expected bundle. Optional: `task draft <TASK-ID>` creates incomplete drafts, `task assist <TASK-ID> --json` diagnoses without writes, and `task assist <TASK-ID> --write-draft` fills empty machine fields from trusted Evidence while keeping the Owner Report `partial`. Review nonempty fields manually. Review acceptance and Convergence before marking the report completed. Correct manually reviewed bundles may finish directly. Convergence must bind the prepared Context, explicitly disposition every selected knowledge artifact, and provide `change_coverage` rationale for every path differing from preparation; an empty finding list is not a substitute for coverage.
-6. Review long-term knowledge only when needed: if using `task draft`, resolve Convergence `knowledge_retention` from `pending` to `none`, `update`, `create`, or `update-and-create` with a reason and changed knowledge paths. Ordinary bug fixes usually need no new Rule/Decision; never infer product approval from code or tests.
-7. `python pact.py task finish <TASK-ID>` is the completion gate. Use `--require-knowledge-retention` when an explicit review is required. Do not claim done if it fails.
-
-Use `python pact.py task status <TASK-ID> --json` to recover the prepared contract/context paths and expected bundle location.
-Preparation includes existing dirty content in its baseline; unchanged pre-existing content is excluded from the final-content delta. Other writes in the same checkout may enter it; PACT does not identify the writer. Continue with `task status` / `task resume`; `prepare --force` starts a new baseline including current edits and archives prior state for audit without automatically carrying Evidence forward. Current bindings/provenance still need verification; force does not revoke every old receipt.
-
-## Decision boundary
-
-Framework-managed runtime files and embedded schemas change only in an explicitly
-authorized PACT maintenance/upgrade task, through the supported upgrade flow.
-Project seeds, rules, business docs and extensions remain project-owned. Never
-edit receipt hashes/results or install ownership to manufacture completion.
-After an upgrade review applicable upstream guidance separately: customized
-project instructions are not silently replaced. Runtime capability is not proof
-that a project enabled it or that its checks executed.
-
-Do not ask the owner to choose ordinary implementation mechanisms.
-
-Escalate only when a decision changes user-observable behavior, business/data meaning, permissions/policy, irreversible outcomes, or material risk/cost.
-
-## Completion boundary
-
-Claim PACT-verified completion only after the prepared Task Contract, Evidence
-and Convergence gates pass; a green test alone is not enough.
-
-An Owner may explicitly accept the currently delivered scope while some
-checks remain unverified. Record the acceptance and gaps in the project's
-existing Change/owner-facing result; leave PACT `task finish` and
-`complete=true` unsatisfied. Do not relabel failed/missing tests as passed,
-or waive applicable security, permissions, legal or deployment requirements.
-
-## Baseline boundary
-
-`pact init` creates structure; it does not certify project knowledge.
-
-If `pact readiness` reports pending baseline reviews, treat those areas as potentially incomplete rather than inventing missing truth.
-
-## Owner communication
-
-Before owner-facing output, read the validated Owner Profile:
-
-```bash
-python pact.py owner --json
-```
-
-Honor its language, technical depth, consequence-first translation, and progressive-disclosure preferences.
-"""
+# Project-owned entry stays stable while the standard guidance travels with pyz.
+TARGET_AGENTS = minimal_project_entry()
 
 
-def bootstrap_snippet() -> str:
-    return """# PACT Agent Bootstrap
-
-An existing `AGENTS.md` was detected, so PACT did not overwrite it.
-
-Merge these concepts into the existing project agent guide:
-
-- preserve confirmed Product Truth;
-- distinguish normative truth from current implementation behavior;
-- retrieve sufficient task context from Product, Architecture, Decisions, and Changes;
-- let AI decide ordinary technical implementation;
-- escalate only product/risk decisions;
-- require evidence and convergence before claiming completion;
-- consult `.pact/baseline.toml` and do not invent truth for pending baseline areas;
-- communicate owner-facing results using the project Owner Profile in `.pact/config.toml`;
-- use product/business consequences before unnecessary implementation detail.
-
-The PACT task loop is optional orchestration for work needing a prepared
-Task Contract, not a required ceremony for every explanation or small fix.
-Once prepared, its acceptance/Evidence checks remain binding.
-
-Default PACT task loop to merge into the project guide:
-
-- prepare work with `python pact.py task prepare ...` and follow its Task Contract/Context;
-- verify observable outcomes through `python pact.py run ...` where practical;
-- create Evidence + Convergence + Owner Report before completion; optional `task draft` creates partial drafts, read-only `task assist <TASK-ID> --json` diagnoses gaps, and `task assist <TASK-ID> --write-draft` fills empty machine fields from trusted Evidence without completing the Owner Report; review nonempty fields manually and review acceptance/Convergence before marking it completed; a correct manual bundle can finish directly;
-- Convergence must bind the prepared Context, disposition every selected knowledge artifact, and review every task-changed file reported at finish;
-- if using `task draft`, explicitly resolve `knowledge_retention` pending (none/update/create/update-and-create with rationale and changed knowledge paths); do not add a Rule/Decision just because code changed;
-- finish with `python pact.py task finish <TASK-ID>`; a failed gate means PACT-verified completion is not established;
-- if the Owner explicitly accepts a scoped delivery with missing verification, disclose remaining gaps in the existing project Change/owner-facing result, but never mark Evidence/ACs as passing or change PACT `complete=true`;
-- use `python pact.py task status <TASK-ID> --json` to recover task paths after a long conversation.
-- preparation includes existing dirty content in the baseline; unchanged pre-existing content is excluded from its delta, but other writes in the same checkout may enter it without writer attribution; continue with status/resume, since `prepare --force` starts a new baseline including current edits and archives prior state for audit without automatically carrying Evidence forward; current bindings/provenance still need verification, and force does not revoke every old receipt.
-
-Suggested knowledge router (materialize a location only when real durable
-project knowledge exists):
-
-- Governance extensions: `docs/governance/`
-- Product Truth: `docs/product/`
-- Architecture: `docs/architecture/`
-- Decisions: `.agents/decisions/`
-- Changes: `docs/changes/`
-- Drift: `docs/drift/`
-- Skills: `.agents/skills/`
-- Readiness: `.pact/baseline.toml`
-
-Delete this bootstrap file after the existing `AGENTS.md` has been integrated.
-"""
+def _entry_references_guidance(path: pathlib.Path) -> bool:
+    """A recognized reference avoids another bootstrap, not a loading claim."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        with path.open("rb") as stream:
+            data = stream.read(128 * 1024 + 1)
+        if len(data) > 128 * 1024:
+            return False
+        return entry_reference_present(data.decode("utf-8"))
+    except (OSError, UnicodeError, RuntimeError, ValueError):
+        return False
 
 
 def generated_entry(path: str, management: str = "seed") -> dict:
@@ -251,7 +124,7 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
         })
 
     agents = safe_init_target(target, "AGENTS.md")
-    if path_present(agents):
+    if path_present(agents) and not _entry_references_guidance(agents):
         rel = pathlib.Path(".pact/AGENT_BOOTSTRAP.md")
         destination = safe_init_target(target, rel.as_posix())
         operations.append({
@@ -261,7 +134,7 @@ def plan(target: pathlib.Path, github_actions: bool = False) -> list[dict]:
             "management": "seed",
             "reason": "preserve existing AGENTS.md",
         })
-    else:
+    elif not path_present(agents):
         operations.append({
             "action": "create-generated",
             "path": "AGENTS.md",

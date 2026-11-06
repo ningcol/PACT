@@ -45,7 +45,7 @@ Every installed file is one of two classes.
 Examples:
 
 - repository-root `pact.py`;
-- `.pact/pact.pyz`, including embedded protocol schemas;
+- `.pact/pact.pyz`, including embedded protocol schemas and standard agent guidance;
 - `.pact/VERSION`;
 - optional project CI integration.
 
@@ -61,6 +61,55 @@ Examples:
 - generated `AGENTS.md` or merge guidance.
 
 Seeds become project-owned immediately after creation and are never silently overwritten by upgrade.
+
+## Version-matched agent guidance
+
+`python3 pact.py guidance` reads the standard instructions carried by the running
+runtime. `--json` includes their content SHA256, runtime identity and source kind.
+In source checkouts the content lives in `scripts/pact/guidance.py`; installed
+projects read that same module inside `pact.pyz`. There is no separately editable
+installed standard manual, new configuration layer or plugin dependency.
+
+This command is read-only: no Git scan, discovery map, business verification,
+task state or host configuration is produced. Use the project-approved Python
+interpreter. Read in a new session and after an upgrade, not at every finish.
+
+Fresh projects receive a short, stable `AGENTS.md` reference. Existing guides
+and custom READMEs remain project-owned; init provides merge advice instead of
+overwriting them. Projects keep necessary additions at their existing
+authoritative locations: interpreter, commands, knowledge routing and stricter
+permissions. Default knowledge paths do not override an established project
+router. Project additions cannot manufacture confirmed truth or bypass runtime
+Evidence checks. No generic replace/prepend/append/wrap engine is introduced.
+
+When the selected upgrade source supports the command, upgrade reports an
+`agent-guidance-review` notice if it cannot recognize a direct reference in the
+project entry. This includes old generated guides which had no source hash and
+could not receive ordinary seed-template notices. The notice preserves every
+project byte; indirect routing may already work and requires manual review.
+Repeated init/upgrade does not append instructions. A configured direct reference
+is only a static observation, not a claim that it was executed or obeyed.
+
+`doctor --host-wiring-only --json` separates available standard content and
+bounded project-reference observations from session loading, behavioral
+compliance and write protection, which remain unverified. It also surfaces root
+`AGENTS.override.md` because a non-empty override can shadow `AGENTS.md` for
+Codex at that directory. No global host configuration or nested rule tree is scanned.
+
+Instruction/package integrity, actual host loading and verified task outcomes
+are different assertions. Local manifest/hash matching is not a trusted release
+attestation. A Markdown prohibition or a managed block in a writable guide is
+not OS isolation; file permissions cannot protect only one Markdown block.
+Optional host/OS protection must cover entire framework files, including the
+root launcher, and both file tools and Shell execution paths. Its policy must
+itself be protected. PACT neither changes that policy nor claims it is active.
+An authorized upgrade uses the maintenance context; ordinary business tasks
+cannot patch framework files to work around defects.
+
+Project knowledge/configuration and tool-generated execution state retain their
+existing ownership. Do not make all of `.pact/` read-only. A future host-native
+file import may use a runtime-derived managed projection, but must not introduce
+a second independent standard or silently enable global auto-updates.
 
 ## Install manifest
 

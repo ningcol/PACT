@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from distribution import read_install_manifest, resolve_install_target, sha256_file
+from guidance import entry_reference_present, guidance_info
 from runtime_exec import runtime_command
 from runtime_identity import runtime_identity
 
@@ -125,7 +126,7 @@ def install_provenance_check(strict: bool) -> dict:
 
 
 HOST_GUIDES = (
-    "AGENTS.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md",
+    "AGENTS.md", "AGENTS.override.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md",
     "opencode.json", ".opencode/opencode.json",
 )
 HOST_READ_LIMIT = 128 * 1024
@@ -150,9 +151,11 @@ def _host_text(root: pathlib.Path, relative: str) -> tuple[str | None, str | Non
             if ancestor.is_symlink():
                 return None, "symbolic host parent requires manual inspection"
             ancestor = ancestor.parent
-        if path.stat().st_size > HOST_READ_LIMIT:
+        with path.open("rb") as stream:
+            data = stream.read(HOST_READ_LIMIT + 1)
+        if len(data) > HOST_READ_LIMIT:
             return None, "host config exceeds bounded static read size"
-        return path.read_text(encoding="utf-8"), None
+        return data.decode("utf-8"), None
     except (OSError, UnicodeError, RuntimeError, ValueError):
         return None, "host config cannot be safely read"
 
@@ -161,9 +164,44 @@ def _direct_includes(contents: str) -> set[str]:
     found = set()
     for match in MARKDOWN_INCLUDE.finditer(contents):
         value = (match.group(1) or match.group(2) or "").strip()
-        if value in {"AGENTS.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md"}:
+        if value in {"AGENTS.md", "AGENTS.override.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md"}:
             found.add(value)
     return found
+
+
+def guidance_diagnostics(root: pathlib.Path = ROOT) -> dict:
+    """Describe available instructions and bounded static references, not loading.
+
+    A reference can be quoted, conditional or overridden. Neither it nor a local
+    installation hash attests that a host loaded, obeyed or protected the guide.
+    The bootstrap is merge advice, not an automatically active host instruction.
+    """
+    result = guidance_info(root, include_content=False)
+    entries = []
+    for relative in ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md", ".pact/AGENT_BOOTSTRAP.md"):
+        contents, problem = _host_text(root, relative)
+        if contents is None and problem is None:
+            continue
+        entries.append({
+            "path": relative,
+            "role": "merge-advice" if relative.endswith("AGENT_BOOTSTRAP.md") else "project-guide",
+            "reference": (
+                "unreadable" if problem else
+                "present" if entry_reference_present(contents) else "not-detected"
+            ),
+            "detail": problem or (
+                "Static command reference only; indirect routing and actual session loading "
+                "require host verification. Existing project instructions remain project-owned."
+            ),
+        })
+    result["project_entries"] = entries
+    if any(entry["path"] == "AGENTS.override.md" for entry in entries):
+        result["precedence_note"] = (
+            "A non-empty AGENTS.override.md can be selected by Codex instead of AGENTS.md "
+            "at the same directory; "
+            "inspect the selected guide and actual host loading."
+        )
+    return result
 
 
 def host_wiring_checks(root: pathlib.Path = ROOT) -> list[dict]:
@@ -180,7 +218,7 @@ def host_wiring_checks(root: pathlib.Path = ROOT) -> list[dict]:
             checks.append(item("host:" + relative, "needs-manual-review", problem))
         elif data is not None:
             visible[relative] = data
-            if relative in {"AGENTS.md", "CLAUDE.md"}:
+            if relative in {"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"}:
                 if "PACT" in data.upper() or "pact.py" in data:
                     checks.append(item("host:" + relative, "pass",
                                        "PACT entry mentioned; actual Agent loading still unverified"))
@@ -190,7 +228,7 @@ def host_wiring_checks(root: pathlib.Path = ROOT) -> list[dict]:
             else:
                 checks.append(item("host:" + relative, "needs-manual-review",
                                    "host-specific config present; verify actual loading manually"))
-    if "AGENTS.md" not in visible:
+    if not {"AGENTS.md", "AGENTS.override.md"}.intersection(visible):
         checks.append(item("host:AGENTS.md", "needs-manual-review",
                            "no readable main Agent guide to verify routing"))
 
@@ -262,13 +300,16 @@ def main() -> int:
                    else "needs-manual-review" if any(
                        x["state"] == "needs-manual-review" for x in checks
                    ) else "pass")
-        result = {"overall": overall, "checks": checks, "host_ci_executed": False}
+        result = {"overall": overall, "checks": checks, "host_ci_executed": False,
+                  "guidance": guidance_diagnostics(ROOT)}
         if args.json:
             print(json.dumps(result, ensure_ascii=True, indent=2))
         else:
             print(f"PACT doctor host wiring: {overall}")
             for check in checks:
                 print(f"- [{check['state'].upper()}] {check['check']}: {check['detail']}")
+            print("- standard guidance: python3 pact.py guidance; static references do not "
+                  "verify session loading, compliance or write protection")
         return 1 if overall == "fail" else 0
 
     checks: list[dict] = []
@@ -386,9 +427,10 @@ def main() -> int:
         "warn" if any(c["state"] in {"warn", "needs-manual-review"} for c in checks) else "pass"
     )
 
+    guidance = guidance_diagnostics(ROOT) if args.host_wiring else None
     result = {
         "overall": overall,
-        "runtime": runtime_identity(ROOT),
+        "runtime": guidance["runtime"] if guidance else runtime_identity(ROOT),
         "checks": checks,
         "project_map": (
             project_map.relative_to(ROOT).as_posix()
@@ -396,6 +438,9 @@ def main() -> int:
             else None
         ),
     }
+
+    if args.host_wiring:
+        result["guidance"] = guidance
 
     if args.json:
         print(json.dumps(result, ensure_ascii=True, indent=2))

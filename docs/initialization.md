@@ -86,6 +86,20 @@ Initialization creates `.pact/baseline.toml` with review areas initially marked 
 - verification reality;
 - Known Drift review.
 
+Fresh `AGENTS.md` contains a short reference to `python3 pact.py guidance`, using
+the project's approved interpreter. The standard instructions are bundled with
+the runtime, so upgrades do not require copying a newer workflow into project
+documents. If the project already has a guide, init preserves it and provides
+`.pact/AGENT_BOOTSTRAP.md` as merge advice. Review the short reference alongside
+existing project rules; the bootstrap is not automatically loaded by every host.
+Keep existing business-document locations, custom checks and stricter project
+permissions. Do not append a second copy of the standard workflow.
+
+Use `doctor --host-wiring-only --json` for bounded static entry diagnostics. It
+does not run project tests or certify actual Agent loading or OS write protection.
+Read the standard guidance in a new session and after a runtime upgrade, rather
+than repeatedly during completion.
+
 After each area has actually been inspected, mark it `reviewed` or explicitly `not_applicable`.
 
 Check state with:

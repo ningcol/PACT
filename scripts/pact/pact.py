@@ -26,6 +26,7 @@ COMMANDS = {
     "init": "init",
     "upgrade": "upgrade",
     "version": "version",
+    "guidance": "guidance",
 
     # Advanced primitives.
     "check": "check",
@@ -64,6 +65,7 @@ SETUP = [
     ("init", "safely adopt PACT"),
     ("upgrade", "transactionally upgrade PACT runtime"),
     ("version", "show runtime/install version"),
+    ("guidance", "read version-matched standard agent instructions"),
 ]
 
 
@@ -73,7 +75,7 @@ def help_text() -> str:
     advanced_names = [
         name
         for name in COMMANDS
-        if name not in {"status", "inspect", "task", "init", "upgrade", "version"}
+        if name not in {"status", "inspect", "task", "init", "upgrade", "version", "guidance"}
     ]
     advanced = "  " + "  ".join(advanced_names)
 
@@ -109,26 +111,32 @@ def main() -> int:
         print(help_text(), file=sys.stderr)
         return 2
 
-    try:
-        module = importlib.import_module(module_name)
-    except Exception as exc:
-        print(f"PACT command load failed ({command}): {exc}", file=sys.stderr)
-        return 2
-
-    child_main = getattr(module, "main", None)
-    if not callable(child_main):
-        print(
-            f"PACT command module has no callable main(): {module_name}",
-            file=sys.stderr,
-        )
-        return 2
-
+    # A read-only guidance request must not create source-tree bytecode caches.
+    # Set this before importing guidance itself or any of its local dependencies.
+    previous_bytecode = sys.dont_write_bytecode
     previous_argv = sys.argv
     try:
+        if command == "guidance":
+            sys.dont_write_bytecode = True
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            print(f"PACT command load failed ({command}): {exc}", file=sys.stderr)
+            return 2
+
+        child_main = getattr(module, "main", None)
+        if not callable(child_main):
+            print(
+                f"PACT command module has no callable main(): {module_name}",
+                file=sys.stderr,
+            )
+            return 2
+
         sys.argv = [command, *previous_argv[2:]]
         return int(child_main())
     finally:
         sys.argv = previous_argv
+        sys.dont_write_bytecode = previous_bytecode
 
 
 if __name__ == "__main__":

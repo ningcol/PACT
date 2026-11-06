@@ -262,6 +262,7 @@ Setup / maintenance:
 init       safely scaffold PACT into an existing repository
 upgrade    safely update unchanged framework-managed files
 version    show runtime/install version information
+guidance   read version-matched standard agent instructions without project scans
 check      deterministic artifact checks
 doctor     PACT foundation health
 readiness  explicit baseline readiness
@@ -310,6 +311,27 @@ Framework runtime/template files can be upgraded only if they have not been loca
 If both a framework-managed target file and the newer PACT source changed, automatic upgrade stops before changing anything.
 
 Upgrade apply is transactional: replacement files are staged first, current files and the install manifest are backed up, replacements/removals are rollback-aware, and any apply/validation failure triggers rollback. Obsolete framework-managed files are removed automatically only when unchanged since the prior install; locally modified obsolete files are preserved.
+
+Standard agent instructions travel inside the same runtime. Read them with
+`python3 pact.py guidance` (or `--json` for the content hash and runtime identity),
+using the project's approved interpreter. Fresh installs create a short reference
+in `AGENTS.md`; existing projects receive merge advice without changing their
+guide or custom README. Keep project-specific knowledge routes, permissions and
+commands in their existing authoritative locations, rather than copying and
+editing the standard instructions. Read the guide in a new session and after an
+upgrade; do not add another read to every task completion.
+
+This interface is an unreleased source capability; the published `v0.4.0-rc.3`
+does not include it. Check an older installation's `--help` or runtime
+capabilities before using it, and select a fixed source containing the feature
+when evaluating an upgrade.
+
+`doctor --host-wiring-only --json` reports bounded static references separately
+from available standard instructions. A reference or matching local install
+hash proves neither actual session loading, compliance nor write protection.
+Protection against writes requires verified host/OS policy covering the launcher
+and runtime; PACT does not rewrite host permissions or lock project business
+documents. See [instruction ownership and upgrades](docs/design/distribution-upgrades.md#version-matched-agent-guidance).
 
 ## Minimal installation is not PACT-ready
 

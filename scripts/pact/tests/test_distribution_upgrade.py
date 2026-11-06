@@ -281,9 +281,14 @@ class DistributionUpgradeTests(unittest.TestCase):
         )
         self.assertFalse((self.target / "LICENSE").exists())
         self.assertFalse((self.target / "scripts" / "pact").exists())
-        guide = (self.target / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("not mandatory for every request", guide)
-        self.assertIn("leave PACT", guide)
+        entry = (self.target / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("pact.py guidance", entry)
+        guidance = self.run_target("guidance", "--json")
+        self.assertEqual(guidance.returncode, 0, guidance.stdout + guidance.stderr)
+        guide = json.loads(guidance.stdout)["content"]
+        self.assertLess(len(entry), len(guide))
+        self.assertIn("Task/Change workflow is optional", guide)
+        self.assertIn("leave `task finish` success", guide)
         self.assertIn("complete=true", guide)
 
         version = self.run_target("version", "--json")
@@ -303,8 +308,11 @@ class DistributionUpgradeTests(unittest.TestCase):
         bootstrap = (self.target / ".pact" / "AGENT_BOOTSTRAP.md")
         self.assertTrue(bootstrap.is_file())
         guide = bootstrap.read_text(encoding="utf-8")
-        self.assertIn("not a required ceremony", guide)
-        self.assertIn("never mark Evidence/ACs as passing", guide)
+        self.assertIn("pact.py guidance", guide)
+        self.assertIn("project rules", guide)
+        guidance = self.run_target("guidance", "--json")
+        self.assertEqual(guidance.returncode, 0, guidance.stdout + guidance.stderr)
+        self.assertIn("Do not relabel missing", json.loads(guidance.stdout)["content"])
 
     def test_corrupt_install_manifest_blocks_all_surfaces(self) -> None:
         self.scaffold()

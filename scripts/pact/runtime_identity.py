@@ -9,7 +9,7 @@ from distribution import read_install_manifest, resolve_install_target, sha256_f
 CAPABILITIES = (
     "knowledge-retention-review", "domain-audit", "workspace-staleness-detail",
     "mechanical-owner-draft", "coverage-review-draft", "chinese-registered-phrase",
-    "task-generation-history",
+    "task-generation-history", "runtime-agent-guidance",
 )
 
 

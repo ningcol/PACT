@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SOURCE = pathlib.Path(__file__).resolve().parents[3]
@@ -75,6 +76,48 @@ class HostWiringTests(unittest.TestCase):
                             for x in checks), checks)
         self.assertNotIn("DO NOT READ MY SECRET", json.dumps(checks))
 
+    def test_guidance_reference_never_attests_loading_compliance_or_protection(self):
+        self.write("AGENTS.md", "# Instructions\nRead `backend/venv/bin/python pact.py guidance`.\n")
+        with mock.patch.object(doctor.subprocess, "run", side_effect=AssertionError("must not execute checks")):
+            data = doctor.guidance_diagnostics(self.root)
+        self.assertNotIn("content", data)
+        self.assertEqual(data["verification"], {
+            "host_loading": "unverified", "behavioral_compliance": "unverified",
+            "write_protection": "unverified",
+        })
+        self.assertEqual(data["project_entries"][0]["reference"], "present")
+        self.assertFalse((self.root / ".pact").exists())
+
+    def test_override_and_bootstrap_are_not_reported_as_active_loading(self):
+        self.write("AGENTS.md", "Read `python3 pact.py guidance`.\n")
+        self.write("AGENTS.override.md", "# Different instructions\n")
+        self.write(".pact/AGENT_BOOTSTRAP.md", "Read `python3 pact.py guidance`.\n")
+        data = doctor.guidance_diagnostics(self.root)
+        entries = {entry["path"]: entry for entry in data["project_entries"]}
+        self.assertEqual(entries["AGENTS.override.md"]["reference"], "not-detected")
+        self.assertEqual(entries[".pact/AGENT_BOOTSTRAP.md"]["role"], "merge-advice")
+        self.assertIn("instead of AGENTS.md", data["precedence_note"])
+        self.assertEqual(data["verification"]["host_loading"], "unverified")
+
+    def test_guidance_diagnostics_do_not_follow_private_guide_symlink(self):
+        outside = pathlib.Path(self.temp.name) / "private-guidance"
+        outside.write_text("DO NOT READ MY SECRET", encoding="utf-8")
+        try:
+            os.symlink(outside, self.root / "AGENTS.override.md")
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlinks unavailable: {exc}")
+        data = doctor.guidance_diagnostics(self.root)
+        self.assertEqual(data["project_entries"][0]["reference"], "unreadable")
+        self.assertNotIn("DO NOT READ MY SECRET", json.dumps(data))
+
+    def test_large_or_invalid_utf8_entries_remain_unverified(self):
+        for body in (b"x" * (doctor.HOST_READ_LIMIT + 1), b"\xff\xfe"):
+            with self.subTest(size=len(body)):
+                (self.root / "AGENTS.md").write_bytes(body)
+                data = doctor.guidance_diagnostics(self.root)
+                self.assertEqual(data["project_entries"][0]["reference"], "unreadable")
+                self.assertEqual(data["verification"]["host_loading"], "unverified")
+
     def test_installed_host_wiring_only_does_not_generate_map_or_execute_ci(self):
         target = self.root
         init = subprocess.run(
@@ -93,6 +136,9 @@ class HostWiringTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertFalse(data["host_ci_executed"])
+        self.assertEqual(data["guidance"]["source"]["kind"], "embedded-runtime")
+        self.assertEqual(data["guidance"]["verification"]["host_loading"], "unverified")
+        self.assertNotIn("content", data["guidance"])
         self.assertNotEqual(data["overall"], "fail")
         self.assertFalse(cache_map.exists())
 

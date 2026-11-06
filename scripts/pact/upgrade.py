@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import pathlib
 import shutil
 import sys
 import tempfile
+import zipfile
+import zlib
 
 import legacy_upgrade
 
@@ -23,6 +26,7 @@ from distribution import (
     resolve_install_target,
 )
 from schema_validate import load_schema, validate_instance
+from guidance import entry_reference_present
 
 
 SCRIPT_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -35,6 +39,89 @@ MUTATING_ACTIONS = {
     "migrate-legacy-seed",
     "migrate-legacy-metadata",
 }
+GUIDANCE_READ_LIMIT = 128 * 1024
+
+
+def _guidance_entry_text(target: pathlib.Path) -> tuple[str | None, str | None]:
+    """Read one bounded project entry; its contents never establish loading."""
+    path = target / "AGENTS.md"
+    try:
+        if path.is_symlink():
+            return None, "symbolic project entry requires manual inspection"
+        if not path.exists():
+            return None, "project entry is missing"
+        if not path.is_file():
+            return None, "project entry is not a regular file"
+        path.resolve().relative_to(target.resolve())
+        with path.open("rb") as stream:
+            data = stream.read(GUIDANCE_READ_LIMIT + 1)
+        if len(data) > GUIDANCE_READ_LIMIT:
+            return None, "project entry exceeds the bounded static read size"
+        return data.decode("utf-8"), None
+    except (OSError, UnicodeError, RuntimeError, ValueError):
+        return None, "project entry cannot be safely read"
+
+
+def _runtime_has_guidance(bundle: pathlib.Path | None) -> bool:
+    """Inspect the actual selected archive without executing or rebuilding it."""
+    if bundle is None:
+        return False
+    try:
+        with zipfile.ZipFile(bundle) as archive:
+            module = archive.getinfo("guidance.py")
+            dispatcher = archive.getinfo("pact.py")
+            if (module.is_dir() or dispatcher.is_dir()
+                    or not 0 < module.file_size <= GUIDANCE_READ_LIMIT
+                    or not 0 < dispatcher.file_size <= GUIDANCE_READ_LIMIT):
+                return False
+            with archive.open(dispatcher) as stream:
+                data = stream.read(GUIDANCE_READ_LIMIT + 1)
+        if len(data) > GUIDANCE_READ_LIMIT:
+            return False
+        tree = ast.parse(data.decode("utf-8"))
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(name, ast.Name) and name.id == "COMMANDS"
+                for name in node.targets
+            ):
+                commands = ast.literal_eval(node.value)
+                return isinstance(commands, dict) and commands.get("guidance") == "guidance"
+    except (OSError, UnicodeError, SyntaxError, ValueError, TypeError,
+            RecursionError, KeyError, RuntimeError, NotImplementedError,
+            zipfile.BadZipFile, zlib.error):
+        return False
+    return False
+
+
+def agent_guidance_notices(bundle: pathlib.Path | None, target: pathlib.Path) -> list[dict]:
+    """Keep legacy entry migration visible without rewriting project policy."""
+    if not _runtime_has_guidance(bundle):
+        return []
+    text, problem = _guidance_entry_text(target)
+    if text is not None and entry_reference_present(text):
+        return []
+    detail = problem or "no direct standard-guidance command reference was recognized"
+    return [{
+        "kind": "agent-guidance-review",
+        "path": "AGENTS.md",
+        "reason": (
+            f"{detail}; preserve project instructions and review their routing to "
+            "the upgraded runtime's `pact.py guidance` using the project-approved "
+            "Python interpreter. Existing indirect routing may already be valid; "
+            "inspect it before adding anything. Legacy AGENTS/bootstrap text is "
+            "project-owned and will not be overwritten. Static references do not "
+            "prove this session loaded or obeyed the current guidance; reload "
+            "applicable guidance after upgrading."
+        ),
+    }]
+
+
+def _transaction_decisions(plan: dict) -> dict:
+    """Project entry advisories cannot reserve or block unrelated policy edits."""
+    return {**plan, "notices": [
+        notice for notice in plan["notices"]
+        if notice.get("kind") != "agent-guidance-review"
+    ]}
 
 
 class UpgradeApplyError(RuntimeError):
@@ -320,6 +407,10 @@ def plan_upgrade(
         operations.append(op)
     conflicts.extend(legacy["conflicts"])
     notices.extend(legacy["notices"])
+    bundle = desired_by_path.get(".pact/pact.pyz")
+    notices.extend(agent_guidance_notices(
+        pathlib.Path(bundle["source"]) if bundle else None, target,
+    ))
     return {
         "from_runtime_version": manifest.get("runtime_version", "unknown"),
         "to_runtime_version": runtime_version(source_root),
@@ -464,7 +555,7 @@ def apply_upgrade(
         refreshed_plan = plan_upgrade(
             source_root, target, manifest, migrate_legacy=migrate_legacy,
         )
-        if refreshed_plan != plan:
+        if _transaction_decisions(refreshed_plan) != _transaction_decisions(plan):
             raise RuntimeError("upgrade source or target changed after planning")
         for operation in plan["operations"]:
             assert_planned_target_unchanged(target, operation, manifest)
@@ -814,6 +905,13 @@ def main() -> int:
             )
             result["applied"] = True
             result.update(transaction)
+            # Project-owned entry edits never block the framework transaction.
+            # Re-read only this advisory after success so the displayed result
+            # reflects concurrent entry changes and the runtime now installed.
+            result["notices"] = [
+                notice for notice in result["notices"]
+                if notice.get("kind") != "agent-guidance-review"
+            ] + agent_guidance_notices(target / ".pact/pact.pyz", target)
         except UpgradeApplyError as exc:
             result["applied"] = False
             result["rolled_back"] = exc.rolled_back
@@ -837,7 +935,7 @@ def main() -> int:
     )
     for op in plan["operations"]:
         print(f"- [{op['action'].upper()}] {op['path']}: {op['reason']}")
-    for notice in plan["notices"]:
+    for notice in result["notices"]:
         print(f"- [NOTICE:{notice['kind']}] {notice['path']}: {notice['reason']}")
     for conflict in plan["conflicts"]:
         print(f"- [CONFLICT] {conflict['path']}: {conflict['reason']}")
